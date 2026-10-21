@@ -23,11 +23,16 @@ WORKDIR /app
 ENV NODE_ENV=production \
     KLIMO_DATA_DIR=/data \
     KLIMO_PUBLIC_DIR=/app/public \
+    KLIMO_CARD_DIR=/app/card \
     KLIMO_PORT=8099
 COPY --from=backend /build/dist ./dist
 COPY --from=backend /build/node_modules ./node_modules
 COPY --from=backend /build/package.json ./package.json
+COPY backend/assets ./assets
 COPY --from=frontend /build/dist ./public
 COPY card ./card
+# backup_pre / backup_post hooks: flush and pause writes, checkpoint the SQLite WAL
+COPY backup-hook.sh /app/backup-hook.sh
+RUN chmod +x /app/backup-hook.sh
 EXPOSE 8099
 CMD [ "node", "dist/main.js" ]

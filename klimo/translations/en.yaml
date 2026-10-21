@@ -1,0 +1,33 @@
+configuration:
+  log_level:
+    name: Log level
+    description: Backend logging verbosity. Use debug while setting up or reporting a problem.
+  database:
+    name: Database
+    description: >-
+      sqlite (default) stores everything in /data and is covered by Home Assistant
+      backups. Choose mariadb or postgres to use an external database server
+      (e.g. host core-mariadb for the official MariaDB add-on); an external
+      database is not part of the add-on backup. Fields: driver, host, port,
+      name (database, default klimo), username, password.
+  telegram_bot_token:
+    name: Telegram bot token
+    description: >-
+      Optional. Token from @BotFather for Klimo's own Telegram bot, which keeps
+      alerting even while Home Assistant is down. Pair chats in Klimo →
+      Notifications. Do not use the same token in Home Assistant's
+      telegram_bot integration at the same time.
+  mqtt_host:
+    name: MQTT host
+    description: >-
+      Optional. Leave empty to use the Mosquitto add-on through the Supervisor.
+      Set it to use another broker for the Klimo entities and Lovelace cards.
+  mqtt_port:
+    name: MQTT port
+    description: Optional. Port of the broker set in MQTT host (default 1883).
+  mqtt_username:
+    name: MQTT username
+    description: Optional. Username for the broker set in MQTT host.
+  mqtt_password:
+    name: MQTT password
+    description: Optional. Password for the broker set in MQTT host.

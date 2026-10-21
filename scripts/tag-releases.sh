@@ -10,3 +10,44 @@
 #   bash scripts/tag-releases.sh          # create the missing tags
 #   bash scripts/tag-releases.sh --push   # ...and push them to origin
 #
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+CONFIG=klimo/config.yaml
+CHANGELOG=klimo/CHANGELOG.md
+push=false
+[ "${1:-}" = "--push" ] && push=true
+
+# The changelog section for a version: everything from "## <version>" up to the
+# next "## " heading.
+changelog_section() {
+  [ -f "$CHANGELOG" ] || return 0
+  awk -v want="## $1" '
+    $0 == want { grab = 1; next }
+    grab && /^## / { exit }
+    grab { print }
+  ' "$CHANGELOG"
+}
+
+created=0
+seen=""
+# oldest first, so the first sighting of a version is the commit that shipped it
+for sha in $(git log --reverse --format=%H -- "$CONFIG"); do
+  version=$(git show "$sha:$CONFIG" | sed -n 's/^version:[[:space:]]*"\{0,1\}\([0-9.]*\)"\{0,1\}.*/\1/p')
+  [ -n "$version" ] || continue
+  case " $seen " in *" $version "*) continue ;; esac
+  seen="$seen $version"
+
+  tag="v$version"
+  if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then continue; fi
+
+  { printf 'Klimo %s\n\n' "$version"; changelog_section "$version"; } |
+    git tag -a "$tag" "$sha" -F -
+  echo "tagged $tag -> $(git rev-parse --short "$sha")"
+  created=$((created + 1))
+done
+
+echo "$created tag(s) created"
+if [ "$push" = true ] && [ "$created" -gt 0 ]; then
+  git push origin --tags
+fi
