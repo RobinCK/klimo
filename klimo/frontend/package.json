@@ -5,12 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "node scripts/check-boundaries.mjs && tsc -b && vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "check": "node scripts/check-boundaries.mjs && tsc --noEmit -p tsconfig.json",
     "i18n": "i18next",
-    "i18n:check": "i18next --fail-on-update"
+    "i18n:check": "i18next --fail-on-update && node scripts/merge-locales.mjs --check",
+    "locales:merge": "node scripts/merge-locales.mjs",
+    "tokens:card": "node scripts/tokens-to-card.mjs"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
     "@mantine/core": "^7.16.1",
     "@mantine/hooks": "^7.16.1",
     "@mantine/notifications": "^7.16.1",

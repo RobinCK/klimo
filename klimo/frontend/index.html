@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark light" />
+    <title></title>
+    <!--
+      Paint the right shade before the bundle runs. Without this the panel starts
+      out white and only turns dark once React mounts, which inside a dark Home
+      Assistant is a white flash on every open. The resolution order is the one
+      src/app/scheme.ts uses at runtime: the stored choice, then the parent Home
+      Assistant frontend (same-origin ingress iframe), then the device. The two
+      colours are the page background tokens of src/ui/tokens/base.ts.
+    -->
+    <style>
+      html { background: #0e1013; }
+      html[data-mantine-color-scheme='light'] { background: #f2f3f5; }
+    </style>
+    <script>
+      (function () {
+        var scheme = null;
+        try {
+          var stored = localStorage.getItem('klimo.scheme');
+          if (stored === 'dark' || stored === 'light') scheme = stored;
+        } catch (e) {
+          /* private mode */
+        }
+        if (!scheme) {
+          try {
+            var ha = window.parent !== window && window.parent.document.querySelector('home-assistant');
+            var dark = ha && ha.hass && ha.hass.themes ? ha.hass.themes.darkMode : undefined;
+            if (typeof dark === 'boolean') scheme = dark ? 'dark' : 'light';
+          } catch (e) {
+            /* not inside Home Assistant, or a cross-origin parent */
+          }
+        }
+        if (!scheme) {
+          scheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        }
+        document.documentElement.setAttribute('data-mantine-color-scheme', scheme);
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./src/main.tsx"></script>
+  </body>
+</html>

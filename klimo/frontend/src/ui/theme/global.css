@@ -1,0 +1,56 @@
+/*
+ * Base element styles on top of Mantine. Colours, fonts and sizes come from the
+ * --ui-* variables written by UiProvider (tokensToCss), so this file never names a hex.
+ */
+
+html,
+body {
+  background: var(--ui-bg-page);
+  color: var(--ui-text-1);
+}
+
+body {
+  margin: 0;
+  font-family: var(--ui-font-sans);
+  font-size: var(--ui-fs-body);
+  line-height: var(--ui-line-height);
+  /* digits must not jump while a temperature updates */
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-size-adjust: 100%;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ui-text-1);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--ui-tone-hold-halo);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+}

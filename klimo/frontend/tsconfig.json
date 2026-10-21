@@ -11,7 +11,18 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "useDefineForClassFields": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@brand": ["src/brand/index.ts"],
+      "@ui": ["src/ui/index.ts"],
+      "@api/*": ["src/api/*"],
+      "@data": ["src/data/index.ts"],
+      "@i18n": ["src/i18n/index.ts"],
+      "@app": ["src/app/index.ts"]
+    }
   },
   "include": ["src"]
 }
