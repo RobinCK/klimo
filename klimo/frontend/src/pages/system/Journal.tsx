@@ -2,10 +2,10 @@
  * «Журнал рішень»: what the system did and why, newest first, by category. New entries arrive
  * live; older ones load page by page.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { JournalCategory, JournalEntry } from '@api/model';
 import { api } from '@api/endpoints';
-import { useLiveEvent, type NameDirectory } from '@data';
+import { useLiveEvent, useResource, type NameDirectory } from '@data';
 import { paths } from '@app';
 import { Button, DecisionLog, Section, SegmentedControl, Stack } from '@ui';
 import { fmtClock, renderJournal, renderReason, t } from '@i18n';
@@ -30,7 +30,34 @@ function rowOf(e: JournalEntry, ctx: NameDirectory) {
   };
 }
 
-export function JournalSection({ ctx, focus }: { ctx: NameDirectory; focus?: boolean }) {
+/**
+ * Entries name devices by their entity ids («switch.radiator_pump»); the device list turns those
+ * into the names people gave them.
+ */
+export function useDeviceNames(base: NameDirectory): NameDirectory {
+  const devices = useResource('devices', () => api.devices.list(), { reloadOn: ['device_meta', 'sensor', 'emitter_device', 'source', 'pump'] });
+  return useMemo(() => {
+    const byEntity = new Map<string, string>();
+    const byKey = new Map<string, string>();
+    for (const d of devices.data?.devices ?? []) {
+      const name = d.label ?? d.name;
+      byKey.set(d.key, name);
+      for (const e of d.entityIds) byEntity.set(e, name);
+    }
+    return {
+      ...base,
+      // a spread copies the clock once; the directory's «now» must stay live
+      get now() {
+        return base.now;
+      },
+      entity: (id: string) => byEntity.get(id) ?? base.entity?.(id),
+      device: (key: string) => byKey.get(key) ?? base.device?.(key),
+    };
+  }, [base, devices.data]);
+}
+
+export function JournalSection({ ctx: base, focus }: { ctx: NameDirectory; focus?: boolean }) {
+  const ctx = useDeviceNames(base);
   const [filter, setFilter] = useState<Filter>('all');
   const [items, setItems] = useState<JournalEntry[]>([]);
   const [next, setNext] = useState<number | null>(null);

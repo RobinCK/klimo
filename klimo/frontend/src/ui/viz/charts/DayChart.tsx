@@ -17,6 +17,12 @@ const X0 = 44;
 const X1 = 944;
 const Y_TOP = 16;
 const Y_BOTTOM = 208;
+/*
+ * The y labels and the «now» tag are HTML of fixed pixel size over a stretched viewBox: on a phone 44
+ * units are 15 px and the line would run under «20°». The plot keeps these pixels clear of data.
+ */
+const LABEL_GUTTER_PX = 32;
+const NOW_TAG_PX = 20;
 
 export interface DayChartTarget {
   from: number;
@@ -76,10 +82,12 @@ export function DayChart({
   const ut = useUiText();
   const end = dayEnd ?? dayStart + DAY_MS;
   const plot = useRef<HTMLDivElement>(null);
-  const { height: plotH } = useSize(plot);
+  const { width: plotW, height: plotH } = useSize(plot);
+  const x0 = plotW > 0 ? Math.max(X0, (LABEL_GUTTER_PX / plotW) * W) : X0;
+  const yTop = plotH > 0 ? Math.max(Y_TOP, (NOW_TAG_PX / plotH) * H) : Y_TOP;
 
   const g = useMemo(() => {
-    const X = linear(dayStart, end, X0, X1);
+    const X = linear(dayStart, end, x0, X1);
     const clipT = (t: number) => Math.min(end, Math.max(dayStart, t));
     const bands: { lo: number; hi: number; from: number; to: number; future: boolean }[] = [];
     for (const seg of targets) {
@@ -112,9 +120,9 @@ export function DayChart({
       lo = mid - 1;
       hi = mid + 1;
     }
-    const Y = linear(lo, hi, Y_BOTTOM, Y_TOP);
+    const Y = linear(lo, hi, Y_BOTTOM, yTop);
     // at most five gridlines, and never closer than 16 px (their labels would collide on a phone)
-    const plotPx = plotH > 0 ? (plotH * (Y_BOTTOM - Y_TOP)) / H : Y_BOTTOM - Y_TOP;
+    const plotPx = plotH > 0 ? (plotH * (Y_BOTTOM - yTop)) / H : Y_BOTTOM - yTop;
     const first = niceStep(hi - lo, 5);
     const step = [0.5, 1, 2, 5, 10, 20, 50].find((st) => st >= first && (st / (hi - lo)) * plotPx >= 16) ?? 50;
     const grid = gridValues(lo, hi, step);
@@ -135,7 +143,7 @@ export function DayChart({
       const from = clipT(sp.from);
       const to = clipT(sp.to ?? now);
       if (to <= from) continue;
-      const d = rect(X(from), X(to), Y_TOP, Y_BOTTOM);
+      const d = rect(X(from), X(to), yTop, Y_BOTTOM);
       if (sp.tone === 'heat') heat += d;
       else cool += d;
     }
@@ -160,7 +168,7 @@ export function DayChart({
     const active = spans.find((sp) => sp.from <= now && (sp.to == null || sp.to >= now - 60_000));
     return {
       grid: grid.map((v) => ({ v, y: Y(v) })),
-      gridPath: grid.map((v) => `M${X0} ${Y(v).toFixed(1)}H${X1}`).join(''),
+      gridPath: grid.map((v) => `M${x0.toFixed(1)} ${Y(v).toFixed(1)}H${X1}`).join(''),
       bandPast,
       bandFuture,
       heat,
@@ -171,7 +179,7 @@ export function DayChart({
       dotTone: active?.tone ?? null,
       hasCool: spans.some((sp) => sp.tone === 'cool'),
     };
-  }, [series, targets, spans, now, dayStart, end, tol, plotH]);
+  }, [series, targets, spans, now, dayStart, end, tol, plotH, x0, yTop]);
 
   const dotColor = g.dotTone ? toneVar(g.dotTone, 'line') : 'var(--ui-text-1)';
   const nowPct = g.nowX != null ? (g.nowX / W) * 100 : null;
@@ -218,7 +226,7 @@ export function DayChart({
             <polyline key={i} points={points} className={s.dayLine} vectorEffect="non-scaling-stroke" />
           ))}
           {g.nowX != null ? (
-            <path d={`M${g.nowX.toFixed(1)} ${Y_TOP}V${Y_BOTTOM}`} className={s.dayNow} vectorEffect="non-scaling-stroke" />
+            <path d={`M${g.nowX.toFixed(1)} ${yTop.toFixed(1)}V${Y_BOTTOM}`} className={s.dayNow} vectorEffect="non-scaling-stroke" />
           ) : null}
         </svg>
         {g.dot ? (
@@ -239,7 +247,8 @@ export function DayChart({
           </span>
         ) : null}
       </div>
-      <div className={s.dayAxis} aria-hidden="true">
+      {/* the hour labels span the same width as the plot above them */}
+      <div className={s.dayAxis} style={{ paddingLeft: pct((x0 / W) * 100) }} aria-hidden="true">
         {axis.map((a, i) => (
           <span key={`${a}-${i}`}>{a}</span>
         ))}

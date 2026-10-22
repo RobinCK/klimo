@@ -532,8 +532,23 @@ button.bindingValue > svg {
 
 /* ---------- WatchTable ---------- */
 
+.watchWrap {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+/* the same scroller as the shell's ScrollX: hidden text inside stays clipped by it */
+.watchScroll {
+  position: relative;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
 .watch {
   position: relative;
+  min-width: 940px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -602,6 +617,50 @@ button.bindingValue > svg {
 .watchRule {
   color: var(--ui-text-2);
   font-size: var(--ui-fs-body-sm);
+}
+
+/* a phone-wide column: each row is a card — name and state, the full id, the rule and its severity */
+@container (max-width: 639px) {
+  .watch {
+    min-width: 0;
+  }
+  .watchHead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .watchRow:not(.watchHead) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'name now'
+      'id id'
+      'rule severity';
+    gap: 4px var(--ui-space-12);
+    padding: 10px var(--ui-space-14);
+  }
+  .watchName {
+    grid-area: name;
+  }
+  .watchNow {
+    grid-area: now;
+    justify-self: end;
+  }
+  .watchEntity {
+    grid-area: id;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .watchRule {
+    grid-area: rule;
+  }
+  .watchSeverity {
+    grid-area: severity;
+    justify-self: end;
+  }
 }
 
 .statusText {

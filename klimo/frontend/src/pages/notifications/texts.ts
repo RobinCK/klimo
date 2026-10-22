@@ -126,7 +126,8 @@ export function watchRoleLabel(role: string): string {
     case 'outdoor':
       return t('outdoor temperature');
     case 'room.sensor':
-      return t('room temperature');
+      // temperature and humidity sensors of a room share this role
+      return t('room sensor');
     case 'room.trv':
       return t('radiator valve');
     case 'room.contact':

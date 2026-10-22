@@ -61,6 +61,7 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  container-type: inline-size;
 }
 
 .dayCaption {
@@ -212,6 +213,13 @@
   font-family: var(--ui-font-mono);
   font-size: var(--ui-fs-micro);
   font-weight: 400;
+}
+
+/* a phone-wide day at 4 : 1 is 80 px tall: give the degrees room to be read */
+@container (max-width: 520px) {
+  .dayPlot {
+    aspect-ratio: 960 / 400;
+  }
 }
 
 /* ---------------- Timeline24h ---------------- */
@@ -567,6 +575,12 @@
   background: var(--ui-text-1);
   box-shadow: 0 0 0 1px var(--ui-bg-page);
   pointer-events: none;
+}
+
+/* the block under the line has no room to move its text: the line only reaches the block's edge */
+.dayVNow[data-stub] {
+  right: auto;
+  width: 14px;
 }
 
 .dayVNowLabel {

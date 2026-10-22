@@ -44,6 +44,8 @@ export function EnergySection({ d, s, embedded }: { d: SystemData; s: StrategyDa
     return src ? t('up to {kw}', { kw: fmtKw(src.config.energy.maxPowerKw) }) : '';
   };
   const exempt = p.exempt.sourceIds.map(d.nameOf);
+  // outside the sentence's own t(): the string extractor misses a t() nested in another call
+  const pumpsWord = t('the pumps');
   const st = dto.state;
   const e = p.entities;
   const live = {
@@ -108,7 +110,7 @@ export function EnergySection({ d, s, embedded }: { d: SystemData; s: StrategyDa
               text={
                 exempt.length || p.exempt.pumps
                   ? t('{list} work always while the battery is above {pct}.', {
-                      list: [...exempt, ...(p.exempt.pumps ? [t('the pumps')] : [])].join(', '),
+                      list: [...exempt, ...(p.exempt.pumps ? [pumpsWord] : [])].join(', '),
                       pct: fmtPct(p.exempt.whileSocAbovePct),
                     })
                   : t('Below {pct} only frost protection works.', { pct: fmtPct(p.criticalSocPct) })

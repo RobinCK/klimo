@@ -193,6 +193,42 @@ export interface DayTimelineVerticalProps {
   ariaLabel?: string;
 }
 
+/* Text box of a block at the kit's type scale: a 13 px name and a 12 px range at line height 1.45. */
+const NAME_PX = 19;
+const RANGE_PX = 18;
+const TALL_PAD = 8;
+/** Air kept between the now line and the block's text. */
+const NOW_CLEAR = 4;
+
+interface NowFit {
+  /** Moves the block's text off the line. */
+  style: CSSProperties;
+  /** The text could not move: show the range only when it fits. */
+  range: boolean;
+  /** Nowhere to move the text: the line stops at the block's edge instead of crossing it. */
+  stub: boolean;
+}
+
+/**
+ * Keeps the now line from striking through the block it falls in: the text moves below the line,
+ * else above it (dropping the range when that is what fits); when neither fits, the line ends at
+ * the block's edge and the time label in the gutter carries it.
+ */
+function fitAroundNow(blockH: number, lineY: number, tall: boolean, snug: boolean, hasRange: boolean): NowFit {
+  const lineTop = lineY - 1 - NOW_CLEAR;
+  const lineBottom = lineY + 1 + NOW_CLEAR;
+  const tries = tall && hasRange ? [NAME_PX + 1 + RANGE_PX, NAME_PX] : [NAME_PX];
+  const textH = tries[0];
+  const top = tall && !snug ? TALL_PAD : (blockH - textH) / 2;
+  if (lineBottom <= top || lineTop >= top + textH) return { style: {}, range: true, stub: false };
+  for (const h of tries) {
+    const range = h > NAME_PX;
+    if (lineBottom + h + 2 <= blockH) return { style: { justifyContent: 'flex-start', paddingTop: lineBottom }, range, stub: false };
+    if (lineTop - h >= 2) return { style: { justifyContent: 'flex-end', paddingBottom: blockH - lineTop }, range, stub: false };
+  }
+  return { style: {}, range: true, stub: true };
+}
+
 /** One day top to bottom (the phone schedule). Arrow keys move between blocks. */
 export function DayTimelineVertical({ blocks, now, onSelect, hourPx = 23, ariaLabel }: DayTimelineVerticalProps) {
   const [active, setActive] = useState(() => Math.max(0, blocks.findIndex((b) => b.selected)));
@@ -203,6 +239,8 @@ export function DayTimelineVertical({ blocks, now, onSelect, hourPx = 23, ariaLa
     refs.current[i]?.focus();
   };
   const hours = [0, 3, 6, 9, 12, 15, 18, 21, 24];
+  const nowMin = now ? clamp(now.minute, 0, 1440) : null;
+  let stub = false;
   return (
     <div className={s.dayV} style={{ '--day-h': `${hourPx * 24}px` } as CSSProperties} role="group" aria-label={ariaLabel}>
       {hours.map((h) => (
@@ -218,11 +256,21 @@ export function DayTimelineVertical({ blocks, now, onSelect, hourPx = 23, ariaLa
         const z = clamp(b.end, 0, 1440);
         const h = ((z - a) / 60) * hourPx;
         const tall = h >= 44;
+        const blockH = Math.max(18, h - 2);
+        // a two-hour block holds the name and the range only without the top padding: centre them
+        const snug = tall && !!b.rangeText && blockH < NAME_PX + 1 + RANGE_PX + 2 * TALL_PAD;
+        const fit =
+          nowMin !== null && a <= nowMin && nowMin < z
+            ? fitAroundNow(blockH, ((nowMin - a) / 60) * hourPx - 1, tall, snug, !!b.rangeText)
+            : null;
+        if (fit?.stub) stub = true;
         const style = {
           top: `${(a / 60) * hourPx + 1}px`,
-          height: `${Math.max(18, h - 2)}px`,
+          height: `${blockH}px`,
           '--fill': b.color,
           '--ink': b.ink,
+          ...(snug ? { justifyContent: 'center', paddingTop: 0, paddingBottom: 0 } : null),
+          ...fit?.style,
         } as CSSProperties;
         return (
           <button
@@ -253,13 +301,13 @@ export function DayTimelineVertical({ blocks, now, onSelect, hourPx = 23, ariaLa
               <span className={s.dayVName}>{b.label}</span>
               {b.valueText ? <span className={s.dayVValue}>{b.valueText}</span> : null}
             </span>
-            {tall && b.rangeText ? <span className={s.dayVRange}>{b.rangeText}</span> : null}
+            {tall && b.rangeText && (fit?.range ?? true) ? <span className={s.dayVRange}>{b.rangeText}</span> : null}
           </button>
         );
       })}
       {now ? (
         <span aria-hidden="true">
-          <span className={s.dayVNow} style={{ top: `${(clamp(now.minute, 0, 1440) / 60) * hourPx - 1}px` }} />
+          <span className={s.dayVNow} data-stub={stub ? '' : undefined} style={{ top: `${(clamp(now.minute, 0, 1440) / 60) * hourPx - 1}px` }} />
           <span className={s.dayVNowLabel} style={{ top: `${(clamp(now.minute, 0, 1440) / 60) * hourPx}px` }}>
             {now.label}
           </span>

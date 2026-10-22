@@ -88,61 +88,65 @@ export interface WatchRow {
 export function WatchTable({ rows, ariaLabel }: { rows: WatchRow[]; ariaLabel?: string }) {
   const ut = useUiText();
   const label = ariaLabel ?? ut('Watched entities');
+  // a table on wide screens; in a narrow column every row becomes a small card (rows.module.css), so
+  // the scroller only scrolls while the table is shown
   return (
-    <ScrollX minWidth={940} ariaLabel={label}>
-      <div className={s.watch} role="table" aria-label={label}>
-        <div className={`${s.watchRow} ${s.watchHead}`} role="row">
-          <span role="columnheader">{ut('Entity')}</span>
-          <span role="columnheader">{ut('ID')}</span>
-          <span role="columnheader">{ut('Rule')}</span>
-          <span role="columnheader">{ut('Severity')}</span>
-          <span role="columnheader">{ut('Now')}</span>
-        </div>
-        {rows.map((r) => (
-          <div
-            key={r.entityId}
-            className={s.watchRow}
-            role="row"
-            data-clickable={r.onClick ? '' : undefined}
-            onClick={r.onClick}
-          >
-            <span className={s.cellStack} role="cell">
-              {r.onClick ? (
-                // the keyboard path; a pointer can click anywhere on the row
-                <button
-                  type="button"
-                  className={s.rowLink}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    r.onClick?.();
-                  }}
-                >
-                  {r.name}
-                </button>
-              ) : (
-                <span className={s.name}>{r.name}</span>
-              )}
-              <span className={s.muted}>{r.role}</span>
-            </span>
-            <span className={s.watchEntity} role="cell" title={r.entityId}>
-              {r.entityId}
-            </span>
-            <span className={s.watchRule} role="cell">
-              {r.rule}
-            </span>
-            <span role="cell">
-              <span className={s.toneChip} data-size="sm" style={toneVars(r.severity.tone)}>
-                {r.severity.label}
-              </span>
-            </span>
-            <span className={s.statusText} role="cell" data-tone={r.status.tone} style={toneVars(r.status.tone)}>
-              <StatusDot tone={r.status.tone} size={8} />
-              <span>{r.status.text}</span>
-            </span>
+    <div className={s.watchWrap}>
+      <div className={s.watchScroll} role="region" aria-label={label} tabIndex={0}>
+        <div className={s.watch} role="table" aria-label={label}>
+          <div className={`${s.watchRow} ${s.watchHead}`} role="row">
+            <span role="columnheader">{ut('Entity')}</span>
+            <span role="columnheader">{ut('ID')}</span>
+            <span role="columnheader">{ut('Rule')}</span>
+            <span role="columnheader">{ut('Severity')}</span>
+            <span role="columnheader">{ut('Now')}</span>
           </div>
-        ))}
+          {rows.map((r) => (
+            <div
+              key={r.entityId}
+              className={s.watchRow}
+              role="row"
+              data-clickable={r.onClick ? '' : undefined}
+              onClick={r.onClick}
+            >
+              <span className={`${s.cellStack} ${s.watchName}`} role="cell">
+                {r.onClick ? (
+                  // the keyboard path; a pointer can click anywhere on the row
+                  <button
+                    type="button"
+                    className={s.rowLink}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      r.onClick?.();
+                    }}
+                  >
+                    {r.name}
+                  </button>
+                ) : (
+                  <span className={s.name}>{r.name}</span>
+                )}
+                <span className={s.muted}>{r.role}</span>
+              </span>
+              <span className={s.watchEntity} role="cell" title={r.entityId}>
+                {r.entityId}
+              </span>
+              <span className={s.watchRule} role="cell">
+                {r.rule}
+              </span>
+              <span className={s.watchSeverity} role="cell">
+                <span className={s.toneChip} data-size="sm" style={toneVars(r.severity.tone)}>
+                  {r.severity.label}
+                </span>
+              </span>
+              <span className={`${s.statusText} ${s.watchNow}`} role="cell" data-tone={r.status.tone} style={toneVars(r.status.tone)}>
+                <StatusDot tone={r.status.tone} size={8} />
+                <span>{r.status.text}</span>
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
-    </ScrollX>
+    </div>
   );
 }
 

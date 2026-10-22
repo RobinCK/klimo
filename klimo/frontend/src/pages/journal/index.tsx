@@ -85,7 +85,15 @@ function useJournalNames(): NameDirectory {
       byKey.set(d.key, name);
       for (const e of d.entityIds) byEntity.set(e, name);
     }
-    return { ...base, entity: (id: string) => byEntity.get(id) ?? base.entity?.(id), device: (key: string) => byKey.get(key) ?? base.device?.(key) };
+    return {
+      ...base,
+      // a spread copies the clock once; the directory's «now» must stay live
+      get now() {
+        return base.now;
+      },
+      entity: (id: string) => byEntity.get(id) ?? base.entity?.(id),
+      device: (key: string) => byKey.get(key) ?? base.device?.(key),
+    };
   }, [base, devices.data]);
 }
 

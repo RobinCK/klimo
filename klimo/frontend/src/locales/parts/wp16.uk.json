@@ -831,6 +831,7 @@
   "the device switches the relay off when it is not renewed": "пристрій вимикає реле, якщо команду не продовжено",
   "the flow temperature from the weather curve": "температуру подачі за погодною кривою",
   "the pump runs": "насос працює",
+  "the pumps": "насоси",
   "the room asks for cooling": "кімната просить холоду",
   "the room asks for heat": "кімната просить тепла",
   "the room target, corrected by the room’s sensors": "ціль кімнати з поправкою за датчиками",

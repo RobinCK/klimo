@@ -34,7 +34,11 @@ function stateOf(m: SentMessage, now: number): { text: string; muted: boolean } 
   const ack = m.targets.find((x) => x.state === 'acknowledged');
   if (ack) return { text: t('«I see it» at {time}', { time: ack.at ? fmtTime(ack.at) : '—' }), muted: false };
   const failed = m.targets.filter((x) => x.state === 'failed');
-  if (failed.length && failed.length === m.targets.length) return { text: t('error: {reason}', { reason: failed[0].error ?? t('not delivered') }), muted: false };
+  if (failed.length && failed.length === m.targets.length) {
+    // a t() nested in another call's arguments is missed by the string extractor
+    const reason = failed[0].error ?? t('not delivered');
+    return { text: t('error: {reason}', { reason }), muted: false };
+  }
   if (states.includes('queued_quiet')) return { text: m.queuedUntil ? t('waits until {time}', { time: fmtClock(m.queuedUntil, now) }) : t('waits for the morning'), muted: true };
   if (states.length && states.every((s) => s === 'pending')) return { text: t('not sent yet'), muted: true };
   if (states.includes('grouped')) return { text: t('grouped'), muted: true };

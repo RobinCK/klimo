@@ -12,6 +12,14 @@ const PX0 = 40;
 const PX1 = 590;
 const PY_TOP = 10;
 const PY_BOTTOM = 140;
+/*
+ * The y labels sit in a gutter of fixed pixels, but the plot is drawn in stretched viewBox units: on a
+ * narrow chart the first point would land on «50°». The plot starts after the widest label (≈ 26 px)
+ * plus, when editable, the knob's 9 px radius, and ends a knob's radius before the right edge.
+ */
+const LABEL_GUTTER_PX = 30;
+const KNOB_GUTTER_PX = 38;
+const KNOB_RIGHT_PX = 12;
 
 export interface CurvePoint {
   /** Outdoor temperature, °C. */
@@ -61,14 +69,17 @@ export function WeatherCurveChart({
     const xHi = xs.length > 1 ? Math.max(...xs) : xLo + 1;
     const yLo = editable ? range[0] : ys.length ? Math.floor(Math.min(...ys) / 5) * 5 - 2 : 25;
     const yHi = editable ? range[1] : ys.length ? Math.max(...ys) + 2.5 : 55;
-    const X = linear(xLo, xHi, PX0, PX1);
+    const toUnits = (px: number) => (boxW > 0 ? (px / boxW) * W : 0);
+    const px0 = Math.max(PX0, toUnits(editable ? KNOB_GUTTER_PX : LABEL_GUTTER_PX));
+    const px1 = editable ? Math.min(PX1, W - toUnits(KNOB_RIGHT_PX)) : PX1;
+    const X = linear(xLo, xHi, px0, px1);
     const Y = linear(yLo, yHi, PY_BOTTOM, PY_TOP);
     // gridlines every 5° when there is room for their labels, sparser on a small chart
     const plotPx = boxH > 0 ? (boxH * (PY_BOTTOM - PY_TOP)) / H : 130;
     const step = [5, 10, 20].find((st) => (st / (yHi - yLo)) * plotPx >= 16) ?? 20;
     const grid = gridValues(yLo + 0.01, yHi - 0.01, step);
-    return { X, Y, yLo, yHi, xLo, xHi, grid };
-  }, [sorted, editable, range, boxH]);
+    return { X, Y, yLo, yHi, xLo, xHi, grid, px0, px1 };
+  }, [sorted, editable, range, boxW, boxH]);
 
   const line = sorted.map((p) => `${g.X(p.x).toFixed(1)},${g.Y(p.y).toFixed(1)}`).join(' ');
   const nowY = now != null && Number.isFinite(now) ? interpolate(sorted, now) : null;
@@ -115,7 +126,7 @@ export function WeatherCurveChart({
       <div ref={box} className={s.curve} data-dragging={drag != null ? '' : undefined} style={{ '--c': color } as CSSProperties}>
         <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={ariaLabel} focusable="false">
           <path
-            d={g.grid.map((v) => `M${PX0} ${g.Y(v).toFixed(1)}H${PX1}`).join('')}
+            d={g.grid.map((v) => `M${g.px0.toFixed(1)} ${g.Y(v).toFixed(1)}H${g.px1.toFixed(1)}`).join('')}
             className={s.curveGrid}
             vectorEffect="non-scaling-stroke"
           />

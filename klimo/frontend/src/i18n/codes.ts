@@ -46,6 +46,7 @@ import {
   sourceFaultLabel,
   sourceModeLabel,
   sourceStateLabel,
+  targetLayerLabel,
   trvManualPolicyLabel,
   windowReactionLabel,
 } from './labels';
@@ -439,9 +440,12 @@ const subjectPump = (p: P, c: Ctx, e: JournalEntry) =>
 function byWhom(p: P): string {
   const by = str(p, 'by');
   if (!by) return '';
+  // a house profile chosen by a layer names the layer («Розклад будинку», «Календар»)
   const label = ['ui', 'card', 'ha', 'voice', 'automation', 'mqtt', 'trv', 'engine', 'rule', 'schedule', 'notification', 'telegram', 'import', 'system'].includes(by)
     ? actorViaLabel(by as never)
-    : by;
+    : ['house_schedule', 'calendar', 'presence', 'default', 'house_manual'].includes(by)
+      ? targetLayerLabel(by as never)
+      : by;
   return ` · ${label}`;
 }
 
