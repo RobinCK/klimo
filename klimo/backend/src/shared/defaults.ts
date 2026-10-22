@@ -150,7 +150,7 @@ export const DEFAULT_ROOM_DEFAULTS: RoomDefaults = {
   windowRemindAfterMin: 20,
 };
 
-export function defaultSettings(lang: Lang = 'uk'): GeneralSettings {
+export function defaultSettings(lang: Lang = 'en'): GeneralSettings {
   return {
     houseName: lang === 'uk' ? 'Дім' : 'Home',
     outdoor: { sensorEntityId: null, weatherEntityId: null, staleAfterMin: 30, holdMin: 30 },
@@ -1001,6 +1001,9 @@ export const DEFAULTS = freeze({
 });
 
 /* ── first-boot seed ──────────────────────────────────────────────────────────────────────────── */
+
+// A fresh install is named in English whatever Home Assistant speaks; the Ukrainian names stay for
+// the simulator's demo house and to recognise rows an older version seeded in Ukrainian.
 
 const SEED_PROFILE_ROWS: readonly (Omit<Profile, 'name' | 'order'> & { uk: string; en: string })[] = [
   { id: 'home', uk: 'Дома', en: 'Home', kind: 'system', color: '#9B87F5', ink: '#140F2E', icon: 'home', heatC: 21.0, coolC: 25.0, frostOnly: false },
