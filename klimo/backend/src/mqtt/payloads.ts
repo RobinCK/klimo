@@ -15,6 +15,8 @@ import type {
   HouseState,
   HubAttrs,
   Id,
+  IncidentDto,
+  IssueCode,
   ITexts,
   Lang,
   PlantState,
@@ -29,6 +31,7 @@ import type {
   Season,
   SeasonState,
   SourceMode,
+  SourceKind,
   SourceRole,
   SourceState,
   SparkDto,
@@ -78,7 +81,16 @@ export interface PublishView {
   durations: DurationOption[];
   problems: { count: number; kinds: EventKind[] };
   alerts: number;
+  /**
+   * Open incidents, hidden ones included. They give the room card's issue its incident (the card's
+   * «Ігнорувати 30 хв» / «Сховати») and keep an issue the user hid off the cards. Without them the
+   * engine's own link on the issue is used and nothing is hidden.
+   */
+  incidents?: readonly IncidentLink[];
 }
+
+/** What a room card needs to know about an incident. */
+export type IncidentLink = Pick<IncidentDto, 'id' | 'kind' | 'roomId' | 'sourceId' | 'entityId' | 'deviceKey' | 'hidden'>;
 
 type OnOff = 'ON' | 'OFF';
 const onOff = (b: boolean): OnOff => (b ? 'ON' : 'OFF');
@@ -109,6 +121,7 @@ export class ViewIndex {
   readonly stateById = new Map<Id, RoomState>();
   readonly summaryById = new Map<Id, RoomSummary>();
   private readonly lines = new Map<Id, Line>();
+  private readonly entities = new Map<Id, Set<string>>();
 
   constructor(readonly view: PublishView) {
     for (const r of view.cfg.rooms) this.roomById.set(r.id, r);
@@ -126,6 +139,55 @@ export class ViewIndex {
 
   sourceName(id: Id | null | undefined): string | null {
     return id ? this.view.cfg.sources.find((s) => s.id === id)?.name ?? null : null;
+  }
+
+  /** The texts shorten a source still called by its default name («від ТН»): they need its kind. */
+  sourceKind(id: Id | null | undefined): SourceKind | null {
+    return id ? this.view.cfg.sources.find((s) => s.id === id)?.kind ?? null : null;
+  }
+
+  /** The open incident behind a room issue: the engine's own link, else the same problem raised for this room or its devices. */
+  incidentOf(roomId: Id, issue: RoomIssue): Pick<IncidentLink, 'id' | 'hidden'> | null {
+    const list = this.view.incidents;
+    if (!list) return issue.incidentId ? { id: issue.incidentId, hidden: false } : null;
+    if (issue.incidentId) {
+      const linked = list.find((i) => i.id === issue.incidentId);
+      if (linked) return linked;
+    }
+    const kinds = ISSUE_EVENTS[issue.code];
+    if (!kinds) return null;
+    const p = issue.params;
+    const entities = this.roomEntities(roomId);
+    return (
+      list.find(
+        (i) =>
+          kinds.includes(i.kind) &&
+          (i.roomId === roomId ||
+            (!!i.entityId && (entities.has(i.entityId) || i.entityId === p.entityId)) ||
+            (!!i.deviceKey && i.deviceKey === p.deviceKey) ||
+            (!!i.sourceId && i.sourceId === p.sourceId)),
+      ) ?? null
+    );
+  }
+
+  /** The room's issues the user has not hidden (snoozed or «Сховати»), most important first. */
+  visibleIssues(roomId: Id): { issue: RoomIssue; incident: Pick<IncidentLink, 'id' | 'hidden'> | null }[] {
+    const state = this.stateById.get(roomId);
+    const summary = this.summaryById.get(roomId);
+    const issues = state?.issues.length ? state.issues : summary?.issue ? [summary.issue] : [];
+    return issues.map((issue) => ({ issue, incident: this.incidentOf(roomId, issue) })).filter((x) => !x.incident?.hidden);
+  }
+
+  private roomEntities(roomId: Id): Set<string> {
+    let set = this.entities.get(roomId);
+    if (!set) {
+      const cfg = this.view.cfg;
+      set = new Set<string>();
+      for (const s of cfg.sensorsByRoom[roomId] ?? []) set.add(s.entityId);
+      for (const e of cfg.emittersByRoom[roomId] ?? []) for (const d of cfg.devicesByEmitter[e.id] ?? []) set.add(d.entityId);
+      this.entities.set(roomId, set);
+    }
+    return set;
   }
 
   roomName(id: Id): string {
@@ -153,6 +215,27 @@ interface Line {
   at: EpochMs | null;
 }
 
+/** Which alerts stand behind a room issue (hints and waits have none). */
+const ISSUE_EVENTS: Partial<Record<IssueCode, readonly EventKind[]>> = {
+  no_data: ['room_no_data'],
+  sensor_offline: ['sensor_offline', 'entity_unavailable'],
+  fallback_sensors: ['sensor_offline', 'entity_unavailable'],
+  source_fault: ['source_failed', 'source_unavailable'],
+  trv_failed: ['trv_not_confirmed'],
+  trv_retry: ['trv_not_confirmed'],
+  entity_missing: ['entity_missing'],
+  too_cold: ['room_too_cold'],
+  too_hot: ['room_too_hot'],
+  overheat: ['overheat'],
+  actuator_conflict: ['actuator_conflict'],
+  condensation: ['condensation_risk'],
+  humidity_high: ['humidity_high'],
+  floor_humid: ['dew_point_guard'],
+  battery_low: ['battery_low'],
+  window_long: ['window_open_long'],
+  signal_weak: ['signal_weak'],
+};
+
 /* ── house state document (select/sensor/binary entities of the house) ─────────────────────── */
 
 export interface HouseStateDoc {
@@ -175,9 +258,14 @@ export interface HouseStateDoc {
   bivalent_point: Celsius;
 }
 
-/** Until when the active house profile holds (manual override end, else the schedule block end). */
+/**
+ * Until when the active house profile is known to hold: the end of a change by hand or of the schedule
+ * block. A calendar or presence profile lasts as long as its reason, which the schedule's block end
+ * does not tell.
+ */
 export function houseProfileUntil(p: HouseProfileState): EpochMs | null {
-  return p.layer === 'house_manual' ? p.override?.until ?? null : p.scheduledUntil;
+  if (p.layer === 'house_manual') return p.override?.until ?? null;
+  return p.layer === 'house_schedule' ? p.scheduledUntil : null;
 }
 
 /** The source that «works» now: the season's lead when it runs, else the first running one. */
@@ -257,6 +345,7 @@ export function roomStatePayload(ix: ViewIndex, room: RoomConfig, state: RoomSta
     hi: dual ? r1(t.coolC) : null,
     preset: ix.profileName(t.profileId),
     target: r1(t.displayC ?? t.heatC ?? t.coolC),
+    target_mode: t.mode,
     dew: r1(state.humidity.dewPointC),
     heat: onOff(state.demand.mode === 'heat'),
     cool: onOff(state.demand.mode === 'cool'),
@@ -344,43 +433,45 @@ function targetLine(ix: ViewIndex, roomId: Id): Line {
   const frost = t.frostFloorC;
   const value = r1(summary.src.valueC ?? t.displayC ?? t.heatC ?? t.coolC);
   const until = summary.src.until ?? t.until;
+  // `at` goes into the vars too: a «до {t}» part without a clock to fill is dropped, not left dangling
+  const line = (kind: Line['k'], key: CardTextKey, vars: ReasonParams, at: EpochMs | null): Line => ({ k: kind, t: ix.tx(key, { ...vars, at }), at });
   switch (k) {
     case 'schedule':
-      return { k, t: ix.tx('card.src.schedule', { profile, t: value }), at: until };
+      return line(k, 'card.src.schedule', { profile, t: value }, until);
     case 'profile_updated':
-      return { k, t: ix.tx('card.src.profile_updated', { profile, t: value }), at: until };
+      return line(k, 'card.src.profile_updated', { profile, t: value }, until);
     case 'manual':
-      return { k, t: ix.tx('card.src.manual', { t: value }), at: until };
+      return line(k, 'card.src.manual', { t: value }, until);
     case 'range':
-      return { k, t: ix.tx('card.src.range', { lo: r1(summary.range?.lo ?? t.heatC), hi: r1(summary.range?.hi ?? t.coolC) }), at: until };
+      return line(k, 'card.src.range', { lo: r1(summary.range?.lo ?? t.heatC), hi: r1(summary.range?.hi ?? t.coolC) }, until);
     case 'boost':
-      return { k, t: ix.tx('card.src.boost', { delta: r1(summary.src.deltaC), t: value }), at: until };
+      return line(k, 'card.src.boost', { delta: r1(summary.src.deltaC), t: value }, until);
     case 'window':
       return state.window.reactionActive || !state.window.reactionAt
-        ? { k, t: ix.tx('card.src.window'), at: summary.src.since ?? state.window.openSince }
-        : { k, t: ix.tx('card.src.window_pending'), at: state.window.reactionAt };
+        ? line(k, 'card.src.window', {}, summary.src.since ?? state.window.openSince)
+        : line(k, 'card.src.window_pending', {}, state.window.reactionAt);
     case 'airing':
-      return { k, t: ix.tx('card.src.airing'), at: until };
+      return line(k, 'card.src.airing', {}, until);
     case 'off': {
-      if (t.layer === 'room_off') return { k, t: ix.tx('card.src.off_room', { frost }), at: until };
-      if (state.demand.block === 'house_off' || ix.view.season.houseMode === 'off') return { k, t: ix.tx('card.src.off_house', { frost }), at: null };
-      return { k, t: ix.tx('card.src.off_profile', { profile, frost }), at: until };
+      if (t.layer === 'room_off') return line(k, 'card.src.off_room', { frost }, until);
+      if (state.demand.block === 'house_off' || ix.view.season.houseMode === 'off') return line(k, 'card.src.off_house', { frost }, null);
+      return line(k, 'card.src.off_profile', { profile, frost }, until);
     }
     case 'monitor': {
       const comfort = r1(summary.src.valueC ?? summary.targetC);
-      if (comfort !== null) return { k, t: ix.tx('card.src.monitor', { t: comfort }), at: null };
-      return { k, t: ix.tx('card.src.monitor_nothing', { mode: ix.view.season.season === 'cooling' ? 'cool' : 'heat' }), at: null };
+      if (comfort !== null) return line(k, 'card.src.monitor', { t: comfort }, null);
+      return line(k, 'card.src.monitor_nothing', { mode: ix.view.season.season === 'cooling' ? 'cool' : 'heat' }, null);
     }
     case 'frost':
-      return { k, t: ix.tx('card.src.frost', { frost }), at: null };
+      return line(k, 'card.src.frost', { frost }, null);
     case 'presence':
-      return { k, t: ix.tx('card.src.presence', { profile }), at: until };
+      return line(k, 'card.src.presence', { profile }, until);
     case 'calendar':
-      return { k, t: ix.tx('card.src.calendar', { profile, t: value }), at: until };
+      return line(k, 'card.src.calendar', { profile, t: value }, until);
     case 'room_profile':
-      return { k, t: ix.tx('card.src.room_profile', { profile }), at: until };
+      return line(k, 'card.src.room_profile', { profile }, until);
     case 'preheat':
-      return { k, t: ix.tx('card.src.preheat', { t: value, profile: ix.profileName(t.next?.profileId) ?? profile }), at: t.preheat?.forBlockAt ?? until };
+      return line(k, 'card.src.preheat', { t: value, profile: ix.profileName(t.next?.profileId) ?? profile }, t.preheat?.forBlockAt ?? until);
     default:
       return { k: 'no_data', t: ix.tx('card.src.no_data'), at: null };
   }
@@ -388,26 +479,28 @@ function targetLine(ix: ViewIndex, roomId: Id): Line {
 
 function deviceLine(ix: ViewIndex, room: RoomConfig, state: RoomState, summary: RoomSummary): RoomCardAttrs['dev'] {
   const d = summary.device;
+  // the texts shorten a source still called by its default name («від ТН») and need its kind for that
   const source = ix.sourceName(d.sourceId);
+  const sourceKind = ix.sourceKind(d.sourceId);
   const syncing = (state.sync.phase === 'sending' || state.sync.phase === 'partial' || state.sync.phase === 'retry') && d.total > 0 && d.acked < d.total;
   switch (d.kind) {
     case 'trv': {
       if (syncing) return { k: d.kind, t: ix.tx('card.dev.trv_sync', { acked: d.acked, total: d.total }) };
-      if (d.valvePct !== null) return { k: d.kind, t: ix.tx('card.dev.valve', { pct: r0(d.valvePct), source }) };
+      if (d.valvePct !== null) return { k: d.kind, t: ix.tx('card.dev.valve', { pct: r0(d.valvePct), source, sourceKind }) };
       const closed = state.trvs.length > 0 && state.trvs.every((x) => x.activity !== 'heating') && state.demand.mode !== 'heat';
-      if (closed) return { k: d.kind, t: ix.tx('card.dev.trv_closed', { total: d.total }) };
-      return { k: d.kind, t: ix.tx('card.dev.trv', { source, acked: d.acked, total: d.total }) };
+      if (closed) return { k: d.kind, t: ix.tx('card.dev.trv_closed', { total: state.trvs.length }) };
+      return { k: d.kind, t: ix.tx('card.dev.trv', { source, sourceKind, acked: d.acked, total: d.total }) };
     }
     case 'floor':
-      return { k: d.kind, t: ix.tx('card.dev.floor', { source }) };
+      return { k: d.kind, t: ix.tx('card.dev.floor', { source, sourceKind }) };
     case 'trvfloor': {
       if (syncing) return { k: d.kind, t: ix.tx('card.dev.trv_sync', { acked: d.acked, total: d.total }) };
       const extra = (ix.view.cfg.emittersByRoom[room.id] ?? []).filter((e) => e.enabled && e.kind !== 'floor').map((e) => e.name).join(', ');
-      return { k: d.kind, t: ix.tx('card.dev.trvfloor', { extra, source }) };
+      return { k: d.kind, t: ix.tx('card.dev.trvfloor', { extra, source, sourceKind }) };
     }
     case 'ac': {
       const running = state.emitters.some((e) => e.kind === 'direct' && e.open);
-      return running ? { k: d.kind, t: ix.tx('card.dev.ac', { mode: state.demand.mode }) } : { k: d.kind, t: ix.tx('card.dev.ac_idle') };
+      return running ? { k: d.kind, t: ix.tx('card.dev.ac', { mode: state.demand.mode === 'none' ? null : state.demand.mode }) } : { k: d.kind, t: ix.tx('card.dev.ac_idle') };
     }
     case 'heater': {
       const on = state.emitters.some((e) => e.kind === 'direct' && e.open);
@@ -456,7 +549,8 @@ export function roomCardAttrs(ix: ViewIndex, room: RoomConfig): RoomCardAttrs | 
   const texts = ix.view.texts;
   const src = ix.srcLine(room.id);
   const w = summary.window;
-  const issue = summary.issue;
+  const issues = ix.visibleIssues(room.id);
+  const first = issues[0];
   const next = state.target.next;
   const nextTemp = state.target.mode === 'cool' ? next?.coolC ?? next?.heatC : next?.heatC ?? next?.coolC;
   let why: string | null = null;
@@ -486,17 +580,24 @@ export function roomCardAttrs(ix: ViewIndex, room: RoomConfig): RoomCardAttrs | 
     hw: summary.humidityWarn,
     win: w
       ? w.open
-        ? { o: true, t: ix.tx('card.win.open'), at: w.openSince }
+        ? { o: true, t: ix.tx('card.win.open', { at: w.openSince }), at: w.openSince }
         : { o: false, t: w.total > 1 ? ix.tx('card.win.closed_n', { n: w.total }) : ix.tx('card.win.closed'), at: null }
       : null,
     dev: deviceLine(ix, room, state, summary),
     src: { k: src.k, t: src.t, at: src.at },
-    iss: issue
-      ? { tone: issue.tone, i: issue.icon, t: issueText(texts, issue), at: issueAt(issue), more: Math.max(0, summary.issuesCount - 1) }
+    iss: first
+      ? {
+          tone: first.issue.tone,
+          i: first.issue.icon,
+          t: issueText(texts, first.issue),
+          at: issueAt(first.issue),
+          more: issues.length - 1,
+          id: first.incident?.id ?? null,
+        }
       : null,
     sp,
     stg,
-    next: next ? { t: ix.tx('card.next', { profile: ix.profileName(next.profileId), temp: r1(nextTemp ?? null) }), at: next.at } : null,
+    next: next ? { t: ix.tx('card.next', { profile: ix.profileName(next.profileId), temp: r1(nextTemp ?? null), at: next.at }), at: next.at } : null,
     why,
     th: stableThermostat(th),
     sync: state.sync,
@@ -561,31 +662,46 @@ function sourceAt(s: SourceState): EpochMs | null {
   return typeof until === 'number' ? until : null;
 }
 
+/** A reason in words; a code the texts cannot render is better left out than shown raw. */
+function reasonText(ix: ViewIndex, r: Parameters<ITexts['reason']>[0] | undefined): string | null {
+  if (!r) return null;
+  try {
+    return ix.view.texts.reason(r) || null;
+  } catch {
+    return null;
+  }
+}
+
+/** The state chip of a source row («Гріє», «Пауза · ще {d}», «Аварія»). */
 function sourceLine(ix: ViewIndex, s: SourceState): string {
-  const texts = ix.view.texts;
-  const reason = (r: Parameters<ITexts['reason']>[0] | undefined): string | null => {
-    if (!r) return null;
-    try {
-      return texts.reason(r);
-    } catch {
-      return null;
-    }
-  };
   return ix.tx('card.source.line', {
     state: s.state,
     role: s.role,
     mode: s.mode,
     on: s.on,
+    fault: s.fault?.code ?? null,
+    blocker: s.blockers[0]?.code ?? null,
+    at: sourceAt(s),
+  });
+}
+
+/**
+ * The line under a source: telemetry while it runs («з {t} · подача 38° · 2.1 кВт · COP 3.1»), the
+ * fault and its retry, else why it is not running — the first blocker, or its role in the strategy.
+ * Supply is rounded to whole degrees so the hub does not republish on every tenth.
+ */
+function sourceSub(ix: ViewIndex, s: SourceState): string {
+  const waiting = s.on ? null : reasonText(ix, s.blockers[0]) ?? (s.role === 'unused' ? null : reasonText(ix, s.roleReason));
+  return ix.tx('card.source.sub', {
+    state: s.state,
+    on: s.on,
+    mode: s.mode,
     supply: r0(s.telemetry.supplyC),
     power: r1(s.telemetry.powerKw),
     cop: r1(s.telemetry.cop),
-    rooms: ix.roomNames(s.servingRoomIds),
-    roomCount: s.servingRoomIds.length,
     fault: s.fault?.code ?? null,
-    blocker: s.blockers[0]?.code ?? null,
-    roleText: reason(s.roleReason),
-    detailText: reason(s.detail),
-    blockerText: reason(s.blockers[0]),
+    text: s.on ? reasonText(ix, s.roleReason) : waiting,
+    at: sourceAt(s),
   });
 }
 
@@ -608,7 +724,7 @@ function houseTiles(ix: ViewIndex): HubAttrs['house']['tiles'] {
         mode: lead?.mode ?? null,
         n: running.length,
       }),
-      sub: lead ? sourceLine(ix, lead) : '',
+      sub: lead ? sourceSub(ix, lead) : '',
       tone: lead ? modeTone(lead.mode) : 'hold',
       at: lead ? sourceAt(lead) : null,
       wide: running.length > 1,
@@ -617,7 +733,7 @@ function houseTiles(ix: ViewIndex): HubAttrs['house']['tiles'] {
       key: 'pumps',
       label: L.pumps,
       value: ix.tx('card.tile.pumps', { n: pumpCount, state: pumpsOn.length ? 'running' : 'off' }),
-      sub: pumpsOn.map((c) => circuitName(ix, c.circuitId)).join(', '),
+      sub: listText(pumpsOn.map((c) => lowerFirst(circuitName(ix, c.circuitId))), lang),
       tone: pumpsOn.length ? modeTone(pumpsOn[0].mode) : 'hold',
       at: null,
       wide: false,
@@ -647,6 +763,21 @@ const TILE_LABELS = {
   en: { source: 'Source', sources: 'Sources', pumps: 'Pumps', humidity: 'Humidity', humidityAvg: 'house average', outdoor: 'Outdoor' },
   uk: { source: 'Джерело', sources: 'Джерела', pumps: 'Насоси', humidity: 'Вологість', humidityAvg: 'середня по дому', outdoor: 'Надворі' },
 } as const;
+
+/** «Радіатори» reads as «радіатори» inside a sentence; an abbreviation («ТП-1») keeps its case. */
+function lowerFirst(name: string): string {
+  const [a, b] = name;
+  return a && b && b === b.toLocaleLowerCase() && b !== b.toLocaleUpperCase() ? a.toLocaleLowerCase() + name.slice(1) : name;
+}
+
+/** «радіатори й підлога», «a, b і c» (Ukrainian «й» after a vowel, «і» after a consonant); "a and b". */
+function listText(items: string[], lang: Lang): string {
+  if (items.length < 2) return items.join('');
+  const head = items.slice(0, -1).join(', ');
+  const tail = items[items.length - 1];
+  if (lang !== 'uk') return `${head} and ${tail}`;
+  return `${head} ${/[аеєиіїоуюяАЕЄИІЇОУЮЯ]$/.test(head) ? 'й' : 'і'} ${tail}`;
+}
 
 function circuitName(ix: ViewIndex, id: Id): string {
   const c = ix.view.cfg.circuits.find((x) => x.id === id);
@@ -678,6 +809,7 @@ export function hubAttrs(ix: ViewIndex): HubAttrs {
     .map((s) => {
       const line = ix.srcLine(s.id);
       const stText = ix.tx(`card.state.${s.state}` as CardTextKey);
+      const issue = ix.visibleIssues(s.id)[0]?.issue ?? null;
       return {
         id: s.id,
         s: s.slug,
@@ -685,11 +817,11 @@ export function hubAttrs(ix: ViewIndex): HubAttrs {
         st: s.state,
         t: r1(s.tempC),
         tg: r1(s.targetC),
-        it: s.issue?.tone ?? null,
-        iss: s.issue ? issueText(view.texts, s.issue) : null,
+        it: issue?.tone ?? null,
+        iss: issue ? issueText(view.texts, issue) : null,
         sub: ix.tx('card.room.sub', { state: stText, src: line.t }),
         at: line.at,
-        attn: !!s.issue || s.state === 'window',
+        attn: !!issue || s.state === 'window',
         ord: s.order,
       };
     });
@@ -718,7 +850,7 @@ export function hubAttrs(ix: ViewIndex): HubAttrs {
       tot: house.counts.total,
       att: house.counts.attention,
       head: houseHeadline(ix),
-      sub: lead ? ix.tx('card.house.sub', { source: leadName, state: lead.state, mode: lead.mode }) : '',
+      sub: lead ? ix.tx('card.house.sub', { source: leadName, sourceKind: ix.sourceKind(lead.sourceId), state: lead.state, mode: lead.mode, at: lead.since }) : '',
       at: lead?.since ?? null,
       attText: house.counts.attention > 0 ? ix.tx('card.house.attention', { n: house.counts.attention }) : null,
       hum: r0(house.humidityAvgPct),
@@ -727,10 +859,12 @@ export function hubAttrs(ix: ViewIndex): HubAttrs {
         layer: profile.layer,
         until,
         next: profile.nextProfileId,
+        // how the profile was chosen: by schedule (until the block ends, then the next one), by hand,
+        // by the calendar, by presence or the default
         t:
           until !== null
-            ? ix.tx('card.house.profile_until', { profile: ix.profileName(profile.nextProfileId), active: ix.profileName(profile.activeProfileId), layer: profile.layer })
-            : ix.tx('card.house.profile', { profile: null, active: ix.profileName(profile.activeProfileId), layer: profile.layer }),
+            ? ix.tx('card.house.profile_until', { profile: ix.profileName(profile.nextProfileId), layer: profile.layer, at: until })
+            : ix.tx('card.house.profile', { profile: null, layer: profile.layer }),
       },
       tiles: houseTiles(ix),
     },
@@ -749,6 +883,7 @@ export function hubAttrs(ix: ViewIndex): HubAttrs {
           on: s.on,
           role: s.role,
           t: sourceLine(ix, s),
+          sub: sourceSub(ix, s),
           at: sourceAt(s),
         };
       }),
@@ -763,10 +898,13 @@ export function hubAttrs(ix: ViewIndex): HubAttrs {
         const runOnMin = pumpCfg.reduce((m, p) => Math.max(m, c.mode === 'cool' ? p.runOnCoolMin : p.runOnHeatMin), 0);
         const lineState =
           c.state.code === 'circuit.summer' ? 'summer' : c.runOnUntil !== null ? 'run_on' : pump?.state ?? (c.pumpOn ? 'running' : 'off');
+        const feeding = followsSource ? c.feedingSourceIds : [];
         const vars: ReasonParams = {
           state: lineState,
           rooms: !followsSource && c.requestingRoomIds.length ? ix.roomNames(c.requestingRoomIds) : null,
-          source: followsSource && c.feedingSourceIds.length ? c.feedingSourceIds.map((id) => ix.sourceName(id) ?? id).join(', ') : null,
+          source: feeding.length ? feeding.map((id) => ix.sourceName(id) ?? id).join(', ') : null,
+          // one source the pump follows reads by its short word when it still has its default name
+          sourceKind: feeding.length === 1 ? ix.sourceKind(feeding[0]) : null,
           runOnMin: runOnMin > 0 ? runOnMin : null,
           stateCode: c.state.code,
           mode: c.mode,
@@ -778,6 +916,7 @@ export function hubAttrs(ix: ViewIndex): HubAttrs {
           excluded: ix.roomNames(c.excludedRooms.map((x) => x.roomId)),
           sources: c.feedingSourceIds.map((id) => ix.sourceName(id) ?? id).join(', '),
           supply: r0(c.supplyC),
+          at: c.runOnUntil,
         };
         return {
           id: c.circuitId,
@@ -820,6 +959,7 @@ export function hubAttrs(ix: ViewIndex): HubAttrs {
           active: t.active,
           value: typeof t.value === 'number' ? r1(t.value) : t.value,
           live: t.live.code,
+          at: t.active ? t.since : t.nextChangeAt,
         }),
         at: t.active ? t.since : t.nextChangeAt,
       })),

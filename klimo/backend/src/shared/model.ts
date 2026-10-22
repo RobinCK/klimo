@@ -3004,7 +3004,19 @@ export interface HubAttrs {
   };
   profiles: { id: Id; n: string; c: string; k: string; i: IconName; h: Celsius; cl: Celsius; frost: boolean }[];
   durations: { id: HouseDuration; u: EpochMs | null }[];
-  sources: { id: Id; n: string; i: IconName; st: SourceStateKind; tone: Tone; on: boolean; role: SourceRole; t: string; at: EpochMs | null }[];
+  sources: {
+    id: Id;
+    n: string;
+    i: IconName;
+    st: SourceStateKind;
+    tone: Tone;
+    on: boolean;
+    role: SourceRole;
+    t: string;
+    /** Second line: «з {t} · подача 38° · 2.1 кВт · COP 3.1» running, else why it waits («Резерв нижче −10.0°»). */
+    sub: string;
+    at: EpochMs | null;
+  }[];
   circuits: { id: Id; n: string; tone: Tone; on: boolean; t: string; sub: string; at: EpochMs | null }[];
   energy: { g: EnergyState['grid']; pv: number | null; bat: number | null; load: number | null; t: string; tone: Tone } | null;
   triggers: { id: Id; n: string; on: boolean; t: string; at: EpochMs | null }[];
@@ -3044,7 +3056,8 @@ export interface RoomCardAttrs {
   win: { o: boolean; t: string; at: EpochMs | null } | null;
   dev: { k: RoomSummary['device']['kind']; t: string };
   src: { k: TargetDisplayKind; t: string; at: EpochMs | null };
-  iss: { tone: 'warn' | 'err'; i: IconName; t: string; at: EpochMs | null; more: number } | null;
+  /** `id` = the incident behind the issue (null when none is open): «Ігнорувати 30 хв» / «Сховати». */
+  iss: { tone: 'warn' | 'err'; i: IconName; t: string; at: EpochMs | null; more: number; id: Id | null } | null;
   sp: (number | null)[]; // 13 points, 6 h
   stg: (number | null)[] | null;
   next: { t: string; at: EpochMs } | null; // «Далі: {t} → Ніч 18.0°»
@@ -3092,6 +3105,8 @@ export interface RoomClimateStatePayload {
   hi: Celsius | null;
   preset: string | null; // effective profile NAME
   target: Celsius | null; // sensor.klimo_<slug>_target
+  /** Which bound `target` is (attribute `mode` of the target sensor; history draws the band from it). */
+  target_mode: RoomState['target']['mode'];
   dew: Celsius | null;
   heat: 'ON' | 'OFF';
   cool: 'ON' | 'OFF';
@@ -3944,7 +3959,7 @@ export type CardTextKey =
   | 'card.house.head' | 'card.house.all_ok' | 'card.house.neutral' | 'card.house.off' | 'card.house.sub'
   | 'card.house.attention' | 'card.house.profile' | 'card.house.profile_until'
   | 'card.tile.source' | 'card.tile.pumps' | 'card.tile.humidity' | 'card.tile.outdoor'
-  | 'card.season' | 'card.source.line' | 'card.circuit.line' | 'card.circuit.sub' | 'card.energy.line' | 'card.trigger.line'
+  | 'card.season' | 'card.source.line' | 'card.source.sub' | 'card.circuit.line' | 'card.circuit.sub' | 'card.energy.line' | 'card.trigger.line'
   | 'card.state.heat' | 'card.state.cool' | 'card.state.hold' | 'card.state.wait' | 'card.state.window'
   | 'card.state.off' | 'card.state.frost' | 'card.state.error' | 'card.state.monitor'
   | 'card.error.unknown_action' | 'card.error.forbidden' | 'card.error.validation' | 'card.error.not_found';

@@ -97,7 +97,7 @@ export function InboxList({ inbox, ctx, now, grid }: { inbox: InboxModel; ctx: C
         title={w.title}
         text={w.text || w.title}
         actions={actions}
-        resolved={handled ? `${handled.result}.` : undefined}
+        resolved={handled ? handled.result : undefined}
       />
     );
   });

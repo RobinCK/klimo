@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ChannelKind, ChannelStatus, NotificationsDto, NotifyServiceDto, NotifyTargetCreateRequest, TelegramPairDto, TelegramPairStatusDto, Tone } from '@api/model';
 import { api } from '@api/endpoints';
-import { useResource } from '@data';
+import { useAutosave, useResource } from '@data';
 import {
   AutoGrid,
   Button,
@@ -331,6 +331,21 @@ function ChatIdDialog({ model, onClose }: { model: NotificationsModel; onClose: 
 
 /* ---------------- the cards ---------------- */
 
+/** The HA service the integration mode sends through; saved after typing stops. */
+function HaServiceField({ value, model }: { value: string | null; model: NotificationsModel }) {
+  const auto = useAutosave(value ?? '', (next: string) => model.patchSettings({ telegram: { haService: next.trim() || null } }), { debounceMs: 800 });
+  return (
+    <TextField
+      label={t('Home Assistant service')}
+      value={auto.value}
+      onChange={auto.set}
+      onBlur={() => void auto.flush()}
+      mono
+      placeholder="telegram_bot.send_message"
+    />
+  );
+}
+
 type Open = { kind: 'target'; target: Target } | { kind: 'phone' } | { kind: 'pair' } | { kind: 'chat' } | null;
 
 export function ChannelsSection({ dto, model, canEdit }: { dto: NotificationsDto; model: NotificationsModel; canEdit: boolean }) {
@@ -347,7 +362,10 @@ export function ChannelsSection({ dto, model, canEdit }: { dto: NotificationsDto
   const openCount = panelChannel?.openCount ?? 0;
   const edit = (target: Target) => (canEdit ? () => setOpen({ kind: 'target', target }) : undefined);
 
-  const panelStatus = panel && panel.enabled && panelChannel?.status === 'ok' ? { tone: 'ok' as Tone, label: t('{count} open', { count: openCount }) } : statusOf(dto, 'ha_persistent', panel ? [panel] : []);
+  const panelStatus: { tone: Tone; label: string } =
+    panel && panel.enabled && panelChannel?.status === 'ok'
+      ? { tone: 'ok', label: t('{count} open', { count: openCount }) }
+      : statusOf(dto, 'ha_persistent', panel ? [panel] : []);
 
   const example = [
     'event_type: klimo_event',
@@ -449,13 +467,7 @@ export function ChannelsSection({ dto, model, canEdit }: { dto: NotificationsDto
               ) : null}
             </Stack>
           ) : canEdit ? (
-            <TextField
-              label={t('Home Assistant service')}
-              value={tg.haService ?? ''}
-              onChange={(haService) => void model.patchSettings({ telegram: { haService: haService.trim() || null } })}
-              mono
-              placeholder="telegram_bot.send_message"
-            />
+            <HaServiceField value={tg.haService} model={model} />
           ) : null}
           <Stack gap="xs">
             {chats.map((x) => (

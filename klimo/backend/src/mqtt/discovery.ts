@@ -646,9 +646,18 @@ function addRoom(c: Catalogue, input: DiscoveryInput, room: RoomConfig): void {
       state_topic: state,
       value_template: json('target'),
       json_attributes_topic: state,
-      json_attributes_template: "{{ {'lo': value_json.lo, 'hi': value_json.hi, 'source': value_json.attrs.target_source, 'until': value_json.attrs.until} | tojson }}",
+      // `mode` says which bound the state is (heat / cool / dual): the recorder history of this sensor
+      // is how the room chart redraws past target bands
+      json_attributes_template:
+        "{{ {'lo': value_json.lo, 'hi': value_json.hi, 'mode': value_json.target_mode | default(none), 'source': value_json.attrs.target_source, 'until': value_json.attrs.until} | tojson }}",
     },
-    read: fromRoom('target', (d) => ({ lo: d.lo ?? null, hi: d.hi ?? null, source: asDoc(d.attrs).target_source ?? null, until: asDoc(d.attrs).until ?? null })),
+    read: fromRoom('target', (d) => ({
+      lo: d.lo ?? null,
+      hi: d.hi ?? null,
+      mode: d.target_mode ?? null,
+      source: asDoc(d.attrs).target_source ?? null,
+      until: asDoc(d.attrs).until ?? null,
+    })),
   });
   if (sensors.some((s) => s.role === 'humidity')) {
     c.add({

@@ -163,7 +163,7 @@ export function DisplaySection({ bundle, onSaved, canEdit, haUnits }: { bundle: 
           value={scheme.pref}
           full
           options={[
-            { value: 'auto', label: t('As Home Assistant') },
+            { value: 'auto', label: t('As in HA') },
             { value: 'dark', label: t('Dark') },
             { value: 'light', label: t('Light') },
           ]}

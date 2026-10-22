@@ -283,7 +283,7 @@ export default function DevicesPage(): JSX.Element {
         <Stack gap="md">
           {phone ? (
             // a long row of pills scrolls sideways on a phone instead of stacking four lines high
-            <ScrollX minWidth={760} ariaLabel={t('Device filter')}>
+            <ScrollX minWidth={FILTERS.length * 120} ariaLabel={t('Device filter')}>
               {filterPills}
             </ScrollX>
           ) : null}
