@@ -5,6 +5,7 @@ import { uuid } from '../common/ids';
 import { errorText, LogOnce } from '../common/logger';
 import { lazyRef } from '../common/refs';
 import { env } from '../env';
+import type { RecentRoomTemps } from '../ha/history.service';
 import { deepClone, defaultPumpMemory, defaultSourceMemory, ENGINE_DEFAULTS } from '../shared/defaults';
 import { round1 } from '../shared/model';
 import type {
@@ -62,6 +63,7 @@ import {
   ENTITY_SEARCH,
   HA_INPUTS,
   HA_PORT,
+  HISTORY,
   INCIDENTS,
   JOURNAL,
   MEMORY_STORE,
@@ -76,7 +78,7 @@ import { evaluate } from './core/evaluate';
 import { houseProfileEdges } from './core/targets';
 import { trvReleaseDesired } from './core/trv';
 import { interestSet, templateNodes } from './interest-set';
-import { observedMatches, ReconcilerService, type ActuatorInfo, type ConflictEvent, type LedgerChange, type ManualChange, type ReconcileOutcome } from './reconciler.service';
+import { ReconcilerService, type ActuatorInfo, type ConflictEvent, type LedgerChange, type ManualChange, type ReconcileOutcome } from './reconciler.service';
 import { progressOf, roomSyncNow, RuntimeCache } from './runtime.cache';
 import { failsafeDesired } from './shutdown';
 import { SnapshotService } from './snapshot.service';
@@ -113,6 +115,10 @@ const AUTO_AIRING_COOLDOWN_MS = 6 * HOUR_MS;
 const TEST_DEFAULT_SEC = 120;
 const TEST_RANGE_SEC: [number, number] = [30, 600];
 const RELEASE_TIMEOUT_MS = 30 * SEC;
+/** The room temperatures of the last hour are read back from the recorder after a restart… */
+const SEED_SPAN_MS = HOUR_MS;
+/** …and the first evaluation waits at most this long for them (a late answer still counts). */
+const SEED_WAIT_MS = 3 * SEC;
 const ENGINE_ACTOR: Actor = { via: 'engine', userId: null, userName: null, contextId: null };
 
 type Phase = 'starting' | 'running' | 'stopping' | 'stopped';
@@ -183,6 +189,7 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
   private readonly roomActions: () => IRoomActions | null;
   private readonly entitySearch: () => IEntitySearch | null;
   private readonly attribution: () => IAttribution | null;
+  private readonly recorder: () => RecentRoomTemps | null;
 
   private phase: Phase = 'starting';
   /** A warm start is under way (HA may announce itself twice meanwhile). */
@@ -253,6 +260,7 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
     this.roomActions = lazyRef<IRoomActions>(ref, ROOM_ACTIONS);
     this.entitySearch = lazyRef<IEntitySearch>(ref, ENTITY_SEARCH);
     this.attribution = lazyRef<IAttribution>(ref, ATTRIBUTION);
+    this.recorder = lazyRef<RecentRoomTemps>(ref, HISTORY);
   }
 
   /* ── lifecycle ──────────────────────────────────────────────────────────────────────────────── */
@@ -439,6 +447,7 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
     }
     if (!late) this.profileCloseAt = ws.closeAt;
     await this.expireOverrides(now);
+    await this.seedHistory(cfg, now);
 
     const dryRunMs = cfg.safety.startupDryRunSec * SEC;
     this.dryRunUntil = now + dryRunMs;
@@ -713,6 +722,27 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
     this.reconciler.quietManualDetection(now + MANUAL_QUIET_MS);
     this.reconciler.requestResync(null, 'the clock change', true);
     this.lastTickAt = now;
+    void this.seedHistory(this.config.engineConfig(), now);
+  }
+
+  /**
+   * The trend and the temperature-drop window check read the last hour of room temperatures, kept in
+   * memory only. After a restart or a jump of the clock that hour comes from the recorder, so the
+   * «°/год» does not wait 15 min for new samples.
+   */
+  private async seedHistory(cfg: EngineConfig, now: EpochMs): Promise<void> {
+    const recorder = this.recorder();
+    if (!recorder?.recentRoomTemps || !this.ha.connected || !cfg.rooms.length) return;
+    const load = recorder.recentRoomTemps(cfg.rooms, now - SEED_SPAN_MS, now).then(
+      (points) => this.snapshot.seed(points, this.clock.now()),
+      (e: unknown) => this.log.debug(`room temperatures not read back from the recorder: ${errorText(e)}`),
+    );
+    let timer: NodeJS.Timeout | undefined;
+    const giveUp = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, SEED_WAIT_MS);
+    });
+    await Promise.race([load, giveUp]);
+    clearTimeout(timer);
   }
 
   private updateUnits(found: { entityId: EntityId; unit: string }[], decisions: Decision[]): void {
@@ -803,17 +833,21 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
   private describe(cfg: EngineConfig, d: DesiredActuator): ActuatorInfo {
     const hit = this.describeCache.get(d.key);
     if (hit && hit.rev === cfg.revision) return hit.info;
-    let info: ActuatorInfo = { deviceKey: d.entityId ? `entity:${d.entityId}` : null, zigbee: null };
+    let info: ActuatorInfo = { deviceKey: d.entityId ? `entity:${d.entityId}` : null, zigbee: null, name: null };
     if (d.owner.type === 'trv' || d.owner.type === 'zone') {
       const dev = Object.values(cfg.devicesByEmitter).flat().find((x) => x.id === d.owner.id);
-      if (dev) info = { deviceKey: dev.haDeviceId ?? `entity:${dev.entityId}`, zigbee: dev.transport.type === 'z2m' ? dev.transport.instanceId : null };
+      if (dev) info = { deviceKey: dev.haDeviceId ?? `entity:${dev.entityId}`, zigbee: dev.transport.type === 'z2m' ? dev.transport.instanceId : null, name: dev.name };
     } else if (d.entityId) {
       try {
         const dev = this.entitySearch()?.deviceOf(d.entityId);
-        if (dev) info = { deviceKey: dev.key, zigbee: dev.transport.type === 'z2m' ? dev.transport.instanceId : null };
+        if (dev) info = { deviceKey: dev.key, zigbee: dev.transport.type === 'z2m' ? dev.transport.instanceId : null, name: dev.name };
       } catch (e) {
         this.once.warn('describe', `device lookup failed: ${errorText(e)}`);
       }
+      // a source or pump goes by the name it has in Klimo
+      const sourceLike = d.owner.type === 'source' || d.owner.type === 'local' || d.owner.type === 'aux' || d.owner.type === 'watchdog';
+      const own = sourceLike ? cfg.sources.find((x) => x.id === d.owner.id) : d.owner.type === 'pump' ? cfg.pumps.find((x) => x.id === d.owner.id) : undefined;
+      if (own) info = { ...info, name: own.name };
     }
     if (d.value.kind === 'z2m' && !info.zigbee) {
       const topic = d.value.topic;
@@ -1114,7 +1148,7 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
     // wait until the heads show the release values; a dead head must not hold the delete up
     const shows = (key: string) => {
       const d = this.releases.get(key)?.desired;
-      return !d || d.confirm.kind === 'none' || observedMatches(d.value, d.confirm, this.reconciler.observe(d.entityId));
+      return !d || d.confirm.kind === 'none' || this.reconciler.matches(d.value, d.confirm, this.reconciler.observe(d.entityId));
     };
     const started = performance.now();
     while (!keys.every(shows) && performance.now() - started < timeoutMs) await new Promise<void>((resolve) => setTimeout(resolve, 250));
@@ -1145,6 +1179,7 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
       this.reconciler.quietManualDetection(now + MANUAL_QUIET_MS);
       if (this.config.engineConfig().safety.reconcileOnRestart) this.reconciler.requestResync(null, 'ha_reconnected');
       this.log.log(`Home Assistant is back after ${downSec} s`);
+      void this.seedHistory(this.config.engineConfig(), now);
       void this.runNow('ha.reconnected').catch(() => undefined);
     } else {
       if (this.haDownSince === null) this.haDownSince = now;
@@ -1243,7 +1278,8 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
     const state = this.result?.rooms.find((r) => r.roomId === room.id);
     const current = state?.target.displayC ?? state?.target.heatC ?? null;
     // heads in on/off or valve mode and ACs in on/off show fixed setpoints: the hand's number is the target
-    const absolute = current === null || (m.ownerType === 'trv' && (room.trv.strategy === 'onoff' || room.trv.strategy === 'valve')) || (m.ownerType === 'source' && room.ac.control !== 'target');
+    // (a room's AC is a `local` actuator)
+    const absolute = current === null || (m.ownerType === 'trv' && (room.trv.strategy === 'onoff' || room.trv.strategy === 'valve')) || (m.ownerType === 'local' && room.ac.control !== 'target');
     const valueC = round1(Math.min(32, Math.max(5, absolute ? m.valueC : current + (m.valueC - m.commandedC))));
     let userName: string | null = null;
     try {
@@ -1253,9 +1289,10 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
     }
     const actor: Actor = { via: 'trv', userId: m.userId, userName, contextId: m.contextId };
     const by = actorName(actor);
-    const deviceKey = this.reconciler.infoOf(m.key)?.deviceKey ?? null;
+    const info = this.reconciler.infoOf(m.key);
+    const deviceKey = info?.deviceKey ?? null;
     this.pendingDecisions.push({ code: 'trv.manual', category: 'dev', tone: 'event', params: { valueC, policy, by }, roomId: room.id, deviceKey, entityIds: [m.entityId] });
-    this.pendingDetections.push({ kind: 'manual_override', dedupKey: `manual_override:${room.id}:${now}`, active: true, roomId: room.id, entityId: m.entityId, deviceKey, facts: { valueC, by, policy } });
+    this.pendingDetections.push({ kind: 'manual_override', dedupKey: `manual_override:${room.id}:${now}`, active: true, roomId: room.id, entityId: m.entityId, deviceKey, facts: { valueC, by, policy, ...(info?.name ? { name: info.name } : {}) } });
     this.log.log(`${room.name}: ${m.entityId} turned to ${m.valueC}° by hand (${policy})`);
     if (policy === 'revert') {
       this.reconciler.suppress(m.key, now + room.trv.revertAfterSec * SEC, true);

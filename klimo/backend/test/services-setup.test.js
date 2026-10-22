@@ -319,3 +319,16 @@ test('an AC alone heats the room as its primary heat, not as a top-up', () =>
     assert.deepEqual(direct.roles, { heat: 'primary', cool: 'primary' });
     assert.equal(direct.assist, null);
   }));
+
+test('a house in °F: a head the search does not know gets its setpoint range in °C', () =>
+  withSetup(async (s) => {
+    s.ha.config = () => ({ time_zone: 'Europe/Kyiv', unit_system: { temperature: '°F' } });
+    s.ha.set(TRV, 'heat', { current_temperature: 67, temperature: 70, hvac_modes: ['off', 'heat'], min_temp: 41, max_temp: 86, target_temp_step: 1, friendly_name: 'Радіатор' }, { deviceId: 'dev_trv' });
+    s.search.details.delete(TRV);
+    const report = await s.setup.create(request({ emitterKinds: ['trv'], devices: [{ role: 'trv', entityId: TRV }, { role: 'temp_humidity', entityId: BED_T, name: 'Над ліжком' }], trvStrategy: 'onoff' }), ACTOR);
+    const cfg = s.config.engineConfig();
+    const rad = cfg.emittersByRoom[report.roomId].find((e) => e.kind === 'radiator');
+    const [head] = cfg.devicesByEmitter[rad.id];
+    assert.deepEqual(head.capabilities.setpointRange, [5, 30], '41–86 °F');
+    assert.equal(head.capabilities.setpointStep, 0.56, 'a whole °F');
+  }));

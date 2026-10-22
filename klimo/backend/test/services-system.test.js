@@ -215,3 +215,20 @@ test('binding validation shows every role of the adapter with its live state', (
     assert.deepEqual(empty.issues.map((i) => i.path).sort(), ['adapter.climate', 'adapter.modeMap.cool', 'adapter.modeMap.heat']);
     assert.throws(() => s.preview.bindingValidation('s_missing', climate, { heat: true, cool: false, dry: false, fan: false }), (e) => e.code === 'not_found');
   }));
+
+test('sources sharing a name read with their room in the diagram', () =>
+  withPlant(async (s, p) => {
+    const bedroom = await s.config.create('rooms', { name: 'Спальня' }, ACTOR);
+    const acs = [];
+    for (const room of [p.living, bedroom]) {
+      const ac = await source(s, 'ac', 'Кондиціонер', { roomId: room.id });
+      await s.config.create('emitters', { ...DEFAULT_EMITTER(), roomId: room.id, kind: 'direct', name: 'Кондиціонер', sourceId: ac.id, roles: { heat: null, cool: 'primary' } }, ACTOR);
+      acs.push(ac);
+    }
+    s.engine.plantState = plantWith(s, p, () => undefined);
+    const view = s.preview.schema();
+    const title = (id) => view.nodes.find((n) => n.key === `local:${id}`).title;
+    assert.deepEqual(acs.map((a) => title(a.id)), ['Кондиціонер · Вітальня', 'Кондиціонер · Спальня']);
+    assert.equal(title(p.conv.id), 'Електроконвектор', 'a name of its own stays as it is');
+    assert.equal(view.nodes.find((n) => n.key === `source:${p.hp.id}`).title, 'Тепловий насос');
+  }));

@@ -378,6 +378,8 @@ export interface RoomTargetResult {
   targetOverride: Override | null;
   /** The room's manual value wins (rule offsets and optimal start do not apply). */
   manual: boolean;
+  /** Next value of the room's optimal-start latch. */
+  preheat: RoomMemory['preheat'];
 }
 
 export function frostFloorOf(cfg: Pick<EngineConfig, 'safety'>, room: RoomConfig): number {
@@ -468,6 +470,7 @@ export function resolveRoomTarget(cfg: EngineConfig, room: RoomConfig, inputs: I
     off: null,
     targetOverride,
     manual: false,
+    preheat: null,
   });
   if (!room.controlEnabled) return empty('monitor', 'monitor');
 
@@ -547,6 +550,7 @@ export function resolveRoomTarget(cfg: EngineConfig, room: RoomConfig, inputs: I
   }
 
   let preheat: EffectiveTarget['preheat'] = null;
+  let preheatLatch: RoomMemory['preheat'] = null;
   const scheduleLike = layer === 'room_schedule' || layer === 'house_schedule' || layer === 'presence' || layer === 'default';
   if (heat !== null && input.tempC !== null && !input.windowOpen && input.windowReaction === null && !input.airing && (scheduleLike || layer === 'calendar')) {
     let found: Preheat | null = null;
@@ -556,11 +560,19 @@ export function resolveRoomTarget(cfg: EngineConfig, room: RoomConfig, inputs: I
     // a rule may pre-heat with cheap energy further ahead, without the optimal-start cap
     const viaRule = ctx.overlay.preheatSourceIds.some((id) => sourcesOfRoom(cfg, room.id).has(id));
     if (!found && viaRule) found = findPreheat(cfg, room, inputs, memory, heat, input.tempC, heatOffset, 24 * 60, false, until, !scheduleLike || layer === 'presence');
-    if (found && now >= found.at - found.leadMin * MIN_MS) {
-      adjustments.push({ code: 'optimal_start', deltaC: round1(found.heatC - heat), ref: found.profileId });
-      heat = found.heatC;
-      display = 'preheat';
-      preheat = { forBlockAt: found.at, leadMin: found.leadMin };
+    // once started, pre-heat holds until the block begins: the lead shrinks as the room warms, and
+    // re-deciding it every tick switches the heating on and off every few minutes
+    if (found) {
+      const held = memory.preheat?.forBlockAt === found.at && memory.preheat.profileId === found.profileId ? memory.preheat : null;
+      const reached = held !== null && input.tempC >= round1(found.heatC + room.tolerance.heat.above);
+      const due = input.tempC < found.heatC && now >= found.at - found.leadMin * MIN_MS;
+      if (!reached && (held || due)) {
+        adjustments.push({ code: 'optimal_start', deltaC: round1(found.heatC - heat), ref: found.profileId });
+        heat = found.heatC;
+        display = 'preheat';
+        preheatLatch = held ? { ...held, heatC: found.heatC } : { forBlockAt: found.at, profileId: found.profileId, heatC: found.heatC, leadMin: found.leadMin, since: now };
+        preheat = { forBlockAt: found.at, leadMin: preheatLatch.leadMin };
+      }
     }
   }
 
@@ -630,6 +642,7 @@ export function resolveRoomTarget(cfg: EngineConfig, room: RoomConfig, inputs: I
     off,
     targetOverride,
     manual,
+    preheat: preheatLatch,
   };
 }
 

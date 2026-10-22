@@ -139,6 +139,17 @@ export class SnapshotService {
     for (const id of [...this.history.keys()]) if (!live.has(id)) this.history.delete(id);
   }
 
+  /** The recorder's samples before the first live one: after a restart the trend need not wait 15 min. */
+  seed(points: Record<Id, [EpochMs, number][]>, now: EpochMs): void {
+    for (const [roomId, seeded] of Object.entries(points)) {
+      // samples "from the future" are left by a clock that went back: the recorder's are the true ones
+      const ring = (this.history.get(roomId) ?? []).filter(([t]) => t <= now);
+      const firstLive = ring.length ? ring[0][0] : Infinity;
+      const before = seeded.filter(([t]) => t >= now - HISTORY_SPAN_MS && t <= now && t <= firstLive - HISTORY_STEP_MS);
+      this.history.set(roomId, [...before, ...ring]);
+    }
+  }
+
   /** Forgets the history (a simulator jump makes it meaningless). */
   resetHistory(): void {
     this.history.clear();

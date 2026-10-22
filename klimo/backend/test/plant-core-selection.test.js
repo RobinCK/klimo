@@ -42,6 +42,7 @@ test('alt bivalence: −9 heat pump → −11 boiler → −9 still boiler → �
   assert.equal(on(res, 's_boiler'), false);
   assert.equal(h.sourceState(res, 's_boiler').role, 'reserve');
   assert.equal(h.sourceState(res, 's_boiler').roleReason.code, 'role.reserve_below');
+  assert.equal(h.sourceState(res, 's_hp').roleReason.code, 'role.lead');
   assert.ok(res.plant.why.some((w) => w.code === 'plant.bivalent_hp'), 'above the point the heat pump copes alone');
   assert.ok(!res.plant.why.some((w) => w.code === 'plant.bivalent_reserve'));
 
@@ -54,6 +55,16 @@ test('alt bivalence: −9 heat pump → −11 boiler → −9 still boiler → �
   // the idle heat pump says why it waits
   assert.equal(h.sourceState(res, 's_hp').state, 'waiting_season');
   assert.equal(h.sourceState(res, 's_hp').blockers[0].code, 'source.blocked.bivalence');
+  // one main source: the boiler; the heat pump's role is the bivalence hold, not «Основне»
+  assert.deepEqual([h.sourceState(res, 's_boiler').role, h.sourceState(res, 's_boiler').roleReason.code], ['lead', 'role.lead']);
+  assert.equal(h.sourceState(res, 's_hp').role, 'reserve');
+  assert.deepEqual(h.sourceState(res, 's_hp').roleReason, { code: 'source.blocked.bivalence', params: { pointC: -10, toutC: -11 } });
+  // with no room asking, the roles stay the same
+  run.room('r_liv', { t: 21.5, demand: 'none' });
+  res = settle(run, t0 + 30 * MIN);
+  assert.equal(on(res, 's_boiler'), false);
+  assert.deepEqual([h.sourceState(res, 's_boiler').role, h.sourceState(res, 's_hp').role], ['lead', 'reserve']);
+  run.room('r_liv', { t: 19.5, demand: 'heat' });
 
   run.outdoor(-9);
   res = settle(run, t0 + 40 * MIN);

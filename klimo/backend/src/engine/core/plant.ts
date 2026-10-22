@@ -1168,10 +1168,17 @@ function roleOf(s: SourceConfig, x: SourceStateInput): { role: SourceRole; reaso
     if (role === 'assist') return { role: 'assist', reason: { code: 'role.assist', params: {} } };
     return { role: 'room_primary', reason: { code: 'role.room_primary', params: { roomId: d.room.id } } };
   }
-  // central: the chain decides
+  // central: the chain decides; below the bivalence point the reserve takes the heat pump's place
   for (const plan of x.sel.plans.values()) {
-    if (plan.bivalent.applies && plan.bivalent.reserve === s.id) {
-      if (plan.bivalent.mode === 'alt' && plan.bivalent.hpPermitted) return { role: 'reserve', reason: { code: 'role.reserve_below', params: { pointC: cfg.heat.bivalence.pointC } } };
+    const b = plan.bivalent;
+    if (!b.applies) continue;
+    if (b.hp === s.id && !b.hpPermitted) {
+      const pointC = b.mode === 'partial' ? cfg.heat.bivalence.hpLimitC : cfg.heat.bivalence.pointC;
+      return { role: 'reserve', reason: { code: 'source.blocked.bivalence', params: { pointC, toutC: x.tout10 } } };
+    }
+    if (b.reserve === s.id) {
+      if (!b.hpPermitted) return { role: 'lead', reason: { code: 'role.lead', params: {} } };
+      if (b.mode === 'alt') return { role: 'reserve', reason: { code: 'role.reserve_below', params: { pointC: cfg.heat.bivalence.pointC } } };
       return { role: 'reserve', reason: { code: 'role.reserve', params: {} } };
     }
   }

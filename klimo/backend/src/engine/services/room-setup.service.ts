@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { notFound, validationError } from '../../common/http';
 import { uuid } from '../../common/ids';
 import { errorText } from '../../common/logger';
+import { parseNumber, systemTempUnit, tempAttr } from '../../ha/units';
 import {
   adapterDefaults,
   DEFAULT_CIRCUIT,
@@ -762,11 +763,13 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
     const trv = detail?.trv;
     if (trv) return { entityId, capabilities: trv.capabilities, siblings: trv.siblings, strategies: trv.strategies };
     const st = this.ha.getState(entityId);
-    const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+    // a climate shows its range and step in the house's unit; the head is driven in °C
+    const unit = systemTempUnit(this.ha.config()?.unit_system.temperature);
+    const step = parseNumber(st?.attributes.target_temp_step);
     const capabilities: TrvCapabilities = {
       ...DEFAULT_TRV_CAPABILITIES,
-      setpointRange: [num(st?.attributes.min_temp, 5), num(st?.attributes.max_temp, 30)],
-      setpointStep: num(st?.attributes.target_temp_step, 0.5),
+      setpointRange: [tempAttr(st, 'min_temp', unit) ?? 5, tempAttr(st, 'max_temp', unit) ?? 30],
+      setpointStep: step !== null && step > 0 ? (unit === '°F' ? Math.round(((step * 5) / 9) * 100) / 100 : step) : 0.5,
     };
     return {
       entityId,

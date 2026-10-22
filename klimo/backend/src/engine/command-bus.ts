@@ -71,9 +71,11 @@ export function serviceCalls(entityId: EntityId, value: DesiredValue, x: { haUni
       return calls;
     }
     case 'number': {
-      // a number in °F is a temperature (external sensor input) or a temperature difference (calibration)
+      // a number in °F is written back exactly as it is read (absolute conversion). That holds for a
+      // calibration offset too: HA converts a temperature number that way, and the head's calibration is
+      // always the value read plus a difference, so the 32° of the conversion cancel out
       let v = value.value;
-      if (tempUnit(x.entityUnit) === '°F') v = /calibration/.test(entityId) ? Math.round(v * 1.8 * 10) / 10 : Math.round(fromCelsius(v, '°F') * 10) / 10;
+      if (tempUnit(x.entityUnit) === '°F') v = Math.round(fromCelsius(v, '°F') * 10) / 10;
       return [{ domain: domain === 'input_number' ? 'input_number' : 'number', service: 'set_value', target, data: { value: v } }];
     }
     case 'select':

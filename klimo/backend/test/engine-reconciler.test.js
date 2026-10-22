@@ -346,3 +346,26 @@ test('a re-sync after a boot lets a head that was mid-retry carry on; one after 
   assert.equal(out.sent, 1);
   assert.equal(s.row('climate.living_trv').attempts, 1, 'after an HA restart every command starts over');
 });
+
+test('a house in °F: a head whose target HA shows in whole degrees is confirmed, not retried', async () => {
+  const s = setup();
+  s.ha.config = () => ({ time_zone: h.KYIV, unit_system: { temperature: '°F' } });
+  // HA hands 69.8 °F to the head as 21.0° and shows the target back rounded to 70 °F (21.1°)
+  const apply = s.ha.apply.bind(s.ha);
+  s.ha.apply = (id, domain, service, data, context) => apply(id, domain, service, service === 'set_temperature' ? { ...data, temperature: Math.round(data.temperature) } : data, context);
+  const t0 = s.clock.now();
+  let out = await s.run([head(21)]);
+  assert.equal(s.ha.calls[0].data.temperature, 69.8);
+  assert.equal(s.ha.getState('climate.living_trv').attributes.temperature, 70);
+  s.clock.t = t0 + 10 * SEC;
+  out = await s.run([head(21)]);
+  assert.equal(s.row('climate.living_trv').status, 'confirmed');
+  s.clock.t = t0 + 130 * SEC;
+  out = await s.run([head(21)]);
+  assert.equal(out.sent, 0, 'no second attempt');
+  assert.equal(s.ha.calls.length, 1);
+  // a real difference is still one: half a degree Celsius is almost a whole degree Fahrenheit
+  s.clock.t = t0 + 140 * SEC;
+  out = await s.run([head(21.5)]);
+  assert.equal(out.sent, 1);
+});

@@ -282,3 +282,46 @@ test('a clock that jumps back (the simulator switching to an earlier day) does n
   assert.ok(Object.values(e.memory.ledger()).every((r) => r.commandedAt === null || r.commandedAt <= e.clock.now()), 'no ledger time is left in the future');
   e.engine.onModuleDestroy();
 });
+
+test('alerts name the device as the devices page does, not by its entity id', async () => {
+  const e = h.makeEngine({ safety: NO_DRY_RUN, states: { t: 18.5, trvC: 10 } });
+  e.ha.deaf.add('climate.living_trv'); // the head never takes its target
+  await e.boot();
+  await e.advance(8 * MIN);
+  const det = e.ingested.flatMap((x) => x.dets).find((d) => d.kind === 'trv_not_confirmed' && d.active);
+  assert.ok(det, 'the head gave up');
+  assert.equal(det.facts.name, 'Головка');
+  assert.equal(det.facts.entityId, 'climate.living_trv');
+
+  // a pump fought over by an automation goes by its name in Klimo
+  assert.equal(e.ha.getState('switch.rad_pump').state, 'on');
+  e.ha.foreign('switch.rad_pump', 'off', {}, 'automation');
+  await e.advance(MIN);
+  e.ha.foreign('switch.rad_pump', 'off', {}, 'automation');
+  await e.advance(2 * MIN);
+  const fight = e.ingested.at(-1).dets.find((d) => d.kind === 'actuator_conflict');
+  assert.equal(fight.facts.name, 'Насос радіаторів');
+  e.engine.onModuleDestroy();
+});
+
+test('an AC on fixed on/off setpoints turned by hand: the number on the AC becomes the room target', async () => {
+  const cfg = h.makeCfg({ room: { ac: { ...h.d.DEFAULT_ROOM().ac, control: 'onoff' } } });
+  const ac = { ...h.d.newSourceConfig('ac', { id: 's_ac', name: 'Кондиціонер', now: 0, scope: 'room', roomId: 'r_living' }), enabled: true };
+  ac.adapter = { ...ac.adapter, climate: 'climate.living_ac' };
+  cfg.sources = [...cfg.sources, ac];
+  cfg.emittersByRoom.r_living = [{ ...h.d.DEFAULT_EMITTER(), id: 'e_ac', roomId: 'r_living', kind: 'ac', name: 'Кондиціонер', sourceId: 's_ac', roles: { heat: 'primary', cool: 'primary' } }];
+  cfg.devicesByEmitter = {};
+  const e = h.makeEngine({ cfg, safety: NO_DRY_RUN });
+  e.ha.set('climate.living_ac', 'off', { hvac_modes: ['off', 'heat', 'cool', 'dry', 'fan_only'], temperature: 22, current_temperature: 20, min_temp: 16, max_temp: 30, target_temp_step: 0.5 }, { silent: true });
+  await e.boot();
+  await e.advance(3 * MIN);
+  const sent = e.engine.ledger()['climate.living_ac'];
+  assert.deepEqual([sent.commanded.hvacMode, sent.commanded.temperature, sent.status], ['heat', 24, 'confirmed'], 'heating on its fixed 24°');
+  const target = e.engine.room('r_living').target.heatC;
+  assert.notEqual(target, 26);
+  e.ha.foreign('climate.living_ac', 'heat', { temperature: 26 }, 'user');
+  await e.advance(SEC);
+  assert.equal(e.roomActionsCalls.length, 1);
+  assert.deepEqual(e.roomActionsCalls[0].req, { value: 26, duration: 'slot' });
+  e.engine.onModuleDestroy();
+});

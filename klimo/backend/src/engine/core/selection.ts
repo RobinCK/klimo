@@ -836,6 +836,9 @@ export function selectSources(x: SelectionCtx, prevDewGuardSince: Record<Id, Epo
       }),
     );
   }
+  // the dew guard stops a source for every loop it feeds: water below the dew point must not keep flowing
+  // through the floor because another loop still asks for cold
+  for (const [id, why] of safetyStops) if (why === 'dew_guard' && wants.get(id)?.mode === 'cool') wants.delete(id);
 
   /* room-scope sources: each serves its own room on the room's request */
   for (const s of cfg.sources) {
@@ -863,6 +866,14 @@ export function selectSources(x: SelectionCtx, prevDewGuardSince: Record<Id, Epo
       if (!mode || !role) continue;
       const frost = room.frost && mode === 'heat';
       if (!best || (frost && !best.frost)) best = { mode, room, role, frost };
+    }
+    if (!best || best.mode !== 'heat') {
+      // a heater still running in a room that has become too warm stops now, not after its minimum run:
+      // the room let go of its request the moment it overheated, so this cannot wait for one
+      const m = x.mem[s.id];
+      const tooWarm = (r: RoomView) => !r.frost && (r.overheat || (s.guards.roomMaxC !== null && r.t !== null && r.t >= s.guards.roomMaxC));
+      const hot = m?.on && m.mode === 'heat' ? list.find(({ room }) => tooWarm(room)) : undefined;
+      if (hot) safetyStops.set(s.id, hot.room.overheat ? 'overheat' : 'room_max');
     }
     if (!best) continue;
     const { room, mode, role, frost } = best;

@@ -1,3 +1,4 @@
+import { sourceLabels } from '../../config/source-labels';
 import { sourceTemplate } from '../../shared/defaults';
 import type {
   Circuit,
@@ -73,6 +74,7 @@ export function buildSchema(x: SchemaInput): SchemaView {
   const circuitState = new Map(plant.circuits.map((c) => [c.circuitId, c]));
   const roomState = new Map(x.rooms.map((r) => [r.roomId, r]));
   const nodeTone = new Map<string, NodeTone>();
+  const sourceName = sourceLabels(cfg);
 
   const addNode = (n: Omit<SchemaNode, 'row'>) => {
     const node: SchemaNode = { ...n, row: nextRow(n.column, n.band) };
@@ -100,7 +102,7 @@ export function buildSchema(x: SchemaInput): SchemaView {
       band: 'hydronic',
       tone,
       icon: sourceTemplate(s.kind).icon,
-      title: s.name,
+      title: sourceName.get(s.id) ?? s.name,
       state: st?.detail ?? { code: s.enabled ? 'source.detail.idle' : 'source.blocked.disabled' },
       meta: st?.roleReason ?? null,
       roomIds: [],
@@ -181,7 +183,7 @@ export function buildSchema(x: SchemaInput): SchemaView {
       band: 'local',
       tone: sourceTone(st, s),
       icon: sourceTemplate(s.kind).icon,
-      title: s.name,
+      title: sourceName.get(s.id) ?? s.name,
       state: st?.detail ?? { code: s.enabled ? 'source.detail.idle' : 'source.blocked.disabled' },
       meta: st?.roleReason ?? null,
       roomIds: s.roomId ? [s.roomId] : [],

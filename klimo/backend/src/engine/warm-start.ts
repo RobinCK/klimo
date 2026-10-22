@@ -1,21 +1,25 @@
 import type { Decision, EngineConfig, EngineMemory, EntityId, EpochMs, InputSnapshot, Pump, RunSpan, SourceConfig, SourceMode, SpanEvent } from '../shared/model';
 import { hvacModeFor } from './core/ac';
-import { isOnState, readbackOn } from './core/confirm';
+import { commandEntity, isOnState, readbackOn } from './core/confirm';
 
 /* =====================================================================================================
  * Restart safety. Everything that must survive a restart is in the database, so a boot first takes what
  * the house really does into account: a boiler Klimo believed on but the relay watchdog dropped is off
- * since the last heartbeat; a heat pump somebody started while Klimo was away is adopted with a fresh
- * minimum run instead of being switched off at once; one still running keeps its start time, so its
- * minimum run simply continues. Spans of things that no longer run are closed at the last heartbeat.
+ * since HA saw it drop, so its minimum pause is whole; a heat pump somebody started while Klimo was away
+ * is adopted with a fresh minimum run instead of being switched off at once; one still running keeps its
+ * start time, so its minimum run simply continues. Spans of things that no longer run are closed at the
+ * last heartbeat.
  * ===================================================================================================== */
 
 const MIN_MS = 60_000;
 
 /** What HA shows of the house at boot. */
 export interface BootObservation {
-  /** Is the source on, and in which mode; null = cannot tell (script/custom adapter, entity unavailable). */
-  source(s: SourceConfig): { on: boolean; mode: SourceMode | null } | null;
+  /**
+   * Is the source on, and in which mode; null = cannot tell (script/custom adapter, entity unavailable).
+   * `since`: when its command entity last changed state in HA (the moment a watchdog dropped the relay).
+   */
+  source(s: SourceConfig): { on: boolean; mode: SourceMode | null; since?: EpochMs | null } | null;
   /** Is the pump running; null = cannot tell. */
   pump(p: Pump): boolean | null;
   /** When a contact that is open now opened (its HA last_changed); null = closed or unknown. */
@@ -39,14 +43,15 @@ export function observeFrom(inputs: InputSnapshot): BootObservation {
     source(s) {
       const on = readbackOn(s, inputs);
       if (on === null) return null;
-      if (!on) return { on: false, mode: null };
+      const since = snap(commandEntity(s.adapter))?.lastChanged ?? null;
+      if (!on) return { on: false, mode: null, since };
       const a = s.adapter;
       if (a.type === 'climate') {
         const state = snap(a.climate)?.state ?? '';
         const modes: SourceMode[] = ['heat', 'cool', 'dry', 'fan'];
-        return { on: true, mode: modes.find((m) => s.capabilities[m] && hvacModeFor(a, m) === state) ?? null };
+        return { on: true, mode: modes.find((m) => s.capabilities[m] && hvacModeFor(a, m) === state) ?? null, since };
       }
-      return { on: true, mode: null };
+      return { on: true, mode: null, since };
     },
     pump(p) {
       return isOnState(snap(p.entityId) ?? null);
@@ -91,9 +96,16 @@ export function warmStart(cfg: EngineConfig, memory: EngineMemory, observe: Boot
     // a check run cannot outlive the process that watched it
     if (next.test && next.test.result === 'running') next = { ...next, test: { ...next.test, result: 'error', until: Math.min(next.test.until, closeAt) } };
     if (seen && m.on && !seen.on) {
-      // the relay watchdog dropped it, or somebody switched it off while Klimo was away
-      next = { ...next, on: false, offSince: Math.max(m.onSince ?? 0, closeAt), confirm: m.fault ? 'fault' : 'none', confirmDeadline: null, confirmedAt: null, stage: 0, stageSince: closeAt, admittedAt: null, prerunSince: null };
+      // the relay watchdog dropped it, or somebody switched it off while Klimo was away; the minimum pause
+      // counts from when HA saw it go off — a watchdog drops a relay up to 15 min after the last heartbeat
+      const droppedAt = seen.since != null && seen.since <= now ? seen.since : 0;
+      const offSince = Math.max(m.onSince ?? 0, closeAt, droppedAt);
+      next = { ...next, on: false, offSince, confirm: m.fault ? 'fault' : 'none', confirmDeadline: null, confirmedAt: null, stage: 0, stageSince: offSince, admittedAt: null, prerunSince: null };
       decisions.push({ code: 'restart.source_off', category: 'system', tone: 'warn', params: { sourceId: s.id }, sourceId: s.id });
+    } else if (seen && m.on && seen.on && m.confirmedAt !== null && seen.since != null && seen.since > Math.max(closeAt, m.confirmedAt) && seen.since <= now) {
+      // it changed after Klimo last saw it running: dropped and switched on again while Klimo was away,
+      // so its minimum run counts from that new start
+      next = { ...next, onSince: seen.since, starts: [...next.starts, seen.since] };
     } else if (seen && !m.on && seen.on && s.enabled) {
       // started by somebody else: adopted, with a fresh minimum run — never switched straight off
       const mode = seen.mode ?? defaultMode(s);

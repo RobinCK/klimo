@@ -283,3 +283,53 @@ test('optimal start: the 17:30 «Дома» block starts early by the learned ra
   assert.ok(s.why.some((r) => r.code === 'why.preheat' && r.params.profileId === 'home'));
   assert.equal(s.demand.mode, 'heat');
 });
+
+test('optimal start holds once started, until the room reaches the target or the plan changes', () => {
+  let memory = null;
+  const step = (now, t, cfgMut) => {
+    const r = roomAt(now, t, cfgMut);
+    if (!memory) {
+      memory = r.memory;
+      memory.rooms.r_living.learned = { ...memory.rooms.r_living.learned, heatRateCPerH: 4, heatSamples: 5 };
+    }
+    const out = h.tick(r.cfg, r.inputs, memory);
+    memory = out.memory;
+    return out.state;
+  };
+  // 16:50, 18.0°: 45 min ahead of the 17:30 «Дома» block → pre-heat starts
+  let s = step(WED(16, 50), 18.0);
+  assert.equal(s.target.display, 'preheat');
+  assert.deepEqual(memory.rooms.r_living.preheat, { forBlockAt: WED(17, 30), profileId: 'home', heatC: 21, leadMin: 45, since: WED(16, 50) });
+  // 17:00, 19.6°: the lead alone is now 20 min (start at 17:10), but the heating keeps going
+  s = step(WED(17, 0), 19.6);
+  assert.equal(s.target.heatC, 21);
+  assert.equal(s.target.display, 'preheat');
+  assert.deepEqual(s.target.preheat, { forBlockAt: WED(17, 30), leadMin: 45 });
+  assert.equal(s.demand.mode, 'heat');
+  // 17:10, 21.2° = 21 + tolerance above: done, back to «Не вдома» until the block
+  s = step(WED(17, 10), 21.2);
+  assert.equal(s.target.heatC, 18);
+  assert.equal(s.target.preheat, null);
+  assert.equal(memory.rooms.r_living.preheat, null);
+  // 17:25, 20.6°: needed again for the last minutes
+  s = step(WED(17, 25), 20.6);
+  assert.equal(s.target.display, 'preheat');
+  assert.equal(memory.rooms.r_living.preheat.since, WED(17, 25));
+  // 17:30: the block itself
+  s = step(WED(17, 30), 20.9);
+  assert.equal(s.target.display, 'schedule');
+  assert.equal(s.target.heatC, 21);
+  assert.equal(memory.rooms.r_living.preheat, null);
+
+  // the plan changes: a manual target while pre-heating drops the latch for good
+  memory = null;
+  step(WED(16, 50), 18.0);
+  const manual = override({ kind: 'room_target', createdAt: WED(16, 55), until: WED(17, 30), value: { kind: 'room_target', mode: 'heat', heatC: 19.5, coolC: null } });
+  s = step(WED(16, 55), 18.5, (cfg) => cfg.overrides.push(manual));
+  assert.equal(s.target.display, 'manual');
+  assert.equal(memory.rooms.r_living.preheat, null);
+  // the override is gone at 17:00 and the room is at 19.6: the lead decides again (start at 17:10)
+  s = step(WED(17, 0), 19.6);
+  assert.equal(s.target.heatC, 18);
+  assert.equal(s.target.preheat, null);
+});

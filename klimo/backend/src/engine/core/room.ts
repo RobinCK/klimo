@@ -382,6 +382,7 @@ export const evaluateRoom: EvaluateRoomFn = (cfg, room, inputs, memory, ctx) => 
     floorLimit: floorLimit.latch,
     demandMode: dem.mode,
     demandSince: dem.since,
+    preheat: tr.preheat,
     window: wol.memory,
     tooColdSince: comfort.tooColdSince,
     tooHotSince: comfort.tooHotSince,

@@ -173,3 +173,34 @@ test('frost in house mode off: 6.8° asks for heat and the boiler runs; without 
   res = run2.tick();
   assert.equal(h.sourceState(res, 's_conv').on, true);
 });
+
+test('a room heater stops at once when the room overheats, though the room has already let go of its request', () => {
+  const conv = h.convector('s_conv', 'r_study', 'switch.study_heater');
+  const r = h.room('r_study');
+  const e = h.emitter('e_conv', 'r_study', { kind: 'direct', sourceId: 's_conv', roles: { heat: 'primary', cool: null } });
+  const run = h.runner(h.makeCfg({ rooms: [r], emitters: [e], sources: [conv] }));
+  run.set('switch.study_heater', 'off');
+  run.room('r_study', { t: 19.7, demand: 'heat' });
+  assert.equal(h.sourceState(run.tick(), 's_conv').on, true);
+  // overheat turns the room's heat latch off and ends its demand on the same tick
+  run.room('r_study', { t: 26.1, heatC: 21, demand: 'none', overheat: true });
+  const res = run.tick();
+  assert.equal(h.sourceState(res, 's_conv').on, false, 'within its 2-minute minimum run');
+  assert.equal(h.desiredOf(res, 'switch.study_heater').value.on, false);
+  assert.equal(h.desiredOf(res, 'switch.study_heater').urgency, 'safety');
+});
+
+test('a heat-storing convector at the room\'s hard limit stops at once', () => {
+  const conv = h.convector('s_conv', 'r_study', 'switch.study_heater', { guards: { roomMaxC: 24 } });
+  const r = h.room('r_study');
+  const e = h.emitter('e_conv', 'r_study', { kind: 'direct', sourceId: 's_conv', roles: { heat: 'trigger', cool: null }, trigger: { heatStoreAboveTargetC: 4 } });
+  const run = h.runner(h.makeCfg({ rooms: [r], emitters: [e], sources: [conv] }));
+  run.set('switch.study_heater', 'off');
+  run.room('r_study', { t: 22, heatC: 21, demand: 'none', store: true, requests: { e_conv: 'heat' }, roles: { e_conv: 'trigger' } });
+  assert.equal(h.sourceState(run.tick(), 's_conv').on, true, 'storing heat above the target');
+  // at the limit the room no longer asks the convector for heat
+  run.room('r_study', { t: 24, heatC: 21, demand: 'none', store: true, requests: { e_conv: null } });
+  const res = run.tick();
+  assert.equal(h.sourceState(res, 's_conv').on, false);
+  assert.equal(h.desiredOf(res, 'switch.study_heater').urgency, 'safety');
+});

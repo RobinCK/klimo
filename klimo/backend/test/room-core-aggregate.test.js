@@ -139,6 +139,19 @@ test('humidity: 19.8 °C / 46 % → dew point 7.8°, 7.9 g/m³; glass estimate a
   assert.equal(humid.detections.find((x) => x.dedupKey === 'humidity_high:r_living').active, true);
 });
 
+test('the default glass factor is double glazing: at 4.2° outdoors only the humid kids’ room is at risk', () => {
+  const k = h.d.defaultSettings().glassCoefficient;
+  assert.equal(k, 0.35);
+  const room = h.makeRoom();
+  const inputs = h.makeInputs(NOW, {}, { outdoor: { nowC: 4.2, avg10C: 4.2, avgNC: 6.8, source: 'sensor' } });
+  const at = (tempC, rh) =>
+    evaluateHumidity(room, inputs, { readings: [{ role: 'humidity', status: 'ok', humidityPct: rh }], tempC, season: 'heating', ventilating: false, dehumidifier: { on: false, since: NOW }, glassK: k }).state;
+  const kids = at(21.7, 67);
+  assert.equal(kids.glassC, 15.6); // 21.7 − 0.35·17.5
+  assert.equal(kids.condensationRisk, true);
+  for (const [t, rh] of [[19.8, 46], [17.6, 52], [21.0, 41], [20.9, 49], [19.1, 44]]) assert.equal(at(t, rh).condensationRisk, false, `${t}° / ${rh} %`);
+});
+
 test('dehumidifier: ON after 2 min above 62 %, OFF below 57 % only after 10 min ON, off while airing', () => {
   const room = h.makeRoom({ humidity: { ...h.makeRoom().humidity, dehumidifier: { entityId: 'switch.dehum', onAbovePct: 62, offBelowPct: 57, minOnMin: 10 } } });
   const run = (rh, at, latch, ventilating = false) =>

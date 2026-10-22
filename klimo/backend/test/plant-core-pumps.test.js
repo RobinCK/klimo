@@ -194,6 +194,33 @@ test('hard dew guard: supply below dew + margin − 0.5 for 2 minutes stops cool
   assert.equal(h.pumpState(res, 'p_floor').on, false, 'then the pump follows its rule again');
 });
 
+test('hard dew guard with a second loop on the same heat pump: the heat pump still stops, the floor gets no more cold water', () => {
+  const cfg = hpTwoCircuits({ floor: { supply: { sensorEntityId: 'sensor.floor_supply', returnEntityId: null, coolC: 18, coolMaxC: 22 } }, floorPump: { rule: 'source', runOnCoolMin: 0 } });
+  cfg.circuits.push(h.circuit('c_fc', ['s_hp'], { kind: 'fancoil', capabilities: { heat: true, cool: true }, order: 2 }));
+  cfg.pumps.push(h.pump('p_fc', 'c_fc', 'switch.fc_pump', { rule: 'source', runOnCoolMin: 0 }));
+  cfg.rooms.push(h.room('r_bed'));
+  cfg.emittersByRoom.r_bed = [h.emitter('e_fc', 'r_bed', { kind: 'fancoil', circuitId: 'c_fc', roles: { heat: 'primary', cool: 'primary' } })];
+  const run = h.runner(cfg, { season: h.season('cooling') });
+  const t0 = run.st.now;
+  heatPumpRunning(run, 'cool', t0 - 3 * MIN);
+  pumpOn(run, 'p_floor', t0 - 30 * MIN);
+  run.set('switch.rad_pump', 'off').set('sensor.floor_supply', '15.5');
+  run.room('r_kitchen', { t: 26.4, heatC: 20, coolC: 25, demand: 'cool', rh: 55, dew: 14.6 });
+  run.room('r_living', { t: 24, heatC: 20, coolC: 25, demand: 'none' });
+  run.room('r_bed', { t: 26.4, heatC: 20, coolC: 25, demand: 'cool', rh: 50, dew: 13 });
+  run.tick(t0 + 10 * SEC);
+  run.runUntil(t0 + 2 * MIN);
+  let res = run.tick(t0 + 2 * MIN + 10 * SEC);
+  assert.ok(res.decisions.some((x) => x.code === 'dew.guard'));
+  assert.equal(h.sourceState(res, 's_hp').on, false, 'the fan coils still ask for cold, the heat pump stops anyway');
+  assert.equal(h.desiredOf(res, 'climate.heat_pump').urgency, 'safety');
+  assert.equal(h.pumpState(res, 'p_floor').reason, 'dew_runon');
+  const trip = run.st.now;
+  res = run.runUntil(trip + 2 * MIN + 10 * SEC).at(-1);
+  assert.equal(h.pumpState(res, 'p_floor').on, false, 'after the run-on the floor pump stands');
+  assert.equal(h.sourceState(res, 's_hp').on, false, 'the heat pump rests its minimum pause before the fan coils get it back');
+});
+
 test('mixing valve: 35° while the floor heats, the dew-safe supply while it cools', () => {
   const cfg = hpTwoCircuits({ floor: { mixingValve: { entityId: 'number.floor_mixing_valve', heatC: 35, coolC: null } } });
   const run = h.runner(cfg);

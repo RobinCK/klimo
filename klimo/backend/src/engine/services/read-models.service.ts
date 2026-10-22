@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { notFound, validationError } from '../../common/http';
+import { sourceLabels } from '../../config/source-labels';
 import type {
   ChainEntry,
   CircuitDto,
@@ -201,9 +202,10 @@ export class ReadModelsService implements IReadModels {
         ? profileSpans.map((s) => entry(s, s.meta?.profileId ?? s.subjectId))
         : this.scheduledProfileSpans(cfg, day, from, end),
     });
+    const sourceName = sourceLabels(cfg);
     for (const s of cfg.sources) {
       const own = bySubject('source', s.id);
-      if (s.enabled || own.length) tracks.push({ key: `source:${s.id}`, kind: 'source', subjectId: s.id, label: s.name, spans: own.map((x) => entry(x)) });
+      if (s.enabled || own.length) tracks.push({ key: `source:${s.id}`, kind: 'source', subjectId: s.id, label: sourceName.get(s.id) ?? s.name, spans: own.map((x) => entry(x)) });
     }
     for (const p of cfg.pumps) {
       const own = bySubject('pump', p.id);

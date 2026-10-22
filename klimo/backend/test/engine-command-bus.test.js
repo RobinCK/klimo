@@ -132,3 +132,18 @@ test('a failed call is reported, not thrown; a stopped bus refuses new work', as
   const after = await bus.send(on('switch.boiler_relay'));
   assert.deepEqual(after, { ok: false, contextIds: [], error: 'stopped', superseded: false });
 });
+
+test('a calibration number in °F is written the way it is read: the head gets the offset Klimo means', () => {
+  const { serviceCalls } = require('../dist/engine/command-bus');
+  const { snapOf } = require('../dist/engine/snapshot.service');
+  const entity = 'number.living_trv_local_temperature_calibration';
+  // HA converts a temperature number absolutely: the head's +1.0° is shown as 33.8 °F
+  const shownF = (c) => Math.round(((c * 9) / 5 + 32) * 10) / 10;
+  const storedC = (f) => Math.round((((f - 32) * 5) / 9) * 10) / 10;
+  const readC = (f) => snapOf({ entity_id: entity, state: String(f), attributes: { unit_of_measurement: '°F', device_class: 'temperature' }, last_changed: '2026-10-21T16:00:00Z', last_updated: '2026-10-21T16:00:00Z' }, '°F').snap.num;
+  assert.equal(readC(shownF(1)), 1);
+  const [call] = serviceCalls(entity, { kind: 'number', value: -1.5 }, { haUnit: '°F', entityUnit: '°F' });
+  assert.equal(call.data.value, 29.3);
+  assert.equal(storedC(call.data.value), -1.5, 'the head is set to −1.5°');
+  assert.equal(readC(call.data.value), -1.5, 'and Klimo reads back what it wrote');
+});

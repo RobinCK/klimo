@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { uuid } from '../common/ids';
-import { systemTempUnit } from '../ha/units';
+import { systemTempUnit, type TempUnit } from '../ha/units';
 import type {
   ActuatorRecord,
   ClockPort,
@@ -46,12 +46,20 @@ const MANUAL_AFTER_CONFIRM_MS = 10 * SEC;
 /** Changes of a setpoint smaller than this are the device's rounding, not a hand on the knob. */
 const MANUAL_MIN_DELTA_C = 0.5;
 const DEFAULT_CONFLICT: SafetySettings['conflict'] = { count: 2, windowMin: 30, backoffMin: 10 };
+/**
+ * A house in °F sees a climate's target rounded by HA (whole degrees unless the integration says
+ * otherwise): 21.0° sent as 69.8 °F comes back as 70 °F = 21.1°. Half a degree Fahrenheit more is the
+ * same value.
+ */
+const FAHRENHEIT_SHOWN_C = (0.5 * 5) / 9;
 
 export interface ActuatorInfo {
   /** HA device key the devices page uses (HA device id or `entity:<id>`). */
   deviceKey: string | null;
   /** Zigbee2MQTT instance id the actuator hangs on (command spacing, bridge restarts). */
   zigbee: string | null;
+  /** The name the devices page shows («Рушникосушка»): alerts say it instead of the entity id. */
+  name?: string | null;
 }
 
 export interface ReconcileContext {
@@ -133,7 +141,7 @@ function readable(value: DesiredValue, confirm: ConfirmRule): boolean {
 }
 
 /** Does the device show `value`? (climate setpoints in °C, already converted at observation) */
-export function observedMatches(value: DesiredValue, confirm: ConfirmRule, obs: EntitySnap | null): boolean {
+export function observedMatches(value: DesiredValue, confirm: ConfirmRule, obs: EntitySnap | null, haUnit: TempUnit = '°C'): boolean {
   if (!obs || !obs.available) return false;
   const state = obs.state.toLowerCase();
   switch (value.kind) {
@@ -149,7 +157,7 @@ export function observedMatches(value: DesiredValue, confirm: ConfirmRule, obs: 
     case 'climate': {
       if (obs.state !== value.hvacMode) return false;
       if (value.hvacMode === 'off') return true;
-      const tol = toleranceOf(confirm, 0.05);
+      const tol = toleranceOf(confirm, 0.05) + (haUnit === '°F' ? FAHRENHEIT_SHOWN_C : 0);
       if (value.temperature !== null && !near(attrNum(obs, 'temperature'), value.temperature, tol)) return false;
       if (value.targetLow !== null && !near(attrNum(obs, 'target_temp_low'), value.targetLow, tol)) return false;
       if (value.targetHigh !== null && !near(attrNum(obs, 'target_temp_high'), value.targetHigh, tol)) return false;
@@ -214,6 +222,9 @@ function dedupe(desired: readonly DesiredActuator[]): DesiredActuator[] {
   }
   return [...byKey.values()].sort((a, b) => RANK[a.urgency] - RANK[b.urgency]);
 }
+
+/** The device's name for an alert's facts, when the engine knows one. */
+const named = (info: ActuatorInfo | undefined): { name?: string } => (info?.name ? { name: info.name } : {});
 
 const isTrvHead = (d: DesiredActuator) => d.owner.type === 'trv' && d.key === d.entityId && d.value.kind === 'climate';
 
@@ -349,7 +360,16 @@ export class ReconcilerService {
   observe(entityId: EntityId | null): EntitySnap | null {
     if (!entityId) return null;
     const s = this.ha.getState(entityId);
-    return s ? snapOf(s, systemTempUnit(this.ha.config()?.unit_system.temperature)).snap : null;
+    return s ? snapOf(s, this.haUnit()).snap : null;
+  }
+
+  /** Does the device show `value`, as HA presents it in the house's unit? */
+  matches(value: DesiredValue, confirm: ConfirmRule, obs: EntitySnap | null): boolean {
+    return observedMatches(value, confirm, obs, this.haUnit());
+  }
+
+  private haUnit(): TempUnit {
+    return systemTempUnit(this.ha.config()?.unit_system.temperature);
   }
 
   reconcile(desiredIn: readonly DesiredActuator[], ctx: ReconcileContext): ReconcileOutcome {
@@ -385,7 +405,7 @@ export class ReconcilerService {
       const midRetry = r.status === 'sending' || r.status === 'retrying' || r.status === 'failed';
       const inResync = !!resync && (resync.keys === null || resync.keys.has(d.key)) && !(resync.keepRetries && midRetry);
       const obs = this.observe(d.entityId);
-      const matched = readable(d.value, d.confirm) ? observedMatches(d.value, d.confirm, obs) : sameValue(r.commanded, d.value) && r.status === 'confirmed';
+      const matched = readable(d.value, d.confirm) ? this.matches(d.value, d.confirm, obs) : sameValue(r.commanded, d.value) && r.status === 'confirmed';
 
       // someone keeps undoing Klimo's value: hold off (safety never does)
       if (r.backoffUntil !== null && r.backoffUntil > now && d.urgency !== 'safety' && !forced) {
@@ -495,7 +515,7 @@ export class ReconcilerService {
         commit();
         continue;
       }
-      const holdsCommanded = !!r.commanded && (readable(d.value, d.confirm) ? observedMatches(r.commanded, d.confirm, obs) : r.status === 'confirmed');
+      const holdsCommanded = !!r.commanded && (readable(d.value, d.confirm) ? this.matches(r.commanded, d.confirm, obs) : r.status === 'confirmed');
       if (!urgentPath && d.deadband > 0 && holdsCommanded) {
         const delta = numericDelta(r.commanded, d.value);
         if (delta !== null && delta < d.deadband - 1e-9) {
@@ -528,7 +548,7 @@ export class ReconcilerService {
           roomId: d.owner.roomId,
           entityId: d.key,
           deviceKey: info?.deviceKey ?? null,
-          facts: { entityId: d.key, targetC: d.value.kind === 'climate' ? d.value.temperature : null, attempt: r.attempts, of: d.maxAttempts },
+          facts: { entityId: d.key, ...named(info), targetC: d.value.kind === 'climate' ? d.value.temperature : null, attempt: r.attempts, of: d.maxAttempts },
           progress: { attempt: r.attempts, of: d.maxAttempts },
         });
       }
@@ -541,7 +561,7 @@ export class ReconcilerService {
           sourceId: d.owner.type === 'source' ? d.owner.id : null,
           entityId: d.entityId,
           deviceKey: info?.deviceKey ?? null,
-          facts: { entityId: d.entityId, until: r.backoffUntil, conflicts: r.conflicts.length },
+          facts: { entityId: d.entityId, ...named(info), until: r.backoffUntil, conflicts: r.conflicts.length },
         });
       }
     }
@@ -610,7 +630,7 @@ export class ReconcilerService {
     const rows = Object.values(ledger).filter((r) => r.entityId === entityId);
     if (!rows.length || rows.some((r) => r.contextIds.includes(ctxId))) return;
     const now = this.clock.now();
-    const obs = snapOf(next, systemTempUnit(this.ha.config()?.unit_system.temperature)).snap;
+    const obs = snapOf(next, this.haUnit()).snap;
     for (const r of rows) {
       const d = this.lastDesired.get(r.key);
       if (!d || !r.desired) continue;
@@ -620,7 +640,7 @@ export class ReconcilerService {
       }
       // a person or an automation; a device reporting by itself (a restart, its own watchdog) is no fight
       const by: ConflictEvent['by'] | null = next.context.parent_id ? 'automation' : next.context.user_id ? 'user' : null;
-      if (!by || observedMatches(r.desired, d.confirm, obs)) continue;
+      if (!by || this.matches(r.desired, d.confirm, obs)) continue;
       if (d.owner.type === 'trv' || d.owner.type === 'watchdog') continue;
       const windowMs = conflict.windowMin * MIN_MS;
       const conflicts = [...r.conflicts.filter((t) => now - t < windowMs), now];
