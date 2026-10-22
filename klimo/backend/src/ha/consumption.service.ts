@@ -1,0 +1,658 @@
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { notFound, validationError } from '../common/http';
+import { errorText, LogOnce } from '../common/logger';
+import { addDays, fromLocal, isLocalDate, toLocal } from '../engine/core/time';
+import { HDD_BASE_C } from '../shared/defaults';
+import { CONSUMPTION_RANGES, meterUnit, METER_QUANTITIES, outdoorSensorIds } from '../shared/model';
+import type {
+  ClockPort,
+  ConsumptionBucket,
+  ConsumptionMeterDto,
+  ConsumptionQuery,
+  ConsumptionRange,
+  ConsumptionRun,
+  ConsumptionTotals,
+  ConsumptionUnits,
+  ConsumptionValues,
+  EnergyTariffs,
+  EntityId,
+  EpochMs,
+  GasPriceUnit,
+  HaPort,
+  HouseConsumptionDto,
+  IConfigStore,
+  IConsumption,
+  Id,
+  ISpanStore,
+  LocalDate,
+  MeterKind,
+  MeterUnitInfo,
+  RunSpan,
+  SourceConfig,
+  SourceConsumptionDto,
+  SourceMeter,
+} from '../shared/model';
+import { CLOCK, CONFIG_STORE, HA_PORT, SPAN_STORE } from '../tokens';
+import {
+  attributeRuns,
+  costOf,
+  degreeDays,
+  gasKwh,
+  integrateKw,
+  type MeterReading,
+  outdoorMean,
+  type OutdoorRow,
+  type PeriodPlan,
+  planPeriod,
+  ratio,
+  roundTo,
+  rowChanges,
+  runningTotal,
+  shiftPeriod,
+  totalDelta,
+  type TotalPoint,
+} from './meters';
+import { combineBuckets } from './outdoor';
+import { domainOf, isAvailableState, parseNumber } from './units';
+
+const MIN = 60_000;
+const HOUR = 60 * MIN;
+const DAY = 24 * HOUR;
+const CACHE_MS = MIN;
+/** The latest compiled hour is looked for this far back. */
+const RECENT_MS = 3 * HOUR;
+/** The recorder keeps ten days of states by default: state history is not asked for further back. */
+const HISTORY_MS = 8 * DAY;
+/** Below these inputs a ratio says nothing (a few minutes of standby). */
+const MIN_GAS_KWH = 0.1;
+const MIN_ELECTRICITY_KWH = 0.05;
+const MIN_HDD = 1;
+
+type Fine = 'hour' | 'day';
+type StatRows = Awaited<ReturnType<HaPort['statistics']>>;
+
+/** A source's meter as it can be read now. */
+interface MeterRef {
+  meter: SourceMeter;
+  dto: ConsumptionMeterDto;
+  /** null when the unit is not one a meter of this kind is read in. */
+  unit: MeterUnitInfo | null;
+}
+
+/** Consumption of one meter in chart units: statistics rows, then pieces read from the state history after them. */
+interface MeterSeries {
+  pieces: { start: EpochMs; value: number | null }[];
+  /** Running total from the state history (counters), for single runs. */
+  totals: TotalPoint[];
+  /** Readings in kW (power sensors), for single runs. */
+  power: MeterReading[];
+}
+
+interface Reading {
+  ok: boolean;
+  series: Map<EntityId, MeterSeries>;
+  outdoor: OutdoorRow[];
+}
+
+interface Window {
+  from: EpochMs;
+  to: EpochMs;
+}
+
+const EMPTY_VALUES: ConsumptionValues = { gas: null, electricity: null, heat: null, cost: null };
+
+/** End of the period the window is cut at while it is still running: the same time elapsed («so far»). */
+export function sameElapsed(plan: PeriodPlan, prev: PeriodPlan, now: EpochMs): EpochMs {
+  if (now <= plan.from || now >= plan.to) {
+    return prev.to;
+  }
+
+  return Math.min(prev.to, prev.from + (now - plan.from));
+}
+
+/** Minutes the spans ran inside [a, b); an open span runs until `now`. */
+export function runtimeMin(spans: readonly RunSpan[], a: EpochMs, b: EpochMs, now: EpochMs): number {
+  let ms = 0;
+  for (const s of spans) {
+    ms += Math.max(0, Math.min(s.endTs ?? now, b) - Math.max(s.startTs, a));
+  }
+
+  return ms / MIN;
+}
+
+/**
+ * What a source used — gas, electricity, heat — by hour, day or month, with cost, runtime, outdoor
+ * temperature, heating degree-days and efficiency, plus single runs. Everything is read on request:
+ * meters from HA's long-term statistics (the latest, not yet compiled hour from the state history),
+ * runtime from Klimo's run spans. Nothing is stored.
+ */
+@Injectable()
+export class ConsumptionService implements IConsumption {
+  private readonly log = new Logger('Consumption');
+  private readonly once = new LogOnce(this.log);
+  private readonly cache = new Map<string, { at: EpochMs; value: Promise<unknown> }>();
+
+  constructor(
+    @Inject(HA_PORT) private readonly ha: HaPort,
+    @Inject(CONFIG_STORE) private readonly config: IConfigStore,
+    @Inject(SPAN_STORE) private readonly spans: ISpanStore,
+    @Inject(CLOCK) private readonly clock: ClockPort,
+  ) {}
+
+  async source(sourceId: Id, q: ConsumptionQuery): Promise<SourceConsumptionDto> {
+    const source = this.config.get('sources', sourceId);
+    if (!source) {
+      throw notFound('Source');
+    }
+
+    const range = q.range ?? 'day';
+    if (!CONSUMPTION_RANGES.includes(range)) {
+      throw validationError([{ path: 'range', code: 'enum', params: { values: CONSUMPTION_RANGES.join('|') } }]);
+    }
+
+    const now = this.clock.now();
+    const date = this.dateOf(q.date, now);
+    const key = `source|${source.id}|${range}|${date}|${Math.floor(now / MIN)}|${this.config.revision()}`;
+
+    return this.cached(key, () => this.buildSource(source, range, date, now));
+  }
+
+  async house(date?: LocalDate): Promise<HouseConsumptionDto> {
+    const now = this.clock.now();
+    const day = this.dateOf(date, now);
+    const key = `house|${day}|${Math.floor(now / MIN)}|${this.config.revision()}`;
+
+    return this.cached(key, () => this.buildHouse(day, now));
+  }
+
+  /* ── plumbing ─────────────────────────────────────────────────────────────────────────────── */
+
+  private dateOf(date: LocalDate | undefined, now: EpochMs): LocalDate {
+    if (date !== undefined && !isLocalDate(date)) {
+      throw validationError([{ path: 'date', code: 'date' }]);
+    }
+
+    return date ?? toLocal(now, this.clock.tz()).date;
+  }
+
+  private cached<T>(key: string, load: () => Promise<T>): Promise<T> {
+    const now = this.clock.now();
+    const hit = this.cache.get(key);
+    if (hit && now - hit.at < CACHE_MS) {
+      return hit.value as Promise<T>;
+    }
+
+    const value = load();
+    this.cache.set(key, { at: now, value });
+    value.catch(() => this.cache.delete(key));
+    for (const [k, v] of this.cache) {
+      if (now - v.at >= CACHE_MS) {
+        this.cache.delete(k);
+      }
+    }
+
+    return value;
+  }
+
+  private tariffs(): EnergyTariffs {
+    return this.config.singleton('settings').tariffs;
+  }
+
+  /** The source's meters with their live unit and state. */
+  private meterRefs(source: SourceConfig): MeterRef[] {
+    return source.meters.map((meter) => {
+      const st = this.ha.getState(meter.entityId);
+      const liveUnit = st?.attributes.unit_of_measurement;
+      const unitText = typeof liveUnit === 'string' && liveUnit ? liveUnit : meter.unit;
+      const info = meterUnit(unitText);
+      const fits = !!info && METER_QUANTITIES[meter.kind].includes(info.quantity);
+      const friendly = st?.attributes.friendly_name;
+      let status: ConsumptionMeterDto['status'] = 'ok';
+      if (!fits) {
+        status = 'unsupported_unit';
+      } else if (!st) {
+        status = this.ha.connected ? 'missing' : 'unavailable';
+      } else if (!isAvailableState(st.state)) {
+        status = 'unavailable';
+      }
+
+      return {
+        meter,
+        unit: fits ? info : null,
+        dto: {
+          kind: meter.kind,
+          entityId: meter.entityId,
+          name: typeof friendly === 'string' && friendly.trim() ? friendly : null,
+          unit: unitText,
+          reading: info?.quantity === 'power' ? 'power' : 'meter',
+          status,
+          statistics: typeof st?.attributes.state_class === 'string',
+        },
+      };
+    });
+  }
+
+  private async runSpans(from: EpochMs, to: EpochMs, sourceId?: Id): Promise<RunSpan[]> {
+    try {
+      return (await this.spans.range(from, to, 'source', sourceId)).filter((s) => s.kind === 'run');
+    } catch (e) {
+      this.once.warn('spans', `run spans unavailable: ${errorText(e)}`);
+
+      return [];
+    }
+  }
+
+  /* ── reading Home Assistant ───────────────────────────────────────────────────────────────── */
+
+  /**
+   * Every meter over the window in one statistics call (`fine` rows: hours, or days for a year), the
+   * latest compiled hour, then one state-history call for what statistics do not hold yet and for
+   * single runs from `runsFrom`. A failing recorder leaves the meters unknown, never the request.
+   */
+  private async read(refs: MeterRef[], w: Window, fine: Fine, runsFrom: EpochMs | null, withOutdoor: boolean, now: EpochMs): Promise<Reading> {
+    const usable = [...new Map(refs.filter((r) => r.unit).map((r) => [r.meter.entityId, r])).values()];
+    const empty: Reading = { ok: this.ha.connected, series: new Map(), outdoor: [] };
+    if (!this.ha.connected || w.to <= w.from) {
+      return empty;
+    }
+
+    try {
+      const ids = usable.map((r) => r.meter.entityId);
+      const step = fine === 'hour' ? HOUR : DAY;
+      const stats: StatRows = ids.length ? await this.ha.statistics(ids, w.from - step, w.to, fine, ['change', 'sum', 'state', 'mean']) : {};
+      const needTail = w.to > now - RECENT_MS;
+      const hourly: StatRows = fine === 'hour' || !needTail || !ids.length ? stats : await this.ha.statistics(ids, now - RECENT_MS, now, 'hour', ['change', 'sum', 'state', 'mean']);
+      const statsEnd = new Map(ids.map((id) => [id, lastHourEnd(hourly[id])]));
+      const histFrom = this.historyFrom(ids, statsEnd, w, runsFrom, needTail, now);
+      const raw = histFrom !== null && ids.length ? await this.ha.history(ids, histFrom, w.to, { minimal: true, noAttributes: true }) : {};
+      const series = new Map<EntityId, MeterSeries>();
+      for (const ref of usable) {
+        const id = ref.meter.entityId;
+        const readings = (raw[id] ?? []).map((row) => ({ t: Math.round(row.lu * 1000), v: scaled(parseNumber(row.s), ref.unit) }));
+        series.set(id, buildSeries(ref, stats[id] ?? [], fine, w, statsEnd.get(id) ?? null, histFrom, readings, this.clock.tz()));
+      }
+
+      const outdoor = withOutdoor ? await this.outdoorRows(w, fine) : [];
+      this.once.reset('recorder');
+
+      return { ok: true, series, outdoor };
+    } catch (e) {
+      this.once.warn('recorder', `recorder query for consumption failed: ${errorText(e)}`);
+
+      return { ok: false, series: new Map(), outdoor: [] };
+    }
+  }
+
+  /** Where the state history has to start: the earliest end of statistics, or the first run, within the recorder's reach. */
+  private historyFrom(ids: EntityId[], statsEnd: Map<EntityId, EpochMs | null>, w: Window, runsFrom: EpochMs | null, needTail: boolean, now: EpochMs): EpochMs | null {
+    const floor = Math.max(w.from, now - HISTORY_MS);
+    let from: EpochMs | null = runsFrom === null ? null : Math.max(floor, runsFrom - HOUR);
+    if (needTail) {
+      for (const id of ids) {
+        const end = statsEnd.get(id) ?? null;
+        const start = end === null ? floor : Math.max(floor, Math.min(end, w.to));
+        from = from === null ? start : Math.min(from, start);
+      }
+    }
+
+    return from !== null && from < w.to ? from : null;
+  }
+
+  /** Mean outdoor temperature per hour (or day), the configured sensors combined like the live value. */
+  private async outdoorRows(w: Window, fine: Fine): Promise<OutdoorRow[]> {
+    const o = this.config.singleton('settings').outdoor;
+    const ids = outdoorSensorIds(o).filter((id) => domainOf(id) !== 'weather');
+    if (!ids.length) {
+      return [];
+    }
+
+    const stats = await this.ha.statistics(ids, w.from, w.to, fine, ['mean']);
+    const perSensor = ids.map((id) => (stats[id] ?? []).map((r) => ({ start: r.start, value: typeof r.mean === 'number' ? r.mean : null })));
+    const tz = this.clock.tz();
+
+    return combineBuckets(perSensor, o.aggregation).flatMap(([start, meanC]) => (meanC === null ? [] : [{ start, end: rowEnd(start, fine, tz), meanC }]));
+  }
+
+  /* ── one source ───────────────────────────────────────────────────────────────────────────── */
+
+  private async buildSource(source: SourceConfig, range: ConsumptionRange, date: LocalDate, now: EpochMs): Promise<SourceConsumptionDto> {
+    const tz = this.clock.tz();
+    const plan = planPeriod(range, date, tz);
+    const prevPlan = planPeriod(range, shiftPeriod(range, plan.date, -1), tz);
+    const prev: Window = { from: prevPlan.from, to: sameElapsed(plan, prevPlan, now) };
+    const until = Math.max(plan.from, Math.min(plan.to, now));
+    const refs = this.meterRefs(source);
+    const tariffs = this.tariffs();
+    const withRuns = range === 'day' || range === 'week';
+    const spans = await this.runSpans(prevPlan.from, plan.to, source.id);
+    const reading = await this.read(refs, { from: prevPlan.from, to: until }, range === 'year' ? 'day' : 'hour', withRuns ? plan.from : null, true, now);
+    const values = new SourceValues(refs, reading, tariffs);
+    const totals = (a: EpochMs, b: EpochMs): ConsumptionTotals => this.totals(values, spans, reading.outdoor, a, b, now);
+
+    return {
+      sourceId: source.id,
+      range,
+      date: plan.date,
+      from: plan.from,
+      to: plan.to,
+      bucket: plan.bucket,
+      buckets: plan.edges.slice(0, -1).map((start, i) => this.bucket(values, spans, reading.outdoor, start, plan.edges[i + 1], now)),
+      totals: totals(plan.from, until),
+      previous: { date: prevPlan.date, from: prev.from, to: prev.to, totals: totals(prev.from, prev.to) },
+      runs: withRuns ? this.runs(values, spans, plan.from, until, now) : null,
+      meters: refs.map((r) => r.dto),
+      units: values.units(),
+      tariffs,
+      hddBaseC: HDD_BASE_C,
+      recorder: reading.ok ? 'ok' : 'unavailable',
+      now,
+    };
+  }
+
+  private bucket(values: SourceValues, spans: RunSpan[], outdoor: OutdoorRow[], start: EpochMs, end: EpochMs, now: EpochMs): ConsumptionBucket {
+    const future = start >= now;
+    const until = Math.min(end, now);
+    const v = future ? EMPTY_VALUES : values.between(start, until);
+    const tz = this.clock.tz();
+
+    return {
+      start,
+      end,
+      ...rounded(v),
+      runtimeMin: future ? 0 : Math.round(runtimeMin(spans, start, until, now)),
+      outdoorAvgC: future ? null : roundTo(outdoorMean(outdoor, start, until), 1),
+      hdd: future ? null : roundTo(degreeDays(outdoor, start, until, HDD_BASE_C, tz), 2),
+      efficiency: roundTo(values.efficiency(v), 2),
+      cop: roundTo(values.cop(v), 2),
+      partial: start < now && now < end,
+      future,
+    };
+  }
+
+  private totals(values: SourceValues, spans: RunSpan[], outdoor: OutdoorRow[], from: EpochMs, to: EpochMs, now: EpochMs): ConsumptionTotals {
+    const v = values.between(from, to);
+    const hdd = degreeDays(outdoor, from, to, HDD_BASE_C, this.clock.tz());
+
+    return {
+      ...rounded(v),
+      runtimeMin: Math.round(runtimeMin(spans, from, to, now)),
+      runs: spans.filter((s) => s.startTs >= from && s.startTs < to).length,
+      outdoorAvgC: roundTo(outdoorMean(outdoor, from, to), 1),
+      hdd: roundTo(hdd, 2),
+      gasPerHdd: v.gas !== null && hdd !== null && hdd >= MIN_HDD ? roundTo(v.gas / hdd, 3) : null,
+      efficiency: roundTo(values.efficiency(v), 2),
+      cop: roundTo(values.cop(v), 2),
+    };
+  }
+
+  private runs(values: SourceValues, spans: RunSpan[], from: EpochMs, to: EpochMs, now: EpochMs): ConsumptionRun[] {
+    const mine = spans.filter((s) => s.startTs < to && (s.endTs ?? now) > from).sort((a, b) => a.startTs - b.startTs);
+    const windows = mine.map((s) => ({ start: s.startTs, end: s.endTs ?? now }));
+    const shares = values.runShares(windows);
+
+    return mine.map((s, i) => {
+      const gas = shares.gas[i];
+      const electricity = shares.electricity[i];
+      const heat = shares.heat[i];
+
+      return {
+        start: s.startTs,
+        end: s.endTs,
+        minutes: Math.round((windows[i].end - windows[i].start) / MIN),
+        mode: s.mode,
+        gas: roundTo(gas.value, 3),
+        electricity: roundTo(electricity.value, 3),
+        heat: roundTo(heat.value, 3),
+        cost: roundTo(values.cost(gas.value, electricity.value), 2),
+        estimated: gas.estimated || electricity.estimated || heat.estimated,
+      };
+    });
+  }
+
+  /* ── the house ────────────────────────────────────────────────────────────────────────────── */
+
+  private async buildHouse(date: LocalDate, now: EpochMs): Promise<HouseConsumptionDto> {
+    const tz = this.clock.tz();
+    const plan = planPeriod('day', date, tz);
+    const prevPlan = planPeriod('day', addDays(plan.date, -1), tz);
+    const prevTo = sameElapsed(plan, prevPlan, now);
+    const until = Math.max(plan.from, Math.min(plan.to, now));
+    const tariffs = this.tariffs();
+    const sources = this.config.list('sources').map((s) => ({ source: s, refs: this.meterRefs(s).filter((r) => r.meter.kind !== 'heat') }));
+    const all = sources.flatMap((s) => s.refs);
+    const spans = await this.runSpans(plan.from, plan.to);
+    const reading = await this.read(all, { from: prevPlan.from, to: until }, 'hour', null, false, now);
+    const house = new SourceValues(all, reading, tariffs);
+    const perSource = sources
+      .filter((s) => s.refs.length)
+      .map(({ source, refs }) => {
+        const v = new SourceValues(refs, reading, tariffs).between(plan.from, until);
+
+        return {
+          sourceId: source.id,
+          gas: roundTo(house.toHouseGas(v.gas, refs), 3),
+          electricity: roundTo(v.electricity, 3),
+          cost: roundTo(v.cost, 2),
+          runtimeMin: Math.round(runtimeMin(spans.filter((x) => x.subjectId === source.id), plan.from, until, now)),
+        };
+      });
+    const today = house.between(plan.from, until);
+
+    return {
+      date: plan.date,
+      from: plan.from,
+      to: plan.to,
+      gas: roundTo(today.gas, 3),
+      electricity: roundTo(today.electricity, 3),
+      cost: roundTo(today.cost, 2),
+      previous: rounded(house.between(prevPlan.from, prevTo)),
+      units: house.units(),
+      sources: perSource,
+      configured: all.length > 0,
+      recorder: reading.ok ? 'ok' : 'unavailable',
+    };
+  }
+}
+
+/* ── per-meter series ───────────────────────────────────────────────────────────────────────────── */
+
+const scaled = (v: number | null, unit: MeterUnitInfo | null): number | null => (v === null || !unit ? null : v * unit.factor);
+
+function lastHourEnd(rows: StatRows[string] | undefined): EpochMs | null {
+  if (!rows?.length) {
+    return null;
+  }
+
+  return Math.max(...rows.map((r) => r.start)) + HOUR;
+}
+
+/** End of a statistics row: an hour, or the next local midnight (23 or 25 hours on DST days). */
+function rowEnd(start: EpochMs, fine: Fine, tz: string): EpochMs {
+  return fine === 'hour' ? start + HOUR : fromLocal(addDays(toLocal(start, tz).date, 1), 0, tz);
+}
+
+/**
+ * Statistics rows turned into chart units (a counter's change, a power sensor's mean × hours), then
+ * hour pieces from the state history for what statistics do not hold yet (`statsEnd` onwards, or the
+ * whole history window for a sensor without statistics).
+ */
+function buildSeries(ref: MeterRef, rows: StatRows[string], fine: Fine, w: Window, statsEnd: EpochMs | null, histFrom: EpochMs | null, readings: MeterReading[], tz: string): MeterSeries {
+  const unit = ref.unit as MeterUnitInfo;
+  const power = unit.quantity === 'power';
+  const sorted = [...rows].sort((a, b) => a.start - b.start);
+  const changes = power ? [] : rowChanges(sorted);
+  const pieces: MeterSeries['pieces'] = [];
+  sorted.forEach((r, i) => {
+    if (r.start < w.from || r.start >= w.to) {
+      return;
+    }
+
+    const end = Math.min(rowEnd(r.start, fine, tz), statsEnd ?? Infinity, w.to);
+    const value = power ? (typeof r.mean === 'number' ? (r.mean * unit.factor * Math.max(0, end - r.start)) / HOUR : null) : changes[i] === null ? null : (changes[i] as number) * unit.factor;
+    pieces.push({ start: r.start, value });
+  });
+
+  const totals = power ? [] : runningTotal(readings);
+  const tailFrom = sorted.length ? statsEnd : histFrom;
+  if (tailFrom !== null && histFrom !== null) {
+    for (let a = Math.max(tailFrom, histFrom); a < w.to; a = Math.floor(a / HOUR) * HOUR + HOUR) {
+      const b = Math.min(w.to, Math.floor(a / HOUR) * HOUR + HOUR);
+      pieces.push({ start: a, value: power ? integrateKw(readings, a, b) : totalDelta(totals, a, b) });
+    }
+  }
+
+  return { pieces: pieces.sort((x, y) => x.start - y.start), totals, power: power ? readings : [] };
+}
+
+/* ── values of one source (or the house) ────────────────────────────────────────────────────────── */
+
+class SourceValues {
+  private readonly byKind = new Map<MeterKind, { ref: MeterRef; series: MeterSeries | null }>();
+
+  constructor(
+    refs: MeterRef[],
+    private readonly reading: Reading,
+    private readonly tariffs: EnergyTariffs,
+  ) {
+    for (const ref of refs) {
+      if (ref.unit && !this.byKind.has(ref.meter.kind)) {
+        this.byKind.set(ref.meter.kind, { ref, series: reading.series.get(ref.meter.entityId) ?? null });
+      }
+    }
+  }
+
+  /** m³ for a volume gas meter, kWh for one that counts energy. */
+  gasUnit(): GasPriceUnit | null {
+    const gas = this.byKind.get('gas');
+    if (!gas) {
+      return null;
+    }
+
+    return gas.ref.unit?.quantity === 'volume' ? 'm³' : 'kWh';
+  }
+
+  units(): ConsumptionUnits {
+    return {
+      gas: this.houseGasUnit() ?? this.gasUnit(),
+      electricity: this.byKind.has('electricity') ? 'kWh' : null,
+      heat: this.byKind.has('heat') ? 'kWh' : null,
+      currency: this.tariffs.currency || null,
+    };
+  }
+
+  /** What was used in [a, b). For the house: every distinct meter, gas in one unit. */
+  between(a: EpochMs, b: EpochMs): ConsumptionValues {
+    const gas = this.sumGas(a, b);
+    const electricity = this.sumKind('electricity', a, b);
+    const heat = this.sumKind('heat', a, b);
+
+    return { gas, electricity, heat, cost: this.cost(gas, electricity) };
+  }
+
+  cost(gas: number | null, electricity: number | null): number | null {
+    return costOf(gas, electricity, this.units().gas, this.tariffs);
+  }
+
+  efficiency(v: ConsumptionValues): number | null {
+    const unit = this.gasUnit();
+    if (v.gas === null || unit === null) {
+      return null;
+    }
+
+    return ratio(v.heat, gasKwh(v.gas, unit, this.tariffs.gasKwhPerM3), MIN_GAS_KWH);
+  }
+
+  cop(v: ConsumptionValues): number | null {
+    return this.byKind.has('gas') ? null : ratio(v.heat, v.electricity, MIN_ELECTRICITY_KWH);
+  }
+
+  /** Gas of one source's meters in the house unit (kWh as soon as any gas meter counts energy). */
+  toHouseGas(gas: number | null, refs: MeterRef[]): number | null {
+    const own = refs.find((r) => r.meter.kind === 'gas' && r.unit);
+    if (gas === null || !own) {
+      return gas;
+    }
+
+    return this.houseGasUnit() === 'kWh' && own.unit?.quantity === 'volume' ? gas * this.tariffs.gasKwhPerM3 : gas;
+  }
+
+  runShares(windows: { start: EpochMs; end: EpochMs }[]): Record<MeterKind, { value: number | null; estimated: boolean }[]> {
+    const none = windows.map(() => ({ value: null, estimated: false }));
+    const out: Record<MeterKind, { value: number | null; estimated: boolean }[]> = { gas: none, electricity: none, heat: none };
+    for (const [kind, { ref, series }] of this.byKind) {
+      if (!series) {
+        continue;
+      }
+
+      out[kind] = ref.unit?.quantity === 'power'
+        ? windows.map((w) => ({ value: integrateKw(series.power, w.start, w.end), estimated: true }))
+        : attributeRuns(series.totals, windows);
+    }
+
+    return out;
+  }
+
+  private gasMeters(): { ref: MeterRef; series: MeterSeries | null }[] {
+    return [...this.reading.series.keys()].length ? this.allOf('gas') : [];
+  }
+
+  /** Every distinct meter of a kind among the refs (the house sums them; a source has one). */
+  private allOf(kind: MeterKind): { ref: MeterRef; series: MeterSeries | null }[] {
+    const first = this.byKind.get(kind);
+
+    return first ? [first, ...this.extra.filter((x) => x.ref.meter.kind === kind)] : [];
+  }
+
+  private readonly extra: { ref: MeterRef; series: MeterSeries | null }[] = [];
+
+  private houseGasUnit(): GasPriceUnit | null {
+    const gas = this.allOf('gas');
+    if (!gas.length) {
+      return null;
+    }
+
+    return gas.every((g) => g.ref.unit?.quantity === 'volume') ? 'm³' : 'kWh';
+  }
+
+  private sumKind(kind: MeterKind, a: EpochMs, b: EpochMs): number | null {
+    return sumValues(this.allOf(kind).map((m) => valueIn(m.series, a, b)));
+  }
+
+  private sumGas(a: EpochMs, b: EpochMs): number | null {
+    const unit = this.houseGasUnit();
+
+    return sumValues(this.gasMeters().map((m) => {
+      const v = valueIn(m.series, a, b);
+
+      return v !== null && unit === 'kWh' && m.ref.unit?.quantity === 'volume' ? v * this.tariffs.gasKwhPerM3 : v;
+    }));
+  }
+}
+
+function sumValues(values: (number | null)[]): number | null {
+  const known = values.filter((v): v is number => v !== null);
+
+  return known.length ? known.reduce((s, v) => s + v, 0) : null;
+}
+
+/** A meter's consumption in [a, b): the pieces starting there; null when none of them is known. */
+function valueIn(series: MeterSeries | null, a: EpochMs, b: EpochMs): number | null {
+  if (!series) {
+    return null;
+  }
+
+  let sum = 0;
+  let known = false;
+  for (const p of series.pieces) {
+    if (p.start >= a && p.start < b && p.value !== null) {
+      sum += p.value;
+      known = true;
+    }
+  }
+
+  return known ? sum : null;
+}
+
+function rounded(v: ConsumptionValues): ConsumptionValues {
+  return { gas: roundTo(v.gas, 3), electricity: roundTo(v.electricity, 3), heat: roundTo(v.heat, 3), cost: roundTo(v.cost, 2) };
+}

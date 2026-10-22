@@ -35,7 +35,7 @@ export function toleranceHint(heat: Band, targetC: number | null = null): InfoHi
 
 /** The shortest request of a room. */
 export function minRequestHint(minutes: number): InfoHintContent {
-  return t('Once the room asks for heat or cold, the request holds at least {dur}, even if the room reaches its target sooner — a boiler is not started for two minutes. An open window, a room switched off or overheating end it at once. Default: 5 min; 0 — no minimum.', {
+  return t('Once the room asks for heat or cold, the request holds at least {dur}, even if the room reaches its target sooner, so a boiler is never started for just two minutes. An open window, a room switched off or overheating end it at once. Default: 5 min; 0 — no minimum.', {
     dur: fmtDur(minutes),
   });
 }

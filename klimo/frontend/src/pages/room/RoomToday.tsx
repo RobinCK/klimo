@@ -113,6 +113,11 @@ export function RoomToday({
           <StatTile
             variant="well"
             title={cooled ? t('Cooling speed') : t('Warming speed')}
+            hint={
+              cooled
+                ? t('How many degrees an hour the room loses while it is cooled, learned from its recent runs.')
+                : t('How many degrees an hour the room gains while it is heated, learned from its recent warm-ups. Optimal start uses it to begin early enough before a warmer slot.')
+            }
             value={`≈ ${fmtRate(Math.abs(d.stats.rateCPerH ?? (cooled ? room.thermostat.rate.cool : room.thermostat.rate.heat)), { sign: false })}`}
           />
         </AutoGrid>

@@ -72,7 +72,7 @@ export function EnergySection({ d, s, embedded }: { d: SystemData; s: StrategyDa
           <Stepper
             variant="tile"
             label={t('Budget for heat and cold')}
-            hint={t('While the energy restrictions are on — during a blackout, by default — all electric heat and cold together (heat pump, electric boiler, heaters, air conditioners) may draw at most this much. A start that does not fit waits; when the load stays over it by {over} for 30 s, the first source of the list below is switched off. A gas boiler counts only its electronics. Default: {def}.', {
+            hint={t('While the energy restrictions are on (by default during a blackout), all electric heat and cold together may draw at most this much. A start that does not fit waits; a load over it by {over} for 30 s switches off the first source of the list below. A gas boiler counts only its electronics. Default: {def}.', {
               over: fmtKw(0.2),
               def: fmtKw(4),
             })}

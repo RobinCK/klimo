@@ -31,6 +31,8 @@ function Body(p: SectionProps) {
   const count = sensors.filter((s) => s.included).length;
   const v = hum.value;
   const dehum = v.dehumidifier;
+  // a switch that already drives something else is refused; the reason belongs under the picker
+  const dehumError = hum.formErrors({ entity: ['humidity.dehumidifier.entityId'] }).fields.entity;
   return (
     <Stack gap="lg">
       {sensors.length ? (
@@ -187,6 +189,7 @@ function Body(p: SectionProps) {
               search={search}
               placeholder={t('Pick a switch or a plug')}
               clearable
+              error={dehumError}
             />
           ) : dehum ? (
             <EntityId id={dehum.entityId} />

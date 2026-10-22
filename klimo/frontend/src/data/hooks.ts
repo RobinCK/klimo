@@ -310,6 +310,8 @@ export interface Autosave<T> {
   state: AutosaveState;
   /** Why the last save failed, in words (the server's reasons); null once a save succeeds. */
   error: string | null;
+  /** The last failure split between a form's fields and the rest (as `useMutation`'s). */
+  formErrors: <F extends string>(fields: FieldPaths<F>) => FormErrors<F>;
   retry: () => void;
   /** Save a pending edit now (e.g. before navigating away). */
   flush: () => Promise<void>;
@@ -328,6 +330,7 @@ export function useAutosave<T>(serverValue: T, save: (next: T) => Promise<unknow
   const [dirty, setDirty] = useState(false);
   const [state, setState] = useState<AutosaveState>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<unknown>(undefined);
   const saveRef = useRef(save);
   saveRef.current = save;
   const timer = useRef<number | undefined>(undefined);
@@ -358,6 +361,7 @@ export function useAutosave<T>(serverValue: T, save: (next: T) => Promise<unknow
       if (pendingValue.current === null) setDirty(false);
       setState('saved');
       setError(null);
+      setFailure(undefined);
       window.clearTimeout(savedTimer.current);
       savedTimer.current = window.setTimeout(() => mounted.current && setState('idle'), 2000);
     } catch (e) {
@@ -370,6 +374,7 @@ export function useAutosave<T>(serverValue: T, save: (next: T) => Promise<unknow
       setState('error');
       const text = errorText(e);
       setError(text || null);
+      setFailure(e);
       if (text) toast({ tone: 'err', message: t('Not saved: {reason}', { reason: text }) });
     }
   }, []);
@@ -407,7 +412,9 @@ export function useAutosave<T>(serverValue: T, save: (next: T) => Promise<unknow
     [],
   );
 
-  return { value: local, set, state, error, retry, flush, dirty };
+  const formErrors = useCallback(<F extends string>(fields: FieldPaths<F>) => formErrorsOf(failure, fields), [failure]);
+
+  return { value: local, set, state, error, formErrors, retry, flush, dirty };
 }
 
 /* ---------------- entity search, time, layout ---------------- */

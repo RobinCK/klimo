@@ -77,13 +77,16 @@ export function issueText(issue: ApiErrorIssue): string {
     case 'domain':
       return p.domains ? t('Must be one of: {domains}', { domains: p.domains }) : t('Wrong kind of entity');
     case 'gap':
-      return t('Keep at least {gap}° between the bounds', { gap: p.gap ?? p.gapC ?? '' });
+      // always the heating and the cooling target (of a profile, or of a room's auto range)
+      return t('Keep heating and cooling at least {gap}° apart', { gap: p.gap ?? p.gapC ?? '' });
     case 'pattern':
       return t('Wrong format');
     case 'length':
       return p.max != null ? t('Up to {max} characters', { max: p.max }) : t('Wrong length');
-    case 'in_use':
-      return t('Already used elsewhere');
+    case 'in_use': {
+      const by = p.source ?? p.by;
+      return typeof by === 'string' && by ? t('Already used by «{name}»', { name: by }) : t('Already used elsewhere');
+    }
     case 'unsupported':
       return typeof p.reason === 'string' ? p.reason : t('Not supported');
     case 'needs_sensor':

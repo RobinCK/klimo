@@ -4,6 +4,7 @@ import { toneVar } from '../../tokens/vars';
 import { useUiText } from '../../UiTextContext';
 import { Icon } from '../../basic/Icon';
 import { Button } from '../../basic/Button';
+import { IconButton } from '../../basic/IconButton';
 import { StatusChip } from '../../basic/Chips';
 import { cx } from '../../viz/internal/util';
 import s from './rows.module.css';
@@ -38,10 +39,13 @@ export interface ContactRowProps {
   open: boolean;
   /** The sensor is offline: the state is unknown. */
   unavailable?: boolean;
+  /** Opens the sensor's settings (name, removal). */
+  onEdit?: () => void;
 }
 
 /** A window or door contact with its live state. */
-export function ContactRow({ name, entityId, meta, stateText, open, unavailable }: ContactRowProps) {
+export function ContactRow({ name, entityId, meta, stateText, open, unavailable, onEdit }: ContactRowProps) {
+  const ut = useUiText();
   return (
     <div className={s.row} data-open={open ? '' : undefined} data-unavailable={unavailable ? '' : undefined}>
       <span className={s.contactIcon}>
@@ -53,6 +57,7 @@ export function ContactRow({ name, entityId, meta, stateText, open, unavailable 
       </span>
       <span className={s.rowMeta}>{meta}</span>
       <span className={s.contactState}>{stateText}</span>
+      {onEdit ? <IconButton icon="pencil" label={ut('Edit sensor «{name}»', { name })} size={36} variant="ghost" onClick={onEdit} /> : null}
     </div>
   );
 }
@@ -72,10 +77,13 @@ export interface TrvCardProps {
   capabilities: readonly { label: string; on: boolean }[];
   /** Phone accordion: one chip, three small stats, no capabilities. */
   compact?: boolean;
+  /** Opens the valve's settings (name, removal). */
+  onEdit?: () => void;
 }
 
 /** A radiator valve: state, confirmation, own sensor, battery, signal and what it can do. */
-export function TrvCard({ name, meta, entityId, chips, stats, capabilities, compact }: TrvCardProps) {
+export function TrvCard({ name, meta, entityId, chips, stats, capabilities, compact, onEdit }: TrvCardProps) {
+  const ut = useUiText();
   return (
     <div className={s.trv} data-compact={compact ? '' : undefined}>
       <div className={s.trvHead}>
@@ -91,10 +99,13 @@ export function TrvCard({ name, meta, entityId, chips, stats, capabilities, comp
             {meta}
           </span>
         </span>
-        <span className={s.chips}>
-          {(compact ? chips.slice(0, 1) : chips).map((c, i) => (
-            <StatusChip key={`${c.label}-${i}`} tone={c.tone} icon={c.icon} label={c.label} size={compact ? 24 : 26} />
-          ))}
+        <span className={s.trvEnd}>
+          <span className={s.chips}>
+            {(compact ? chips.slice(0, 1) : chips).map((c, i) => (
+              <StatusChip key={`${c.label}-${i}`} tone={c.tone} icon={c.icon} label={c.label} size={compact ? 24 : 26} />
+            ))}
+          </span>
+          {onEdit ? <IconButton icon="pencil" label={ut('Edit «{name}»', { name })} size={36} variant="ghost" onClick={onEdit} /> : null}
         </span>
       </div>
       <div className={s.trvStats}>

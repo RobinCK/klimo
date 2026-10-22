@@ -179,6 +179,12 @@
   gap: 8px;
 }
 
+.trvEnd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .trvName {
   font-size: var(--ui-fs-body-lg);
   font-weight: 600;
