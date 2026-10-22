@@ -3789,6 +3789,10 @@ export interface IEngine {
   startSourceTest(sourceId: Id, req: SourceTestRequest, actor: Actor): Promise<SourceTestResult>;
   stopSourceTest(sourceId: Id, actor: Actor): Promise<SourceTestResult | null>;
   exercisePump(pumpId: Id, actor: Actor): Promise<void>;
+  /** Hands radiator heads back to their own regulation before Klimo forgets them (room or head deleted):
+   *  heat at the room's release setpoint, internal sensor, child lock off. Sent through the reconciler like
+   *  every other write; resolves once the heads confirm or after `timeoutMs` (30 s), whichever comes first. */
+  releaseTrvs(roomId: Id, deviceIds: Id[] | 'all', opts?: { timeoutMs?: number }): Promise<{ sent: number; confirmed: number }>;
 }
 
 export interface IRoomActions {

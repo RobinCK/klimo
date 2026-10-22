@@ -215,6 +215,11 @@ class FakeEngine {
     this.resent.push(filter);
     return 1;
   }
+  async releaseTrvs(roomId, deviceIds, opts) {
+    (this.released ??= []).push({ roomId, deviceIds, timeoutMs: opts?.timeoutMs ?? null });
+    const n = deviceIds === 'all' ? 0 : deviceIds.length;
+    return { sent: n, confirmed: n };
+  }
 }
 
 /** The pure core functions, reduced to what the services need and the tests can predict. */

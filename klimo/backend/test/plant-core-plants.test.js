@@ -49,11 +49,16 @@ test('plant 1, winter: the boiler heats on its dry contact, confirmed by the fla
   for (const id of ['living', 'bedroom']) run.set(`climate.${id}_ac`, 'off', { attrs: acAttrs });
   run.room('living', { t: 19.7, demand: 'heat' });
   run.room('bedroom', { t: 20.5, demand: 'none' });
+  run.st.deaf = new Set(['switch.boiler_relay']);
   let res = run.runUntil(run.st.now + MIN).at(-1);
   assert.equal(h.sourceState(res, 'boiler').on, true);
-  assert.equal(h.sourceState(res, 'boiler').state, 'starting', 'no flame yet');
-  run.set('binary_sensor.boiler_flame', 'on');
+  assert.equal(h.sourceState(res, 'boiler').state, 'starting', 'the relay has not switched yet');
+  run.st.deaf = null;
+  run.tick();
   res = run.tick();
+  assert.equal(h.sourceState(res, 'boiler').state, 'heating', 'the relay took the command; the flame is the boiler\'s own business');
+  run.set('binary_sensor.boiler_flame', 'on');
+  res = run.runUntil(run.st.now + MIN).at(-1);
   assert.equal(h.sourceState(res, 'boiler').state, 'heating');
   const wd = h.desiredOf(res, 'number.boiler_relay_countdown');
   assert.equal(wd.value.value, 15);

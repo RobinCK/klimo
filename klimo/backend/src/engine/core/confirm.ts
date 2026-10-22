@@ -13,14 +13,18 @@ import type {
   SourceMemory,
   SpanEvent,
 } from '../../shared/model';
+import { hvacModeFor } from './ac';
 import { numOf, snapOf } from './conditions';
 
 /* =====================================================================================================
- * Does the source really run? Every start must be confirmed by a signal the user chose (flame sensor,
- * power above 50 W, the climate's hvac_action, a read-back of the relay). No signal within the start
- * timeout, a device error, a relay that refuses to follow, or a command entity unavailable for longer
- * than its debounce is a fault — and a fault hands over to the next source on the same tick. A 5-second
- * blip never fails over.
+ * Does the source do what it was told? A start is confirmed once the device has taken the command (the
+ * relay reads back ON, the climate shows the commanded mode) or the signal the user chose says it runs
+ * (flame, power above 50 W, hvac_action). Heat pumps and boilers regulate themselves: a heat pump idling
+ * at its own setpoint or a flame out at the boiler's own limit is a healthy source, not a failed one. A
+ * fault is a command the device does not reflect within the start timeout (mode mismatch, a relay that
+ * does not follow), a device error, or a command entity unavailable for longer than its debounce — and a
+ * fault hands over to the next source on the same tick. A 5-second blip never fails over. A check run
+ * («Перевірити») is stricter: it reports ok only when the running signal itself comes.
  * ===================================================================================================== */
 
 const MIN_MS = 60_000;
@@ -97,6 +101,27 @@ export function readbackOn(s: SourceConfig, inputs: InputSnapshot): boolean | nu
     }
     case 'flow':
       return isOnState(snapOf(inputs, a.enable));
+    default:
+      return null;
+  }
+}
+
+/**
+ * Has the device taken the command of a running source? true = the relay / enable switch reads ON, the
+ * climate shows the commanded hvac mode; false = it shows something else; null = no read-back exists
+ * (script and custom adapters) or the entity cannot be read right now.
+ */
+export function commandReflected(s: SourceConfig, m: SourceMemory, inputs: InputSnapshot): boolean | null {
+  const a = s.adapter;
+  switch (a.type) {
+    case 'relay':
+    case 'flow':
+      return readbackOn(s, inputs);
+    case 'climate': {
+      const snap = snapOf(inputs, a.climate);
+      if (!snap || !snap.available || m.mode === null) return null;
+      return snap.state === hvacModeFor(a, m.mode);
+    }
     default:
       return null;
   }
@@ -242,10 +267,14 @@ export function stepSourceHealth(s: SourceConfig, prev: SourceMemory, x: HealthI
   /* confirmation of a running source */
   if (m.on && !faulted) {
     const signal = defrost ? true : confirmSignal(s.adapter.confirm, s, inputs);
+    const reflected = defrost ? true : commandReflected(s, m, inputs);
+    // daily operation asks only that the device obeys (a running signal stands in where nothing reads
+    // back); a check run wants proof that the source really runs
+    const taken = testing ? signal === true && reflected !== false : reflected === true || (reflected === null && signal === true);
     if (x.blind) {
       if (m.confirmDeadline !== null) m = { ...m, confirmDeadline: m.confirmDeadline + x.dtMs };
     } else if (m.confirm === 'pending') {
-      if (signal === true) {
+      if (taken) {
         const afterSec = Math.max(0, Math.round((now - (m.onSince ?? now)) / 1000));
         m = { ...m, confirm: 'confirmed', confirmedAt: now, confirmDeadline: null };
         decisions.push({ code: 'source.confirmed', category: 'src', tone: 'ok', params: { afterSec }, sourceId: s.id });
@@ -256,14 +285,13 @@ export function stepSourceHealth(s: SourceConfig, prev: SourceMemory, x: HealthI
         }
       } else if (m.confirmDeadline !== null && now >= m.confirmDeadline) fault('no_confirm');
     } else if (m.confirm === 'confirmed') {
+      // idling at its own setpoint is fine; only a device that stops showing the commanded state is not
       if (defrost && m.confirmDeadline !== null) m = { ...m, confirmDeadline: m.confirmDeadline + x.dtMs };
-      else if (signal === true) {
-        if (m.confirmDeadline !== null) m = { ...m, confirmDeadline: null };
-      } else {
+      else if (reflected === false) {
         const deadline = m.confirmDeadline ?? now + s.guards.startConfirmTimeoutMin * MIN_MS;
         m = { ...m, confirmDeadline: deadline };
         if (now >= deadline) fault('no_confirm');
-      }
+      } else if (m.confirmDeadline !== null) m = { ...m, confirmDeadline: null };
     }
     if (m.on && !faulted && !x.blind) {
       const err = deviceError(s, inputs);

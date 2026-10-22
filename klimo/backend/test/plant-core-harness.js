@@ -312,10 +312,14 @@ function runner(cfg, o = {}) {
       if (st.now < until) out.push(api.tick(until));
       return out;
     },
-    /** Devices follow their commands: relays switch, climates take the mode and report running. */
+    /**
+     * Devices follow their commands: relays switch, climates take the mode and report running
+     * (`st.confirmClimate = false`: they take the mode but idle). Entities in `st.deaf` ignore commands.
+     */
     obey(res) {
       for (const x of res.desired) {
         if (!x.entityId || (st.entities[x.entityId] && !st.entities[x.entityId].available)) continue;
+        if (st.deaf && st.deaf.has(x.entityId)) continue;
         const v = x.value;
         if (v.kind === 'switch') api.set(x.entityId, v.on ? 'on' : 'off');
         else if (v.kind === 'valve') api.set(x.entityId, v.open ? 'open' : 'closed');

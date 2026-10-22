@@ -95,11 +95,11 @@ test('a boiler started at 19:04 whose demand ends at 19:06 is held until 19:09, 
   assert.ok(res.decisions.some((x) => x.code === 'source.stop' && x.params.reason === 'no_demand'));
 });
 
-test('a heat pump not confirmed within 5 minutes faults and the boiler starts on the same tick', () => {
+test('a heat pump that does not take its mode within 5 minutes faults and the boiler starts on the same tick', () => {
   const t1904 = kyiv(2026, 10, 21, 19, 4);
   const run = h.runner(hpBoilerHouse(), { start: t1904 - MIN });
   pumpRunning(run, 'p_rad', t1904 - 10 * MIN);
-  run.st.confirmClimate = false; // the heat pump takes the mode but never reports running
+  run.st.deaf = new Set(['climate.heat_pump']); // the command never reaches the unit: it stays off
   run.set('climate.heat_pump', 'off').set('switch.boiler_relay', 'off').set('switch.rad_pump', 'on');
   run.room('r_liv', { t: 19.7, demand: 'heat' });
   let res = run.tick(t1904);
@@ -320,7 +320,7 @@ test('a heater still drawing power two minutes after its stop is reported and re
 test('while Klimo is blind its confirmation clock stands still', () => {
   const run = h.runner(hpBoilerHouse());
   pumpRunning(run, 'p_rad', run.st.now - 10 * MIN);
-  run.st.confirmClimate = false;
+  run.st.deaf = new Set(['climate.heat_pump']);
   run.set('climate.heat_pump', 'off').set('switch.boiler_relay', 'off').set('switch.rad_pump', 'on');
   run.room('r_liv', { t: 19.7, demand: 'heat' });
   const t0 = run.st.now + 10 * SEC;
@@ -335,4 +335,53 @@ test('while Klimo is blind its confirmation clock stands still', () => {
   assert.equal(res.memory.sources.s_hp.fault, null, 'the deadline moved by the blind time');
   res = run.runUntil(t0 + 26 * MIN, MIN).at(-1);
   assert.equal(res.memory.sources.s_hp.fault.code, 'no_confirm');
+});
+
+test('a heat pump that takes its mode but idles at its own setpoint is healthy, and the boiler stays off', () => {
+  const run = h.runner(hpBoilerHouse());
+  pumpRunning(run, 'p_rad', run.st.now - 10 * MIN);
+  run.st.confirmClimate = false; // mode 'heat', hvac_action 'idle': the unit's own thermostat is satisfied
+  run.set('climate.heat_pump', 'off').set('switch.boiler_relay', 'off').set('switch.rad_pump', 'on');
+  run.room('r_liv', { t: 19.7, demand: 'heat' });
+  const t0 = run.st.now + 10 * SEC;
+  let res = run.tick(t0);
+  assert.equal(h.sourceState(res, 's_hp').state, 'starting');
+  res = run.tick();
+  assert.equal(res.memory.sources.s_hp.confirm, 'confirmed', 'the unit shows the commanded mode');
+  res = run.runUntil(t0 + 30 * MIN, MIN).at(-1);
+  assert.equal(res.memory.sources.s_hp.fault, null);
+  assert.equal(h.sourceState(res, 's_hp').on, true);
+  assert.equal(h.sourceState(res, 's_boiler').on, false, 'no failover for a unit that regulates itself');
+  assert.equal(h.activeDetections(res, 'source_failed').length, 0);
+});
+
+test('a boiler whose flame goes out at its own limit stays healthy while the relay holds', () => {
+  const run = h.runner(boilerHouse({ adapter: { command: 'switch.boiler_relay', confirm: { kind: 'entity_on', entityId: 'binary_sensor.boiler_flame' } } }));
+  run.set('switch.boiler_relay', 'off').set('binary_sensor.boiler_flame', 'off');
+  run.room('r_liv', { t: 19.7, demand: 'heat' });
+  run.tick();
+  run.set('binary_sensor.boiler_flame', 'on');
+  let res = run.tick();
+  assert.equal(res.memory.sources.s_boiler.confirm, 'confirmed');
+  run.set('binary_sensor.boiler_flame', 'off'); // the boiler reached its own flow limit
+  res = run.runUntil(run.st.now + 20 * MIN, MIN).at(-1);
+  assert.equal(res.memory.sources.s_boiler.fault, null);
+  assert.equal(h.sourceState(res, 's_boiler').on, true);
+});
+
+test('a running heat pump switched to another mode behind Klimo\'s back faults after the start timeout', () => {
+  const run = h.runner(hpBoilerHouse());
+  pumpRunning(run, 'p_rad', run.st.now - 10 * MIN);
+  run.set('climate.heat_pump', 'off').set('switch.boiler_relay', 'off').set('switch.rad_pump', 'on');
+  run.room('r_liv', { t: 19.7, demand: 'heat' });
+  let res = run.runUntil(run.st.now + MIN).at(-1);
+  assert.equal(res.memory.sources.s_hp.confirm, 'confirmed');
+  run.st.deaf = new Set(['climate.heat_pump']);
+  run.set('climate.heat_pump', 'cool', { attrs: { hvac_action: 'cooling' } });
+  const changed = run.st.now;
+  res = run.runUntil(changed + 4 * MIN, MIN).at(-1);
+  assert.equal(res.memory.sources.s_hp.fault, null, 'still within the start timeout');
+  res = run.runUntil(changed + 6 * MIN, MIN).at(-1);
+  assert.equal(res.memory.sources.s_hp.fault.code, 'no_confirm');
+  assert.equal(h.sourceState(res, 's_boiler').on, true);
 });

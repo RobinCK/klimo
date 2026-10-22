@@ -230,13 +230,11 @@ test('a device already in another room is offered for moving, and moving takes i
 test('deleting a room hands its heads back to their own control first', () =>
   withSetup(async (s) => {
     const report = await s.setup.create(request(), ACTOR);
+    const heads = Object.values(s.config.engineConfig().devicesByEmitter).flat().filter((d) => d.roomId === report.roomId && d.kind === 'trv');
     await s.setup.remove(report.roomId, { releaseTrvs: true }, ACTOR);
-    assert.deepEqual(s.ha.calls.map((c) => [`${c.domain}.${c.service}`, c.entityId, c.data]), [
-      ['climate.set_hvac_mode', TRV, { hvac_mode: 'heat' }],
-      ['climate.set_temperature', TRV, { temperature: 20 }],
-      ['select.select_option', SIB.sensorSelect, { option: 'internal' }],
-      ['switch.turn_off', SIB.childLock, {}],
-    ]);
+    // the engine writes the release values itself, so the head never gets two writers
+    assert.deepEqual(s.engine.released, [{ roomId: report.roomId, deviceIds: heads.map((d) => d.id), timeoutMs: 30_000 }]);
+    assert.deepEqual(s.ha.calls, [], 'nothing is sent around the engine');
     assert.equal(s.config.room(report.roomId), undefined);
     const cfg = s.config.engineConfig();
     assert.equal(cfg.sources.filter((x) => x.scope === 'room').length, 0);
@@ -259,7 +257,7 @@ test('adding a weaker head moves the room to a strategy every head supports', ()
     const old = detail.emitters[0].devices.find((d) => d.entityId === 'climate.bedroom_trv2');
     const after = await s.setup.removeEmitterDevice(report.roomId, old.id, ACTOR);
     assert.equal(after.emitters[0].devices.length, 1);
-    assert.ok(s.ha.calls.some((c) => c.entityId === 'climate.bedroom_trv2' && c.service === 'set_temperature' && c.data.temperature === 20));
+    assert.deepEqual(s.engine.released, [{ roomId: report.roomId, deviceIds: [old.id], timeoutMs: 30_000 }], 'the removed head is handed back first');
   }));
 
 test('a floor on a new circuit with its pump, and a socket heater confirmed by its power meter', () =>

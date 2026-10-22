@@ -819,13 +819,17 @@ interface CatalogueRow {
 
 const OPEN_ACK: IncidentAction[] = ['ack', 'open'];
 
-/** Default routing (P primary phone, O other phones, M Telegram personal, F family/escalation, H HA panel, E event). */
+/**
+ * Default routing (P primary phone, O other phones, M Telegram personal, F family/escalation, H HA panel, E event).
+ * `room_no_data`, `room_too_cold` and `room_too_hot` carry no wait of their own: the engine raises them only
+ * after its own 10 / 60 minutes, and a second wait here would double the delay before anyone hears of it.
+ */
 const CATALOGUE: Record<EventKind, CatalogueRow> = {
   source_failed: { route: route(1, 1, 1, 1, 1, 1), locked: true, params: { openAfterSec: 0 }, actions: OPEN_ACK },
   source_unavailable: { route: route(1, 1, 1, 1, 1, 1), locked: true, params: { openAfterSec: 0, resolveAfterSec: 60 }, actions: OPEN_ACK },
   frost_risk: { route: route(1, 1, 1, 1, 1, 1), locked: true, params: { openAfterSec: 0 }, actions: OPEN_ACK },
   z2m_offline: { route: route(1, 1, 1, 0, 1, 1), locked: true, params: { openAfterSec: 0, forMin: 1 }, actions: OPEN_ACK },
-  room_no_data: { route: route(1, 0, 1, 0, 1, 1), locked: true, params: { openAfterSec: 0, forMin: 10, criticalBelowOutdoorC: 10 }, actions: OPEN_ACK },
+  room_no_data: { route: route(1, 0, 1, 0, 1, 1), locked: true, params: { openAfterSec: 0, criticalBelowOutdoorC: 10 }, actions: OPEN_ACK },
   ha_disconnected: { route: route(0, 0, 1, 1, 0, 0), locked: false, params: {}, actions: [] },
   energy_critical: { route: route(1, 1, 1, 1, 1, 1), locked: true, params: { openAfterSec: 0, resolveSocPct: 25 }, actions: OPEN_ACK },
   sensor_offline: { route: route(1, 0, 1, 0, 1, 1), locked: false, params: { openAfterSec: 0 }, actions: ['snooze_until_morning', 'exclude_sensor', 'open'] },
@@ -841,8 +845,8 @@ const CATALOGUE: Record<EventKind, CatalogueRow> = {
   overheat: { route: route(0, 0, 1, 0, 1, 1), locked: false, params: { openAfterSec: 0 }, actions: ['open'] },
   relay_mismatch: { route: route(1, 0, 1, 0, 1, 1), locked: false, params: { openAfterSec: 0, attempts: 3, resolveMin: 10 }, actions: ['open'] },
   actuator_conflict: { route: route(1, 0, 1, 0, 1, 1), locked: false, params: { openAfterSec: 0, resolveMin: 30 }, actions: ['open'] },
-  room_too_cold: { route: route(1, 0, 1, 0, 1, 1), locked: false, params: { openAfterSec: 0, deltaC: 2, forMin: 60, resolveC: 1 }, actions: ['open'] },
-  room_too_hot: { route: route(0, 0, 1, 0, 1, 1), locked: false, params: { openAfterSec: 0, deltaC: 2, forMin: 60, resolveC: 1 }, actions: ['open'] },
+  room_too_cold: { route: route(1, 0, 1, 0, 1, 1), locked: false, params: { openAfterSec: 0, deltaC: 2, resolveC: 1 }, actions: ['open'] },
+  room_too_hot: { route: route(0, 0, 1, 0, 1, 1), locked: false, params: { openAfterSec: 0, deltaC: 2, resolveC: 1 }, actions: ['open'] },
   mqtt_offline: { route: route(0, 0, 1, 0, 1, 0), locked: false, params: { openAfterSec: 0, forMin: 5 }, actions: [] },
   channel_failed: { route: route(1, 0, 0, 0, 1, 0), locked: false, params: { openAfterSec: 0, failures: 3 }, actions: ['open'] },
   source_fallback: { route: route(1, 0, 1, 0, 0, 1), locked: false, params: {}, actions: ['open'] },

@@ -482,7 +482,7 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
     const cfg = this.config.engineConfig();
     if (opts.releaseTrvs) {
       const trvs = (cfg.emittersByRoom[room.id] ?? []).flatMap((e) => cfg.devicesByEmitter[e.id] ?? []).filter((d) => d.kind === 'trv');
-      await this.release(trvs, room);
+      await this.release(trvs.map((d) => d.id), room);
     }
     await this.config.remove('rooms', room.id, actor);
     await this.support.record({ code: 'room.deleted', category: 'rooms', tone: 'off', params: { by: actorName(actor) }, roomId: room.id });
@@ -517,7 +517,7 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
     const room = this.support.room(roomId);
     const device = this.config.get('emitterDevices', deviceId);
     if (!device || device.roomId !== room.id) throw notFound('Device');
-    if (device.kind === 'trv') await this.release([device], room);
+    if (device.kind === 'trv') await this.release([device.id], room);
     await this.config.remove('emitterDevices', device.id, actor);
     await this.access.runNow('room.device_removed');
     return this.detail(room.id);
@@ -931,56 +931,21 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
 
   /**
    * Hands heads back to their own regulation before Klimo forgets them: heating at the release
-   * setpoint, internal sensor, child lock off. Bounded in time — a dead head must not block a delete.
+   * setpoint, internal sensor, child lock off. The engine sends it like every other write (so nothing
+   * else fights over the head) and gives up after a while — a dead head must not block a delete.
    */
-  private async release(devices: EmitterDevice[], room: RoomConfig): Promise<void> {
-    if (!devices.length || !this.ha.connected) return;
-    const calls: Promise<unknown>[] = [];
-    const setpoint = room.trv.releaseSetpointC;
-    for (const d of devices) {
-      calls.push(this.call('climate', 'set_hvac_mode', d.entityId, { hvac_mode: 'heat' }));
-      calls.push(this.call('climate', 'set_temperature', d.entityId, { temperature: setpoint }));
-      const sib = d.siblings;
-      if (sib?.sensorSelect) calls.push(this.setOption(sib.sensorSelect, 'internal'));
-      if (sib?.childLock) calls.push(this.unlock(sib.childLock));
+  private async release(deviceIds: Id[], room: RoomConfig): Promise<void> {
+    if (!deviceIds.length) return;
+    const engine = this.access.engine();
+    if (!engine || !this.ha.connected) {
+      this.log.warn(`${room.name}: ${deviceIds.length} head(s) left as they are (${engine ? 'Home Assistant is not connected' : 'the engine is not running'})`);
+      return;
     }
-    let timer: { cancel(): void } | null = null;
-    const budget = new Promise<void>((resolve) => {
-      timer = this.clock.setTimeout(resolve, RELEASE_BUDGET_MS);
-    });
-    await Promise.race([Promise.allSettled(calls), budget]);
-    (timer as { cancel(): void } | null)?.cancel();
-    this.log.log(`released ${devices.length} head(s) of ${room.name} at ${setpoint}°`);
-  }
-
-  private async call(domain: string, service: string, entityId: EntityId, data: Record<string, unknown>): Promise<void> {
     try {
-      await this.ha.callService(domain, service, { entity_id: entityId }, data);
+      const r = await engine.releaseTrvs(room.id, deviceIds, { timeoutMs: RELEASE_BUDGET_MS });
+      this.log.log(`released ${r.confirmed} of ${r.sent} head(s) of ${room.name} at ${room.trv.releaseSetpointC}°`);
     } catch (e) {
-      this.log.warn(`${domain}.${service} on ${entityId} failed: ${errorText(e)}`);
-    }
-  }
-
-  private async setOption(id: string, option: string): Promise<void> {
-    if (id.startsWith('z2m:')) return this.z2m(id, option);
-    return this.call(domainOf(id) === 'input_select' ? 'input_select' : 'select', 'select_option', id, { option });
-  }
-
-  private async unlock(id: string): Promise<void> {
-    if (id.startsWith('z2m:')) return this.z2m(id, 'UNLOCK');
-    if (domainOf(id) === 'lock') return this.call('lock', 'unlock', id, {});
-    return this.call(domainOf(id) === 'input_boolean' ? 'input_boolean' : 'switch', 'turn_off', id, {});
-  }
-
-  /** `z2m:<base>/<friendly>:<property>` siblings are written straight to Zigbee2MQTT. */
-  private async z2m(id: string, value: unknown): Promise<void> {
-    const m = /^z2m:(.+):([^:/]+)$/.exec(id);
-    const transport = this.access.transport();
-    if (!m || !transport?.connected) return;
-    try {
-      await transport.publish(`${m[1]}/set`, JSON.stringify({ [m[2]]: value }), { retain: false, qos: 0 });
-    } catch (e) {
-      this.log.warn(`release via ${m[1]} failed: ${errorText(e)}`);
+      this.log.warn(`releasing the heads of ${room.name} failed: ${errorText(e)}`);
     }
   }
 
