@@ -1,0 +1,484 @@
+.ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------- RoomCard · card ---------------- */
+
+.roomCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 16px;
+  border-radius: var(--ui-radius-2xl);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-1);
+  color: var(--ui-text-1);
+  text-decoration: none;
+  transition: border-color var(--ui-motion) ease-out;
+}
+
+@media (hover: hover) {
+  .roomCard:hover,
+  .roomRow:hover {
+    border-color: var(--ui-border-strong);
+  }
+}
+
+.roomHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 26px;
+  min-width: 0;
+}
+
+.roomTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-fs-title-sm);
+  font-weight: 600;
+}
+
+.roomValue {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-height: 40px;
+}
+
+.roomTemp {
+  font-size: var(--ui-fs-metric);
+  font-weight: 500;
+  letter-spacing: var(--ui-ls-metric);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.roomSparkGap {
+  display: block;
+  height: 40px;
+}
+
+.roomFoot {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+  min-width: 0;
+}
+
+/* ---------------- RoomCard · compact ---------------- */
+
+.roomRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  min-height: 64px;
+  padding: 10px 14px;
+  border-radius: var(--ui-radius-xl);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-1);
+  color: var(--ui-text-1);
+  text-decoration: none;
+  transition: border-color var(--ui-motion) ease-out;
+}
+
+.roomAvatar {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--avatar-bg);
+  color: var(--avatar-fg);
+}
+
+.roomAvatarDot {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--issue-line);
+  border: 2px solid var(--ui-surface-1);
+}
+
+.roomRowText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.roomRowTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-fs-body-lg);
+  font-weight: 600;
+}
+
+.roomRowSub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sub-fg);
+  font-size: var(--ui-fs-caption);
+}
+
+.roomRowEnd {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+.roomRowTemp {
+  font-size: var(--ui-fs-value);
+  font-weight: 500;
+  letter-spacing: -0.4px;
+  line-height: 1.1;
+}
+
+.roomRowTarget {
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+}
+
+/* ---------------- RoomTabs ---------------- */
+
+.tabs {
+  position: relative;
+  overflow-x: auto;
+  margin: 0 -4px;
+  padding: 0 4px 2px;
+  scrollbar-width: thin;
+}
+
+.tabsInner {
+  display: flex;
+  gap: 6px;
+  min-width: max-content;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: var(--ui-radius-lg);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-1);
+  color: var(--ui-text-1);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: border-color var(--ui-motion) ease-out, background-color var(--ui-motion) ease-out;
+}
+
+.tab[aria-current='page'] {
+  border-color: var(--ui-text-1);
+  background: var(--ui-surface-3);
+}
+
+@media (hover: hover) {
+  .tab:hover:not([aria-current='page']) {
+    border-color: var(--ui-border-strong);
+  }
+  .tabAdd:hover {
+    border-color: var(--ui-text-3);
+    color: var(--ui-text-1);
+  }
+}
+
+.tabDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dot);
+}
+
+.tabName {
+  font-weight: 600;
+}
+
+.tabTemp {
+  color: var(--ui-text-3);
+}
+
+.tabAdd {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-height: 44px;
+  border-radius: var(--ui-radius-lg);
+  border: 1px dashed var(--ui-dot);
+  color: var(--ui-text-2);
+  text-decoration: none;
+}
+
+/* ---------------- TargetStepper ---------------- */
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.stepBtn {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--ui-ring);
+  background: transparent;
+  color: var(--ui-text-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color var(--ui-motion) ease-out, border-color var(--ui-motion) ease-out;
+}
+
+.stepBtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+@media (hover: hover) {
+  .stepBtn:hover:not(:disabled) {
+    background: var(--ui-surface-2);
+    border-color: var(--ui-text-2);
+  }
+}
+
+.stepValue {
+  min-width: 92px;
+  text-align: center;
+  font-size: 34px;
+  font-weight: 500;
+  letter-spacing: -1px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* a pending value is underlined until it is sent */
+.stepper[data-editing] .stepValue {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 6px;
+  text-decoration-color: var(--ui-text-2);
+}
+
+@media (max-width: 699px) {
+  .stepBtn {
+    width: 48px;
+    height: 48px;
+  }
+}
+
+/* ---------------- Profiles ---------------- */
+
+.swatch {
+  flex: none;
+  display: inline-block;
+  width: var(--size);
+  height: var(--size);
+  border-radius: 3px;
+  background: var(--sw);
+}
+
+.swatch[data-shape='round'] {
+  border-radius: 50%;
+}
+
+.profileTile {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--size);
+  height: var(--size);
+  border-radius: var(--ui-radius-md);
+  background: var(--tile-bg);
+  color: var(--tile-fg);
+}
+
+.profileInitial {
+  font-size: calc(var(--size) * 0.42);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.profileTile[data-size='48'] {
+  border-radius: var(--ui-radius-xl);
+}
+
+.profileTile[data-size='28'] {
+  border-radius: var(--ui-radius-chip);
+}
+
+.profileChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--ui-radius-pill);
+  background: var(--chip-bg);
+  color: var(--chip-fg);
+  font-size: var(--ui-fs-caption);
+  font-weight: 700;
+}
+
+.profileChipValue {
+  flex: none;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.profileInline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.profileInlineName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.profileInlineValue {
+  flex: none;
+  color: var(--ui-text-2);
+}
+
+.profileCard {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface-1);
+}
+
+.profileCardName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+}
+
+.profileCardValue {
+  font-weight: 600;
+}
+
+.profileItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 10px 14px;
+  border-radius: var(--ui-radius-xl);
+  border: 2px solid var(--ui-border);
+  background: var(--ui-surface-1);
+  color: var(--ui-text-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--ui-motion) ease-out, background-color var(--ui-motion) ease-out;
+}
+
+.profileItem[aria-pressed='true'] {
+  border-color: var(--ui-text-1);
+  background: var(--ui-tone-hold-bg);
+}
+
+@media (hover: hover) {
+  .profileItem:hover:not([aria-pressed='true']) {
+    border-color: var(--ui-border-strong);
+  }
+}
+
+.profileItemText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.profileItemHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.profileItemName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-fs-body-lg);
+  font-weight: 600;
+}
+
+.liveBadge {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface-4);
+  color: var(--ui-text-neutral-strong);
+  font-size: var(--ui-fs-micro);
+  font-weight: 700;
+}
+
+.profileItemKind {
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+}
+
+.profileItemTargets {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: var(--ui-fs-body-sm);
+  font-weight: 600;
+}
+
+.heatText {
+  color: var(--ui-tone-heat-fg);
+}
+
+.coolText {
+  color: var(--ui-tone-cool-fg);
+}

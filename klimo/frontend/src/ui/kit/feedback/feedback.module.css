@@ -1,0 +1,438 @@
+/* ---------- Toasts (Mantine notifications in the kit look) ---------- */
+
+.toast.toast {
+  padding: var(--ui-space-12) var(--ui-space-14);
+  border-radius: var(--ui-radius-xl);
+  border: 1px solid var(--toast-border, var(--ui-border-strong));
+  background: var(--ui-surface-elevated);
+  box-shadow: var(--ui-shadow-elevated);
+  color: var(--ui-text-1);
+}
+
+.toast.toast::before {
+  display: none;
+}
+
+.toastIcon.toastIcon {
+  width: 24px;
+  height: 24px;
+  margin-inline-end: var(--ui-space-12);
+  background: transparent;
+  color: var(--toast-icon, var(--ui-text-2));
+}
+
+.toastDescription.toastDescription {
+  color: var(--ui-text-1);
+  font-size: var(--ui-fs-body);
+}
+
+.toastClose.toastClose {
+  color: var(--ui-text-2);
+}
+
+.toastBody {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.toastText {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+/* ---------- Panels with a status line (pending change, undo, inline confirm) ---------- */
+
+.statusPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-10);
+  padding: var(--ui-space-12) var(--ui-space-14);
+  border-radius: var(--ui-radius-xl);
+  border: 1px solid var(--ui-border-strong);
+  background: var(--ui-surface-2);
+}
+
+.consequence {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-8);
+  color: var(--tone-fg, var(--ui-text-1));
+  font-weight: 500;
+}
+
+.consequence > svg {
+  flex: none;
+}
+
+.pendingRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-space-10);
+}
+
+.countdown {
+  flex: 1 1 160px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.countdownText {
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-caption);
+}
+
+.bar {
+  position: relative;
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--ui-surface-4);
+  overflow: hidden;
+}
+
+.barFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--pct);
+  border-radius: 2px;
+  background: var(--ui-text-1);
+  transition: width 1s linear;
+}
+
+.bar[data-frozen] .barFill {
+  transition: none;
+  background: var(--ui-text-3);
+}
+
+.undoBar {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.undoText {
+  flex: 1 1 200px;
+  min-width: 0;
+  font-weight: 500;
+}
+
+.undoCheck {
+  flex: none;
+  display: inline-flex;
+  color: var(--ui-tone-ok-fg);
+}
+
+.sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--sync-color, var(--ui-text-3));
+  font-size: var(--ui-fs-body-sm);
+}
+
+.sync[data-phase='sending'] > svg,
+.sync[data-phase='retry'] > svg {
+  animation: spin 1.6s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.confirm {
+  gap: var(--ui-space-8);
+}
+
+.confirmTitle {
+  margin: 0;
+  font-size: var(--ui-fs-body);
+  font-weight: 600;
+}
+
+.confirmText {
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.confirmActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-space-8);
+  margin-top: var(--ui-space-4);
+}
+
+/* ---------- AutosaveStatus ---------- */
+
+.autosave {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.autosave[data-state='saved'] {
+  color: var(--ui-tone-ok-fg);
+}
+
+.autosave[data-state='error'] {
+  color: var(--ui-tone-err-fg);
+}
+
+.retry {
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ui-text-1);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.miniSpin {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: spin 0.8s linear infinite;
+}
+
+/* ---------- StatusBanner / StateBanner ---------- */
+
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-space-10) var(--ui-space-12);
+  padding: var(--ui-space-12) var(--ui-space-14);
+  border-radius: var(--ui-radius-xl);
+  background: var(--tone-bg);
+  color: var(--tone-fg);
+}
+
+.bannerIcon {
+  flex: none;
+  display: inline-flex;
+}
+
+.bannerText {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.stateBanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-space-8) var(--ui-space-12);
+  padding: var(--ui-space-12) var(--ui-space-14);
+  border-radius: var(--ui-radius-lg);
+  background: var(--tone-bg);
+}
+
+.stateDot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--tone-line);
+}
+
+.stateLabel {
+  font-weight: 600;
+  color: var(--ui-text-1);
+}
+
+.stateDetail {
+  color: var(--ui-text-2);
+}
+
+/* ---------- EmptyState / Skeleton ---------- */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ui-space-8);
+  padding: var(--ui-space-24) var(--ui-space-16);
+  border-radius: var(--ui-radius-xl);
+  background: var(--ui-surface-1);
+  border: 1px solid var(--ui-border);
+  text-align: center;
+}
+
+.emptyTitle {
+  font-weight: 600;
+}
+
+.emptyText {
+  max-width: 460px;
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.emptyAction {
+  margin-top: var(--ui-space-4);
+}
+
+.skeleton {
+  display: block;
+  width: var(--w, 100%);
+  height: var(--h);
+  border-radius: var(--r, var(--ui-radius-lg));
+  background: linear-gradient(90deg, var(--ui-surface-2) 0%, var(--ui-surface-3) 40%, var(--ui-surface-2) 80%);
+  background-size: 300% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+/* ---------- AttentionBanner / AlertCard / InboxCard ---------- */
+
+.attention {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-12);
+  min-height: 56px;
+  padding: var(--ui-space-8) var(--ui-space-14);
+  border-radius: var(--ui-radius-xl);
+  background: var(--ui-tone-warn-bg);
+  color: var(--ui-tone-warn-fg);
+  text-decoration: none;
+}
+
+.attention > svg {
+  flex: none;
+}
+
+.attentionText {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.attentionTitle {
+  font-weight: 600;
+}
+
+.attentionSummary {
+  font-size: var(--ui-fs-caption);
+  color: color-mix(in srgb, var(--ui-tone-warn-fg) 78%, var(--ui-text-2));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card {
+  display: flex;
+  gap: var(--ui-space-12);
+  padding: var(--ui-space-14);
+  border-radius: var(--ui-radius-xl);
+  background: var(--ui-surface-1);
+  border: 1px solid var(--ui-border);
+  min-width: 0;
+}
+
+.cardIcon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--ui-radius-md);
+  background: var(--tone-bg);
+  color: var(--tone-fg);
+}
+
+.cardText {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cardTitle {
+  font-weight: 600;
+}
+
+.cardBody {
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.cardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-space-8);
+  margin-top: 6px;
+}
+
+.inbox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-10);
+  padding: var(--ui-space-12) var(--ui-space-14);
+  border-radius: var(--ui-radius-2xl);
+  background: var(--ui-surface-1);
+  border: 1px solid var(--ui-border-strong);
+}
+
+.inbox[data-resolved] {
+  border-color: var(--ui-border);
+}
+
+.inboxHead {
+  display: flex;
+  gap: var(--ui-space-10);
+  align-items: flex-start;
+}
+
+.inbox .cardIcon {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+
+.inboxTime {
+  flex: none;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+}
+
+.inboxActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-left: 42px;
+}
+
+.inboxResolved {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 42px;
+  color: var(--ui-tone-ok-fg);
+  font-size: var(--ui-fs-body-sm);
+  font-weight: 500;
+}

@@ -213,9 +213,15 @@
 
 .metaItem {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 4px;
   min-width: 0;
+}
+
+/* the short facts (46 %, 2 windows) stay whole; only the last, usually longest, item gives way */
+.metaItem:last-child {
+  flex: 0 1 auto;
 }
 
 .metaItem[data-tone='warn'] {

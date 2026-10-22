@@ -365,6 +365,9 @@
 /* ---------- ScrollX / Spacer ---------- */
 
 .scrollX {
+  /* the containing block of absolutely placed children (visually hidden text), so they are
+     clipped by the scroller instead of widening the page */
+  position: relative;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   max-width: 100%;

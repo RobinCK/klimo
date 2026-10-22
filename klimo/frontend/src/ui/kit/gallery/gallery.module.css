@@ -1,0 +1,61 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-24);
+  min-width: 0;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-16);
+  min-width: 0;
+}
+
+.groupTitle {
+  margin: 0;
+  padding-top: var(--ui-space-8);
+  border-top: 1px solid var(--ui-divider);
+  font-size: var(--ui-fs-title-lg);
+  font-weight: 600;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-8);
+  min-width: 0;
+}
+
+.itemName {
+  color: var(--ui-text-3);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-fs-caption);
+}
+
+/* a phone-sized frame for full-screen components (the wizard) */
+.frame {
+  height: 600px;
+  max-width: 420px;
+  overflow: hidden;
+  border-radius: var(--ui-radius-section);
+  border: 1px solid var(--ui-border);
+  display: flex;
+  flex-direction: column;
+}
+
+.frame > * {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  max-height: none;
+}
+
+.meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ui-text-neutral-strong);
+  font-size: var(--ui-fs-body-sm);
+  font-weight: 600;
+}

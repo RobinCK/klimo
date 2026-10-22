@@ -1,0 +1,72 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-24);
+  min-width: 0;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-16);
+  min-width: 0;
+}
+
+.groupTitle {
+  margin: 0;
+  padding-top: var(--ui-space-8);
+  border-top: 1px solid var(--ui-divider);
+  font-size: var(--ui-fs-title-lg);
+  font-weight: 600;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-8);
+  min-width: 0;
+}
+
+.itemName {
+  color: var(--ui-text-3);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-fs-caption);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-12);
+  min-width: 0;
+  padding: var(--ui-space-16);
+  border-radius: var(--ui-radius-3xl);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-1);
+}
+
+.panel[data-narrow] {
+  max-width: 380px;
+}
+
+.pair {
+  display: grid;
+  gap: var(--ui-space-12);
+  min-width: 0;
+}
+
+/* the plant schema sits in a recessed well and scrolls sideways */
+.well {
+  padding: var(--ui-space-8);
+  border-radius: var(--ui-radius-section);
+  border: 1px solid var(--ui-border);
+  background: color-mix(in srgb, var(--ui-surface-1) 55%, var(--ui-bg-page));
+}
+
+.tiny {
+  width: 180px;
+}
+
+.note {
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+}

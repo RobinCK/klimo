@@ -1,0 +1,718 @@
+/* ---------- shared bits ---------- */
+
+.name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mono {
+  color: var(--ui-text-3);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-fs-caption);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.muted {
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+}
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.softChip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 9px;
+  border-radius: var(--ui-radius-pill);
+  background: var(--chip-bg, var(--ui-surface-3));
+  color: var(--chip-fg, var(--ui-text-neutral-strong));
+  font-size: var(--ui-fs-caption);
+  font-weight: 500;
+}
+
+.toneChip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--ui-radius-pill);
+  background: var(--tone-bg);
+  color: var(--tone-fg);
+  font-size: var(--ui-fs-caption);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.toneChip[data-size='sm'] {
+  height: 24px;
+  padding: 0 9px;
+}
+
+.enable {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-body-sm);
+  cursor: pointer;
+}
+
+.enable input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--ui-text-1);
+  cursor: pointer;
+}
+
+.enable[data-locked] {
+  cursor: not-allowed;
+}
+
+.enable[data-locked] input {
+  cursor: not-allowed;
+}
+
+/* ---------- SensorRow ---------- */
+
+.sensor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--ui-space-12);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface-2);
+}
+
+.sensorMain {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-12);
+  min-width: 0;
+}
+
+.sensorMain input {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--ui-text-1);
+  cursor: pointer;
+}
+
+.sensorLabel {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+}
+
+.weight {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface-3);
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-caption);
+  white-space: nowrap;
+}
+
+.sensorValue {
+  flex: none;
+  font-size: 18px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.sensorValue[data-excluded] {
+  color: var(--ui-control-off);
+  text-decoration: line-through;
+}
+
+.sensorMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding-left: 34px;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+}
+
+.note {
+  color: var(--note-color, var(--ui-tone-warn-fg));
+}
+
+@media (max-width: 699px) {
+  .weight {
+    display: none;
+  }
+}
+
+/* ---------- Cards in a well (triggers, rules, circuits) ---------- */
+
+.wellCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-10);
+  min-width: 0;
+  padding: var(--ui-space-14);
+  border-radius: var(--ui-radius-xl);
+  background: var(--ui-surface-2);
+  transition: opacity var(--ui-motion) ease-out;
+}
+
+.wellCard[data-bordered] {
+  border: 1px solid var(--ui-border);
+}
+
+.wellCard[data-off] {
+  opacity: 0.55;
+}
+
+.wellCard[data-active] {
+  box-shadow: inset 3px 0 0 var(--ui-tone-event-line);
+}
+
+.cardHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ui-space-10);
+  min-width: 0;
+}
+
+.cardWho {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-10);
+  min-width: 0;
+}
+
+.cardWho > :last-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.iconBox {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface-3);
+  color: var(--ui-text-1);
+}
+
+.cardRight {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cardFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-space-12);
+  margin-top: auto;
+}
+
+.usages {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.live {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--ui-radius-pill);
+  background: var(--ui-surface-3);
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-caption);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.live[data-state='active'] {
+  background: var(--ui-tone-event-bg);
+  color: var(--ui-tone-event-fg);
+}
+
+.live[data-state='unavailable'] {
+  background: var(--ui-tone-warn-bg);
+  color: var(--ui-tone-warn-fg);
+}
+
+.live[data-state='disabled'] {
+  color: var(--ui-text-disabled);
+}
+
+.ruleTag {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface-4);
+  color: var(--ui-text-neutral-strong);
+  font-size: var(--ui-fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.ruleRow {
+  display: flex;
+  gap: var(--ui-space-12);
+  align-items: flex-start;
+  padding: var(--ui-space-12) var(--ui-space-14);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface-2);
+}
+
+.ruleRow[data-off] > :not(.enable) {
+  opacity: 0.55;
+}
+
+.ruleText {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ruleTitle {
+  font-weight: 500;
+}
+
+.ruleSub {
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.whenLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.whenPill {
+  padding: 3px 10px;
+  border-radius: var(--ui-radius-pill);
+  background: var(--ui-surface-4);
+  color: var(--ui-text-1);
+  font-size: var(--ui-fs-caption);
+  font-weight: 700;
+}
+
+.whenArrow {
+  display: inline-flex;
+  color: var(--ui-text-3);
+}
+
+.whenAction {
+  font-weight: 600;
+}
+
+.whenEnd {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.effects {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.circuitTitle {
+  font-weight: 600;
+  font-size: var(--ui-fs-body-lg);
+}
+
+.circuitBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.circuitBlockLabel {
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-body-sm);
+}
+
+/* ---------- ChannelCard ---------- */
+
+.channel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-12);
+  min-width: 0;
+  padding: var(--ui-space-16);
+  border-radius: var(--ui-radius-3xl);
+  background: var(--ui-surface-1);
+  border: 1px solid var(--ui-border);
+}
+
+.channelHead {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-10);
+}
+
+.channelIcon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: var(--ui-surface-3);
+  color: var(--ui-text-1);
+}
+
+.channelText {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.channelTest {
+  align-self: flex-start;
+}
+
+/* ---------- EntityBindingTable ---------- */
+
+.binding {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--ui-radius-xl);
+  border: 1px solid var(--ui-border);
+  overflow: hidden;
+}
+
+.bindingRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-height: 48px;
+  padding: 8px 14px;
+}
+
+.bindingRow + .bindingRow {
+  border-top: 1px solid var(--ui-divider);
+}
+
+.bindingRow[data-status='empty'] {
+  background: var(--kit-row-warn);
+}
+
+.bindingRole {
+  flex: none;
+  width: 168px;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.bindingValue {
+  flex: 1 1 220px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-fs-body-sm);
+  color: var(--ui-text-1);
+}
+
+.bindingValue[data-mono] {
+  font-family: var(--ui-font-mono);
+}
+
+.bindingRow[data-status='empty'] .bindingValue {
+  color: var(--ui-text-3);
+}
+
+button.bindingValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px dashed transparent;
+  border-radius: 0;
+  background: transparent;
+  font: inherit;
+  font-size: var(--ui-fs-body-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+button.bindingValue[data-mono] {
+  font-family: var(--ui-font-mono);
+}
+
+button.bindingValue > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.bindingValue > svg {
+  flex: none;
+  color: var(--ui-text-3);
+}
+
+.bindingRow[data-status='empty'] button.bindingValue > span {
+  border-bottom: 1px dashed var(--ui-control-off);
+}
+
+.bindingLive {
+  flex: none;
+  color: var(--ui-text-neutral-strong);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.badge {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: var(--ui-radius-pill);
+  background: var(--tone-bg);
+  color: var(--tone-fg);
+  font-size: var(--ui-fs-micro);
+  font-weight: 700;
+}
+
+.badge[data-plain] {
+  padding: 0;
+  background: transparent;
+}
+
+@media (max-width: 699px) {
+  .bindingRole {
+    width: 100%;
+  }
+}
+
+/* ---------- WatchTable ---------- */
+
+.watch {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.watchRow {
+  display: grid;
+  grid-template-columns: minmax(200px, 1.1fr) minmax(260px, 1.4fr) minmax(180px, 1fr) 104px minmax(200px, 1.2fr);
+  align-items: center;
+  gap: var(--ui-space-12);
+  min-height: 52px;
+  padding: 6px var(--ui-space-14);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface-2);
+  color: var(--ui-text-1);
+}
+
+.watchRow[data-clickable] {
+  cursor: pointer;
+}
+
+.watchRow[data-clickable]:hover {
+  background: var(--ui-surface-3);
+}
+
+.rowLink {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ui-text-1);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: var(--ui-radius-xs);
+}
+
+.watchHead {
+  min-height: 0;
+  padding: 0 var(--ui-space-14);
+  background: transparent;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+}
+
+.cellStack {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.watchEntity {
+  color: var(--ui-text-neutral-strong);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-fs-caption);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.watchRule {
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.statusText {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--tone-fg);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.statusText > :last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusText[data-tone='off'],
+.statusText[data-tone='idle'] {
+  color: var(--ui-text-2);
+}
+
+/* ---------- DeviceTable ---------- */
+
+.deviceCell {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-10);
+  min-width: 0;
+}
+
+.deviceCell > :last-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.deviceIcon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--ui-surface-2);
+  color: var(--ui-text-neutral-strong);
+}
+
+.cellText {
+  color: var(--ui-text-2);
+}
+
+.cellQuiet {
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.seen {
+  color: var(--seen-color, var(--ui-text-2));
+  font-size: var(--ui-fs-body-sm);
+}
+
+.deviceCards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-8);
+}
+
+.deviceCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-10);
+  width: 100%;
+  padding: var(--ui-space-12) var(--ui-space-14);
+  border-radius: var(--ui-radius-2xl);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-2);
+  color: var(--ui-text-1);
+  font: inherit;
+  text-align: left;
+}
+
+button.deviceCard {
+  cursor: pointer;
+}
+
+.deviceCard[data-tone='warn'] {
+  border-color: color-mix(in srgb, var(--ui-tone-warn-line) 35%, transparent);
+}
+
+.deviceCardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ui-space-8);
+  min-width: 0;
+}
+
+/* the name keeps a readable width; a long state goes under it */
+.deviceCardHead > :first-child {
+  flex: 1 1 180px;
+}
+
+.deviceFacts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}

@@ -1,0 +1,22 @@
+/*
+ * Colours the kit derives from the tokens: in-between surfaces for tinted
+ * panels, chart wells and code. Declared on every scheme root so a SchemeScope subtree
+ * re-resolves them against its own palette.
+ */
+:root,
+[data-ui-scheme] {
+  /* editor and "new item" panels: a shade between the card and its wells */
+  --kit-panel-tint: color-mix(in srgb, var(--ui-surface-1) 62%, var(--ui-surface-2));
+  /* tolerance band track, chart panels: sunk slightly below the card */
+  --kit-inset: color-mix(in srgb, var(--ui-bg-page) 55%, var(--ui-surface-1));
+  --kit-code-bg: color-mix(in srgb, var(--ui-bg-page) 30%, var(--ui-surface-1));
+  --kit-selected: var(--ui-divider);
+  --kit-chip-soft: color-mix(in srgb, var(--ui-text-1) 8%, transparent);
+  --kit-row-warn: color-mix(in srgb, var(--ui-tone-warn-line) 5%, transparent);
+}
+
+/* light pages need one more step between a selected item and its neighbours */
+:root:root[data-mantine-color-scheme='light'],
+[data-ui-scheme='light'][data-ui-scheme] {
+  --kit-selected: var(--ui-surface-3);
+}

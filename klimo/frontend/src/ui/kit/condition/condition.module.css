@@ -1,0 +1,183 @@
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-12);
+  min-width: 0;
+}
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: var(--ui-space-10) var(--ui-space-14);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface-2);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.summaryLabel {
+  color: var(--ui-text-3);
+}
+
+.summaryEntities {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--ui-text-3);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-fs-caption);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-8);
+  padding: var(--ui-space-12);
+  border-radius: var(--ui-radius-xl);
+  border: 1px solid var(--ui-border);
+  background: var(--kit-panel-tint);
+  min-width: 0;
+}
+
+.group .group {
+  background: var(--ui-surface-1);
+}
+
+.groupHead,
+.nodeHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-space-8);
+  min-width: 0;
+}
+
+.grow {
+  flex: 1 1 auto;
+}
+
+.children {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-8);
+  padding-left: var(--ui-space-10);
+  border-left: 2px solid var(--ui-border-strong);
+}
+
+.joiner {
+  align-self: flex-start;
+  padding: 1px 8px;
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface-4);
+  color: var(--ui-text-neutral-strong);
+  font-size: var(--ui-fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.node {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-10);
+  padding: var(--ui-space-12);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface-2);
+  min-width: 0;
+}
+
+.node[data-incomplete] {
+  box-shadow: inset 3px 0 0 var(--ui-tone-warn-line);
+}
+
+.not {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-8);
+  padding: var(--ui-space-10);
+  border-radius: var(--ui-radius-lg);
+  border: 1px dashed var(--ui-dot);
+}
+
+.fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--ui-space-10) var(--ui-space-12);
+  min-width: 0;
+}
+
+.fields > * {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.fields > [data-wide] {
+  flex: 1 1 100%;
+}
+
+.fields > [data-narrow] {
+  flex: 0 1 120px;
+}
+
+.fieldLabel {
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+}
+
+.labelled {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.window {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-space-8) var(--ui-space-12);
+  padding: var(--ui-space-8) var(--ui-space-10);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface-1);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: var(--ui-radius-pill);
+  background: var(--tone-bg);
+  color: var(--tone-fg);
+  /* neutral states sit on wells of the same grey; the hairline keeps them visible */
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone-line) 30%, transparent);
+  font-size: var(--ui-fs-caption);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.warnText {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ui-tone-warn-fg);
+  font-size: var(--ui-fs-caption);
+}
+
+.addRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-space-8);
+}

@@ -1,0 +1,757 @@
+/* ---------- Labels and messages ---------- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.label {
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.help {
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.error {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ui-tone-err-fg);
+  font-size: var(--ui-fs-body-sm);
+}
+
+/* ---------- Text, number, select ---------- */
+
+.inputWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.input {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 0 14px;
+  border-radius: var(--ui-radius-lg);
+  border: 1px solid var(--ui-border-strong);
+  background: var(--ui-surface-2);
+  color: var(--ui-text-1);
+  font: inherit;
+  font-size: var(--ui-fs-body-lg);
+  transition: border-color var(--ui-motion) ease-out;
+}
+
+.input::placeholder {
+  color: var(--ui-text-3);
+}
+
+.input:hover:not(:disabled) {
+  border-color: var(--ui-ring);
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--ui-text-1);
+  outline-offset: 0;
+  border-color: transparent;
+}
+
+.input[aria-invalid='true'] {
+  border-color: var(--ui-tone-err-line);
+}
+
+.input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.input[data-size='lg'] {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.input[data-size='xl'] {
+  min-height: 52px;
+  border-radius: var(--ui-radius-xl);
+  background: var(--ui-surface-1);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.input[data-mono] {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.input[data-unit] {
+  padding-right: 52px;
+}
+
+.unit {
+  position: absolute;
+  right: 14px;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-body-sm);
+  pointer-events: none;
+}
+
+textarea.input {
+  min-height: 96px;
+  padding: 10px 14px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 36px 0 12px;
+  border-radius: var(--ui-radius-md);
+  border: 1px solid var(--ui-border-strong);
+  background: var(--ui-surface-2);
+  color: var(--ui-text-1);
+  font: inherit;
+  font-size: var(--ui-fs-body);
+  font-weight: 500;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+
+.select[data-size='sm'] {
+  min-height: 40px;
+  font-size: var(--ui-fs-body-sm);
+  font-weight: 600;
+}
+
+.select[data-size='lg'] {
+  min-height: 52px;
+  border-radius: var(--ui-radius-xl);
+  background: var(--ui-surface-1);
+  font-size: var(--ui-fs-body-lg);
+}
+
+.select:focus-visible {
+  outline: 2px solid var(--ui-text-1);
+  outline-offset: 0;
+}
+
+.select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* native option lists are drawn by the OS; give them the card colours where it is allowed */
+.select option {
+  background: var(--ui-surface-1);
+  color: var(--ui-text-1);
+}
+
+.selectChevron {
+  position: absolute;
+  right: 12px;
+  display: inline-flex;
+  color: var(--ui-text-2);
+  pointer-events: none;
+}
+
+.selectInline {
+  display: inline-flex;
+  flex: none;
+}
+
+.selectInline .select {
+  width: auto;
+}
+
+@media (max-width: 699px) {
+  .select,
+  .select[data-size='sm'] {
+    min-height: 44px;
+  }
+}
+
+/* ---------- TimeRangeInput ---------- */
+
+.range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.rangePart {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.time {
+  min-height: 44px;
+  width: 76px;
+  padding: 0 10px;
+  text-align: center;
+  border-radius: var(--ui-radius-md);
+  border: 1px solid var(--ui-border-strong);
+  background: var(--ui-surface-2);
+  color: var(--ui-text-1);
+  font: inherit;
+  font-weight: 600;
+}
+
+.time:focus-visible {
+  outline: 2px solid var(--ui-text-1);
+  outline-offset: 0;
+}
+
+/* ---------- Steppers ---------- */
+
+.stepper {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.stepLabel {
+  flex: 1 1 140px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.stepLabelText {
+  color: var(--label-color, var(--ui-text-2));
+  font-size: var(--ui-fs-body-sm);
+  font-weight: 600;
+}
+
+.stepSub {
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+}
+
+.stepControls {
+  flex: 1 1 180px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.stepButton {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border-radius: var(--ui-radius-lg);
+  border: 1px solid var(--ui-border-strong);
+  background: var(--ui-surface-2);
+  color: var(--ui-text-1);
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  transition: background-color var(--ui-motion) ease-out;
+}
+
+@media (hover: hover) {
+  .stepButton:hover:not(:disabled) {
+    background: var(--ui-surface-3);
+  }
+}
+
+.stepButton:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.stepValue {
+  flex: 1 1 auto;
+  min-width: 64px;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 500;
+  white-space: nowrap;
+  border-radius: var(--ui-radius-sm);
+}
+
+.stepValue:focus-visible {
+  outline-offset: 2px;
+}
+
+.stepper[data-disabled] .stepValue {
+  color: var(--ui-text-3);
+}
+
+/* round: the hero target (−, 34 px value, +) */
+.stepper[data-variant='round'] .stepButton {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ui-ring);
+  background: transparent;
+}
+
+.stepper[data-variant='round'] .stepControls {
+  flex: none;
+  justify-content: flex-start;
+}
+
+.stepper[data-variant='round'] .stepValue {
+  flex: none;
+  min-width: 92px;
+  font-size: 34px;
+  letter-spacing: -1px;
+  line-height: 1;
+}
+
+/* big: profile default targets in a well */
+.stepper[data-variant='big'] {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: var(--ui-space-14) var(--ui-space-16);
+  border-radius: var(--ui-radius-xl);
+  background: var(--ui-surface-2);
+}
+
+.stepper[data-variant='big'] .stepLabel {
+  flex: none;
+}
+
+.stepper[data-variant='big'] .stepControls {
+  flex: none;
+}
+
+.stepper[data-variant='big'] .stepButton {
+  width: 44px;
+  height: 44px;
+  background: var(--ui-surface-3);
+}
+
+.stepper[data-variant='big'] .stepValue {
+  font-size: 34px;
+  letter-spacing: -1px;
+}
+
+/* tile: parameter tiles of the strategy page */
+.stepper[data-variant='tile'] {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 8px;
+  padding: var(--ui-space-10) var(--ui-space-12);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface-2);
+}
+
+.stepper[data-variant='tile'] .stepLabel {
+  flex: none;
+  gap: 2px;
+}
+
+.stepper[data-variant='tile'] .stepLabelText {
+  font-size: var(--ui-fs-caption);
+  font-weight: 400;
+}
+
+.stepper[data-variant='tile'] .stepSub {
+  font-size: var(--ui-fs-micro);
+  font-weight: 400;
+}
+
+.stepper[data-variant='tile'] .stepControls {
+  flex: none;
+}
+
+.stepper[data-variant='tile'] .stepButton {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface-3);
+}
+
+.stepper[data-variant='tile'] .stepValue {
+  font-size: var(--ui-fs-title);
+  font-weight: 600;
+}
+
+/* inline: the compact form used by tolerance rows and the wizard */
+.stepper[data-variant='square'] .stepValue {
+  font-size: 22px;
+}
+
+@media (min-width: 700px) {
+  .stepper[data-variant='square'] .stepValue {
+    font-size: 24px;
+  }
+}
+
+@media (max-width: 699px) {
+  .stepper[data-variant='round'] .stepButton {
+    width: 48px;
+    height: 48px;
+  }
+  .stepper[data-variant='tile'] .stepButton {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* compact: label on the left, 40 px buttons (pump run-on, wizard tolerance, energy budgets) */
+.stepper[data-variant='compact'] .stepLabel {
+  flex: 1 1 200px;
+}
+
+.stepper[data-variant='compact'] .stepLabelText {
+  color: var(--label-color, var(--ui-text-1));
+  font-size: var(--ui-fs-body);
+  font-weight: 500;
+}
+
+.stepper[data-variant='compact'] .stepControls {
+  flex: none;
+  gap: 6px;
+}
+
+.stepper[data-variant='compact'] .stepButton {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface-3);
+}
+
+.stepper[data-variant='compact'] .stepValue {
+  flex: none;
+  min-width: 64px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+@media (max-width: 699px) {
+  .stepper[data-variant='compact'] .stepButton {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* ---------- TimeStepper ---------- */
+
+.timeStepper {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.timeStepper[data-variant='tile'] {
+  padding: var(--ui-space-10);
+  border-radius: var(--ui-radius-xl);
+  background: var(--ui-surface-2);
+}
+
+.timeLabel {
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+}
+
+.timeControls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.timeStepper[data-variant='tile'] .timeControls {
+  justify-content: space-between;
+}
+
+.timeStepper .stepButton {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface-3);
+}
+
+.timeStepper[data-variant='tile'] .stepButton {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--ui-radius-lg);
+}
+
+.timeValue {
+  min-width: 60px;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 600;
+  border-radius: var(--ui-radius-sm);
+}
+
+.timeStepper[data-variant='tile'] .timeValue {
+  font-size: 20px;
+}
+
+@media (max-width: 699px) {
+  .timeStepper .stepButton {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* ---------- ValuePill ---------- */
+
+.valuePill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: var(--ui-radius-md);
+  border: 1px solid var(--ui-border-strong);
+  background: var(--ui-surface-2);
+  color: var(--ui-text-1);
+  font: inherit;
+  font-size: var(--ui-fs-body-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+button.valuePill {
+  cursor: pointer;
+  transition: background-color var(--ui-motion) ease-out, border-color var(--ui-motion) ease-out;
+}
+
+@media (hover: hover) {
+  button.valuePill:hover {
+    background: var(--ui-surface-3);
+  }
+}
+
+button.valuePill[aria-expanded='true'] {
+  border-color: var(--ui-text-1);
+}
+
+.valuePill > svg {
+  color: var(--ui-text-2);
+}
+
+.popover.popover {
+  min-width: 220px;
+  padding: var(--ui-space-12);
+  border-radius: var(--ui-radius-xl);
+  border: 1px solid var(--ui-border-strong);
+  background: var(--ui-surface-elevated);
+  color: var(--ui-text-1);
+  box-shadow: var(--ui-shadow-elevated);
+}
+
+.menuList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: calc(var(--ui-space-12) * -1 + 4px);
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--ui-radius-md);
+  background: transparent;
+  color: var(--ui-text-1);
+  font: inherit;
+  font-size: var(--ui-fs-body-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.menuItem:hover,
+.menuItem:focus-visible {
+  background: var(--ui-surface-3);
+  outline: none;
+}
+
+.menuItem[aria-checked='true'] {
+  font-weight: 600;
+}
+
+.menuItem[aria-checked='true'] > svg {
+  color: var(--ui-text-1);
+}
+
+/* ---------- EntityPicker ---------- */
+
+.picker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.pickerIcon {
+  position: absolute;
+  left: 12px;
+  display: inline-flex;
+  color: var(--ui-text-3);
+  pointer-events: none;
+}
+
+.pickerInput {
+  padding-left: 38px;
+}
+
+.pickerInput[data-clearable] {
+  padding-right: 48px;
+}
+
+.pickerClear {
+  position: absolute;
+  right: 4px;
+}
+
+.dropdown.dropdown {
+  padding: 4px;
+  border-radius: var(--ui-radius-xl);
+  border: 1px solid var(--ui-border-strong);
+  background: var(--ui-surface-elevated);
+  box-shadow: var(--ui-shadow-elevated);
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.option.option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 6px 10px;
+  border-radius: var(--ui-radius-md);
+  color: var(--ui-text-1);
+}
+
+.option.option[data-combobox-selected],
+.option.option:hover {
+  background: var(--ui-surface-3);
+}
+
+.option.option[data-combobox-active] {
+  box-shadow: inset 2px 0 0 var(--ui-text-1);
+}
+
+.optionText {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.optionName {
+  font-weight: 600;
+  font-size: var(--ui-fs-body-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.optionId {
+  color: var(--ui-text-3);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-fs-caption);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.optionMeta {
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.optionState {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-text-neutral-strong);
+  font-size: var(--ui-fs-body-sm);
+  font-weight: 600;
+}
+
+.optionState[data-unavailable] {
+  color: var(--ui-tone-err-fg);
+  font-weight: 500;
+}
+
+.empty.empty {
+  padding: 12px;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.entityChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  min-height: 32px;
+  padding: 0 4px 0 10px;
+  border-radius: var(--ui-radius-pill);
+  background: var(--ui-surface-3);
+  color: var(--ui-text-neutral-strong);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-fs-caption);
+}
+
+.entityChip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chipRemove {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ui-text-2);
+  cursor: pointer;
+}
+
+.chipRemove:hover {
+  background: var(--ui-surface-4);
+  color: var(--ui-text-1);
+}

@@ -1,0 +1,408 @@
+/* ---------------- PlantDiagram ---------------- */
+
+.diagram {
+  position: relative;
+  margin: 0;
+  flex: none;
+}
+
+.edges {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.divider {
+  fill: none;
+  stroke: var(--ui-border);
+  stroke-width: 1;
+  stroke-dasharray: 6 6;
+}
+
+.edgeLine {
+  fill: none;
+  stroke: var(--edge);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.edgeLine[data-dashed] {
+  stroke-dasharray: 6 6;
+}
+
+.edgeHead {
+  fill: var(--edge);
+  stroke: none;
+}
+
+.columnHead {
+  position: absolute;
+  top: 20px;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.bandLabel {
+  position: absolute;
+  left: 24px;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-body-sm);
+  line-height: 16px;
+}
+
+.edgeLabel {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 10px));
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-body-sm);
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.nodeSlot {
+  position: absolute;
+  display: flex;
+}
+
+.energySlot {
+  position: absolute;
+  min-height: 56px;
+  display: flex;
+}
+
+.energySlot > * {
+  flex: 1;
+}
+
+/* ---------------- PlantNodeCard ---------------- */
+
+.node {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 96px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: var(--ui-radius-xl);
+  border: 1px solid var(--node-bd);
+  background: var(--node-bg);
+  color: var(--node-tt);
+  font: inherit;
+  text-align: left;
+}
+
+.node[data-dashed] {
+  border-style: dashed;
+}
+
+.node[data-size='manifold'] {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px;
+}
+
+.nodeButton {
+  cursor: pointer;
+  transition: border-color var(--ui-motion) ease-out;
+}
+
+@media (hover: hover) {
+  .nodeButton:hover {
+    border-color: var(--ui-text-2);
+  }
+}
+
+.nodeIcon {
+  flex: none;
+  display: inline-flex;
+  color: var(--node-ic);
+}
+
+.nodeText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: var(--ui-fs-body-sm);
+  line-height: 18px;
+}
+
+.nodeTitle {
+  font-size: var(--ui-fs-body-lg);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node[data-size='rooms'] .nodeTitle {
+  font-size: var(--ui-fs-body);
+}
+
+.nodeState {
+  color: var(--node-fg);
+  font-weight: 600;
+}
+
+.nodeMeta {
+  color: var(--ui-text-3);
+}
+
+.node[data-tone='off'] .nodeMeta {
+  color: var(--ui-text-disabled);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------------- EnergyStrip ---------------- */
+
+.energy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 22px;
+  min-height: 56px;
+  padding: 8px 18px;
+  border-radius: var(--ui-radius-xl);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-1);
+  color: var(--ui-text-1);
+}
+
+.energy[data-variant='compact'] {
+  gap: 4px 12px;
+  min-height: 0;
+  padding: 10px 14px;
+  font-size: var(--ui-fs-body-sm);
+}
+
+.energyIcon {
+  display: inline-flex;
+  color: var(--ui-tone-warn-line);
+}
+
+.energyTitle {
+  font-weight: 700;
+}
+
+.energyGrid {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--ui-tone-err-fg);
+}
+
+.energyGrid[data-present] {
+  color: var(--ui-tone-ok-fg);
+}
+
+.energyDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ui-tone-err-line);
+}
+
+.energyGrid[data-present] .energyDot {
+  background: var(--ui-tone-ok-line);
+}
+
+.energyItem {
+  color: var(--ui-text-2);
+}
+
+.energyNote {
+  color: var(--note);
+  font-weight: 600;
+}
+
+/* ---------------- LoopTile ---------------- */
+
+.loopTile {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--ui-radius-xl);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-1);
+  color: var(--ui-text-1);
+  text-decoration: none;
+}
+
+.loopHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+}
+
+.loopState {
+  font-size: var(--ui-fs-body);
+  font-weight: 600;
+}
+
+.loopSub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+}
+
+.loopChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface-2);
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+  text-decoration: none;
+}
+
+.loopChip[data-on] {
+  color: var(--ui-text-neutral-strong);
+}
+
+.loopDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--dot);
+}
+
+.loopDot[data-on] {
+  background: var(--dot);
+}
+
+.ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.linkish {
+  cursor: pointer;
+  transition: border-color var(--ui-motion) ease-out, background-color var(--ui-motion) ease-out;
+}
+
+@media (hover: hover) {
+  a.loopTile:hover {
+    border-color: var(--ui-border-strong);
+  }
+  a.loopChip:hover {
+    background: var(--ui-surface-3);
+  }
+  a.srcRow:hover {
+    background: var(--ui-surface-2);
+  }
+}
+
+/* ---------------- SourceRow ---------------- */
+
+.rowList {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--ui-radius-2xl);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-1);
+  overflow: hidden;
+}
+
+.srcRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 54px;
+  padding: 6px 14px;
+  color: var(--ui-text-1);
+  text-decoration: none;
+}
+
+.srcRow + .srcRow {
+  border-top: 1px solid var(--ui-divider);
+}
+
+.srcIcon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--ui-radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tile-bg);
+  color: var(--tile-fg);
+}
+
+.srcText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.srcName {
+  font-size: var(--ui-fs-body);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.srcMeta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+}
+
+.srcChip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--ui-radius-pill);
+  background: var(--chip-bg);
+  color: var(--chip-fg);
+  font-size: var(--ui-fs-caption);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.srcChevron {
+  flex: none;
+  display: inline-flex;
+  color: var(--ui-control-off);
+}

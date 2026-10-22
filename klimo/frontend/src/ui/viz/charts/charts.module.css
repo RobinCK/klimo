@@ -1,0 +1,836 @@
+/*
+ * Charts are drawn in SVG viewBoxes stretched with preserveAspectRatio="none"; strokes stay
+ * crisp through vector-effect, and everything round (dots, labels) is HTML on top so it does
+ * not stretch with the plot.
+ */
+
+.spark,
+.dayPlot,
+.curve,
+.biv,
+.timeline,
+.week,
+.dayV,
+.strip {
+  /* the recessed well charts sit in: between the card and the page (#131619 on dark) */
+  --well: color-mix(in srgb, var(--ui-surface-1) 55%, var(--ui-bg-page));
+}
+
+/* ---------------- Sparkline ---------------- */
+
+.spark {
+  position: relative;
+  height: var(--h, 40px);
+}
+
+.spark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.sparkBand {
+  fill: var(--ui-band);
+}
+
+.sparkLine {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.sparkDot {
+  position: absolute;
+  left: 100%;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+  background: var(--line);
+  box-shadow: 0 0 0 2px var(--ui-surface-1);
+}
+
+/* ---------------- DayChart ---------------- */
+
+.dayFigure {
+  margin: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dayCaption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dayTitle {
+  font-weight: 600;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swLine {
+  width: 14px;
+  height: 2px;
+  background: var(--ui-text-1);
+}
+
+.swBand,
+.swFuture,
+.swSpan {
+  width: 14px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.swBand {
+  background: color-mix(in srgb, var(--ui-text-1) 16%, transparent);
+}
+
+.swFuture {
+  border: 1px dashed color-mix(in srgb, var(--ui-text-1) 40%, transparent);
+}
+
+.swSpan {
+  background: color-mix(in srgb, var(--c) 30%, transparent);
+}
+
+.dayPlot {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 960 / 240;
+  border-radius: var(--ui-radius-lg);
+  background: var(--well);
+}
+
+.dayPlot svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.dayGrid {
+  fill: none;
+  stroke: var(--ui-divider);
+  stroke-width: 1;
+}
+
+.daySpan {
+  fill: color-mix(in srgb, var(--c) 18%, transparent);
+}
+
+.dayBandPast {
+  fill: color-mix(in srgb, var(--ui-text-1) 13%, transparent);
+}
+
+.dayBandFuture {
+  fill: color-mix(in srgb, var(--ui-text-1) 4%, transparent);
+  stroke: color-mix(in srgb, var(--ui-text-1) 35%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.dayLine {
+  fill: none;
+  stroke: var(--ui-text-1);
+  stroke-width: 2.25;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.dayNow {
+  fill: none;
+  stroke: var(--ui-text-1);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.dayDot {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: var(--c);
+  box-shadow: 0 0 0 3px var(--well);
+}
+
+.dayYLabel {
+  position: absolute;
+  left: 6px;
+  transform: translateY(-50%);
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-micro);
+  font-weight: 400;
+  pointer-events: none;
+}
+
+.dayNowLabel {
+  position: absolute;
+  top: 2px;
+  transform: translateX(-50%);
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-micro);
+  font-weight: 400;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.dayNowLabel[data-edge='end'] {
+  transform: translateX(-100%);
+}
+
+.dayNowLabel[data-edge='start'] {
+  transform: none;
+}
+
+.dayAxis {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 1.7% 0 4.6%;
+  color: var(--ui-text-3);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-fs-micro);
+  font-weight: 400;
+}
+
+/* ---------------- Timeline24h ---------------- */
+
+.timeline {
+  min-width: var(--min-width, 640px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tracks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.trackRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.trackLabel {
+  flex: none;
+  width: var(--label-w, 124px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.track {
+  position: relative;
+  flex: 1;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--ui-surface-2);
+  overflow: hidden;
+}
+
+.trackSeg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  background: var(--fill);
+  color: var(--ink);
+  font-size: var(--ui-fs-caption);
+  font-weight: 600;
+}
+
+/* run-on: the same hardware, only finishing — the colour at reduced strength */
+.trackSeg[data-muted] {
+  background: color-mix(in srgb, var(--fill) 42%, var(--ui-surface-2));
+}
+
+.trackNow {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ui-text-1);
+}
+
+.trackAxis {
+  display: flex;
+  justify-content: space-between;
+  padding-left: calc(var(--label-w, 124px) + 12px);
+  color: var(--ui-text-3);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-fs-micro);
+  font-weight: 400;
+}
+
+/* ---------------- RuntimeBar24h ---------------- */
+
+.runtime {
+  position: relative;
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ui-track);
+  overflow: hidden;
+}
+
+.runtimeSeg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--fill);
+}
+
+/* ---------------- ProfileStrip ---------------- */
+
+.strip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.stripBar {
+  position: relative;
+  height: var(--h, 22px);
+}
+
+.stripClip {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface-2);
+  overflow: hidden;
+}
+
+.stripSeg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  border-right: 2px solid var(--ui-surface-1);
+  background: var(--fill);
+  color: var(--ink);
+  font-size: var(--ui-fs-caption);
+  font-weight: 600;
+}
+
+.stripSeg[data-override] {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--fill) 0 6px,
+    color-mix(in srgb, var(--fill) 62%, var(--ui-surface-1)) 6px 12px
+  );
+}
+
+.stripNow {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 3px;
+  margin-left: -1px;
+  background: var(--ui-text-1);
+  box-shadow: 0 0 0 2px var(--ui-surface-1);
+  pointer-events: none;
+}
+
+.stripAxis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-micro);
+  font-weight: 400;
+}
+
+/* ---------------- WeekTimeline ---------------- */
+
+.week {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.weekRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.weekDay {
+  flex: none;
+  width: 36px;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-body-sm);
+  font-weight: 600;
+}
+
+.weekDay[data-today] {
+  color: var(--ui-text-1);
+  font-weight: 700;
+}
+
+.weekTrack {
+  position: relative;
+  flex: 1;
+  height: 44px;
+  border-radius: var(--ui-radius-md);
+  overflow: hidden;
+  background: var(--ui-surface-2);
+}
+
+.weekBlock {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 0 0 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 0;
+  border-right: 2px solid var(--ui-surface-2);
+  background: var(--fill);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--ui-fs-caption);
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.weekBlock[aria-pressed='true'] {
+  box-shadow: inset 0 0 0 3px var(--ui-text-1);
+}
+
+.weekBlock:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--ui-bg-page), inset 0 0 0 4px var(--ui-text-1);
+}
+
+@media (hover: hover) {
+  .weekBlock:hover {
+    filter: brightness(1.08);
+  }
+}
+
+.weekNow {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 3px;
+  margin-left: -1px;
+  background: var(--ui-text-1);
+  box-shadow: 0 0 0 2px var(--ui-bg-page);
+  pointer-events: none;
+}
+
+.weekAxis {
+  display: flex;
+  justify-content: space-between;
+  padding-left: 46px;
+  color: var(--ui-text-3);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-fs-micro);
+  font-weight: 400;
+}
+
+/* ---------------- DayTimelineVertical ---------------- */
+
+.dayV {
+  position: relative;
+  height: var(--day-h, 552px);
+}
+
+.dayVHour {
+  position: absolute;
+  left: 0;
+  width: 40px;
+  text-align: right;
+  transform: translateY(-50%);
+  color: var(--ui-text-3);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-fs-micro);
+  font-weight: 400;
+}
+
+.dayVRule {
+  position: absolute;
+  left: 50px;
+  right: 0;
+  height: 1px;
+  background: var(--ui-divider);
+}
+
+.dayVBlock {
+  position: absolute;
+  left: 56px;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
+  padding: 0 12px;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--ui-radius-md);
+  background: var(--fill);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--ui-fs-body-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.dayVBlock[data-tall] {
+  justify-content: flex-start;
+  padding: 8px 12px;
+}
+
+.dayVBlock[aria-pressed='true'] {
+  box-shadow: inset 0 0 0 3px var(--ui-text-1);
+}
+
+.dayVBlock:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--ui-bg-page), inset 0 0 0 4px var(--ui-text-1);
+}
+
+.dayVHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.dayVName {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dayVValue {
+  flex: none;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.dayVRange {
+  font-size: var(--ui-fs-caption);
+  opacity: 0.8;
+}
+
+.dayVNow {
+  position: absolute;
+  left: 50px;
+  right: 0;
+  height: 2px;
+  background: var(--ui-text-1);
+  box-shadow: 0 0 0 1px var(--ui-bg-page);
+  pointer-events: none;
+}
+
+.dayVNowLabel {
+  position: absolute;
+  left: 0;
+  width: 44px;
+  padding: 1px 0;
+  border-radius: var(--ui-radius-sm);
+  text-align: center;
+  transform: translateY(-50%);
+  background: var(--ui-text-1);
+  color: var(--ui-bg-page);
+  font-size: var(--ui-fs-micro);
+  font-weight: 700;
+  pointer-events: none;
+}
+
+/* ---------------- BivalenceChart ---------------- */
+
+.biv {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border-radius: var(--ui-radius-xl);
+  background: var(--well);
+}
+
+.bivHead {
+  position: relative;
+  height: 22px;
+  margin-left: 114px;
+}
+
+.bivNow {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  padding: 2px 7px;
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-text-1);
+  color: var(--ui-bg-page);
+  font-size: var(--ui-fs-micro);
+  font-weight: 700;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+.bivNow[data-edge='end'] {
+  transform: translateX(-100%);
+}
+
+.bivNow[data-edge='start'] {
+  transform: none;
+}
+
+.bivRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bivLabel {
+  flex: none;
+  width: 104px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-caption);
+}
+
+.bivTrack {
+  position: relative;
+  flex: 1;
+  height: 20px;
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface-2);
+  overflow: hidden;
+}
+
+.bivBar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--fill);
+}
+
+.bivLine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ui-text-1);
+}
+
+.bivTicks {
+  position: relative;
+  height: 16px;
+  margin-left: 114px;
+  color: var(--ui-text-3);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-fs-micro);
+  font-weight: 400;
+}
+
+.bivTicks > span {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.bivTicks > span[data-pos='start'] {
+  transform: none;
+}
+
+.bivTicks > span[data-pos='end'] {
+  transform: translateX(-100%);
+}
+
+.bivCaption {
+  margin-top: 4px;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+}
+
+@media (max-width: 479px) {
+  .bivHead,
+  .bivTicks {
+    margin-left: 0;
+  }
+  .bivRow {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+  }
+  .bivLabel {
+    width: auto;
+  }
+  /* in a column `flex: 1` would make the 0 % basis the height and the track collapse */
+  .bivTrack {
+    flex: none;
+  }
+}
+
+/* ---------------- WeatherCurveChart ---------------- */
+
+.curveWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.curve {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 600 / 150;
+  touch-action: pan-y;
+}
+
+.curve svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.curveGrid {
+  fill: none;
+  stroke: var(--ui-border);
+  stroke-width: 1;
+}
+
+.curveLine {
+  fill: none;
+  stroke: var(--c);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+
+.curveNow {
+  fill: none;
+  stroke: var(--ui-text-1);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.curveDot {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: var(--c);
+  box-shadow: 0 0 0 3px var(--ui-surface-2);
+}
+
+.curveYLabel {
+  position: absolute;
+  left: 0;
+  transform: translateY(-50%);
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-micro);
+  font-weight: 400;
+  pointer-events: none;
+}
+
+/* 18 px visual knob inside a 44 px touch target */
+.curveHandle {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
+  border-radius: 50%;
+  cursor: grab;
+  touch-action: none;
+}
+
+.curveHandle::after {
+  content: '';
+  position: absolute;
+  inset: 13px;
+  border-radius: 50%;
+  background: var(--ui-knob, #fff);
+  border: 3px solid var(--c);
+  box-sizing: border-box;
+}
+
+.curveHandle[data-active] {
+  cursor: grabbing;
+}
+
+.curveHandle[data-active]::before,
+.curveHandle:focus-visible::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--c) 25%, transparent);
+}
+
+.curveHandle:focus-visible {
+  outline: 2px solid var(--ui-text-1);
+  outline-offset: -4px;
+}
+
+.curveTicks {
+  position: relative;
+  height: 16px;
+  color: var(--ui-text-3);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-fs-micro);
+  font-weight: 400;
+}
+
+.curveTicks > span {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.curveTicks > span[data-pos='end'] {
+  right: 0;
+  transform: none;
+}

@@ -1,0 +1,338 @@
+/*
+ * The dial is laid out on a 260 × 240 reference box and scales with its container: positions
+ * are percentages of that box and type sizes are container units (100cqw = the dial width).
+ */
+
+.host {
+  container-type: inline-size;
+  width: 100%;
+}
+
+.dial {
+  container-type: inline-size;
+  position: relative;
+  width: min(var(--dial-max, 260px), 100%);
+  aspect-ratio: 260 / 240;
+  margin: 0 auto;
+}
+
+.svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  overflow: visible;
+}
+
+.track {
+  fill: none;
+  stroke: var(--ui-track);
+  stroke-width: 14;
+  stroke-linecap: round;
+}
+
+.arc {
+  fill: none;
+  stroke: var(--c);
+  stroke-width: 14;
+  stroke-linecap: round;
+  transition: opacity var(--ui-motion) ease-out;
+}
+
+.current {
+  fill: var(--ui-text-1);
+  stroke: var(--ui-surface-1);
+  stroke-width: 2;
+}
+
+.knob {
+  outline: none;
+}
+
+.halo {
+  fill: var(--c);
+  transition: opacity var(--ui-motion) ease-out;
+}
+
+.focusRing {
+  fill: none;
+  stroke: var(--ui-text-1);
+  stroke-width: 2;
+  opacity: 0;
+}
+
+.knob:focus-visible .focusRing {
+  opacity: 1;
+}
+
+/* the knob is a white cap in both schemes, like a physical thermostat */
+.cap {
+  fill: var(--ui-knob, #fff);
+  stroke: var(--c);
+  stroke-width: 4;
+}
+
+.hit {
+  fill: transparent;
+  cursor: grab;
+  touch-action: none;
+}
+
+.hit[data-dragging] {
+  cursor: grabbing;
+}
+
+.dial[data-variant='error'] .track {
+  opacity: 0.5;
+}
+
+/* ---------------- centre stack ---------------- */
+
+.center {
+  position: absolute;
+  left: 16.9%;
+  right: 16.9%;
+  top: 24.2%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.centerTop {
+  font-size: clamp(11px, 5cqw, 14px);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.big {
+  display: flex;
+  align-items: flex-start;
+  line-height: 1;
+  color: var(--ui-text-1);
+}
+
+.bigInt {
+  font-size: 25.4cqw;
+  font-weight: 400;
+  letter-spacing: -0.8cqw;
+}
+
+.bigFrac {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 22.3cqw;
+  margin-left: 1.2cqw;
+  padding-top: 1.5cqw;
+  font-size: 8.1cqw;
+  font-weight: 500;
+}
+
+.bigText {
+  font-size: 25.4cqw;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.8cqw;
+  color: var(--ui-text-1);
+}
+
+.dial[data-variant='error'] .bigText,
+.dial[data-variant='error'] .big {
+  color: var(--ui-text-3);
+}
+
+.centerSub {
+  font-size: clamp(11px, 5cqw, 14px);
+  color: var(--ui-text-2);
+  line-height: 1.3;
+}
+
+.bounds {
+  display: flex;
+  align-items: center;
+  gap: 3cqw;
+  margin: 2.3cqw 0 0.8cqw;
+  pointer-events: auto;
+}
+
+.boundWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 3cqw;
+}
+
+.boundDivider {
+  width: 1px;
+  height: 11.5cqw;
+  background: var(--ui-border-strong);
+}
+
+.bound {
+  min-width: 28.5cqw;
+  min-height: 40px;
+  padding: 0 2px 3px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  font: inherit;
+  font-size: 11.5cqw;
+  font-weight: 500;
+  letter-spacing: -0.2cqw;
+  line-height: 1.1;
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+.bound[data-which='lo'] {
+  color: var(--ui-tone-heat-fg);
+}
+
+.bound[data-which='hi'] {
+  color: var(--ui-tone-cool-fg);
+}
+
+.bound[aria-pressed='true'] {
+  opacity: 1;
+}
+
+.bound[data-which='lo'][aria-pressed='true'] {
+  border-bottom-color: var(--ui-tone-heat-line);
+}
+
+.bound[data-which='hi'][aria-pressed='true'] {
+  border-bottom-color: var(--ui-tone-cool-line);
+}
+
+.bound:disabled {
+  cursor: default;
+}
+
+/* ---------------- −/+ ---------------- */
+
+.decSlot,
+.incSlot {
+  position: absolute;
+  top: 85%;
+  transform: translate(-50%, -50%);
+}
+
+.decSlot {
+  left: 36.9%;
+}
+
+.incSlot {
+  left: 63.1%;
+}
+
+.roundBtn,
+.compactBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--ui-ring);
+  background: transparent;
+  color: var(--ui-text-1);
+  cursor: pointer;
+  transition: background-color var(--ui-motion) ease-out, border-color var(--ui-motion) ease-out;
+}
+
+.roundBtn {
+  width: max(40px, 18.5cqw);
+  height: max(40px, 18.5cqw);
+}
+
+.compactBtn {
+  flex: none;
+  width: 44px;
+  height: 44px;
+}
+
+.roundBtn:disabled,
+.compactBtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+@media (hover: hover) {
+  .roundBtn:hover:not(:disabled),
+  .compactBtn:hover:not(:disabled) {
+    background: var(--ui-surface-2);
+    border-color: var(--ui-text-2);
+  }
+}
+
+.lockedNote {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 80.8%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+}
+
+/* ---------------- compact row (narrow containers) ---------------- */
+
+.compact {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.compactValue {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.compactTop,
+.compactSub {
+  font-size: var(--ui-fs-caption);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.compactTop {
+  font-weight: 600;
+}
+
+.compactSub {
+  color: var(--ui-text-2);
+}
+
+.compactNum {
+  font-size: var(--ui-fs-dual);
+  font-weight: 500;
+  letter-spacing: -0.5px;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.compact[data-variant='error'] .compactNum {
+  color: var(--ui-text-3);
+}
+
+/* .host is the nearest container of both, so this measures the space the page gave the dial */
+@container (max-width: 199px) {
+  .dial {
+    display: none;
+  }
+  .compact {
+    display: flex;
+  }
+}

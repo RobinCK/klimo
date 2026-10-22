@@ -1,0 +1,244 @@
+.tol {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  --well: color-mix(in srgb, var(--ui-surface-1) 55%, var(--ui-bg-page));
+}
+
+.tolTarget {
+  align-self: center;
+  color: var(--ui-text-1);
+  font-size: var(--ui-fs-caption);
+}
+
+.tolBar {
+  position: relative;
+  height: 64px;
+  border-radius: var(--ui-radius-lg);
+  background: var(--well);
+}
+
+.tolBand {
+  position: absolute;
+  top: 18px;
+  bottom: 18px;
+  border-radius: var(--ui-radius-sm);
+  background: color-mix(in srgb, var(--ui-text-1) 14%, transparent);
+}
+
+.tolMid {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ui-text-1);
+}
+
+.tolTick {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+}
+
+.tolTick[data-side='left'] {
+  background: var(--left-c);
+}
+
+.tolTick[data-side='right'] {
+  background: var(--right-c);
+}
+
+.tolCur {
+  position: absolute;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  background: var(--dot);
+  box-shadow: 0 0 0 3px var(--well);
+  transition: left var(--ui-motion) ease-out;
+}
+
+.tolLabels {
+  position: relative;
+  height: 18px;
+  font-size: var(--ui-fs-caption);
+  font-weight: 600;
+}
+
+.tolLabels > span {
+  position: absolute;
+  white-space: nowrap;
+}
+
+.tolLabels > span[data-side='left'] {
+  transform: translateX(-100%);
+  padding-right: 4px;
+  color: var(--left-fg);
+}
+
+.tolLabels > span[data-side='right'] {
+  padding-left: 4px;
+  color: var(--right-fg);
+}
+
+.caption {
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+}
+
+/* ---------------- ComfortBar ---------------- */
+
+.comfort {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.comfortBar {
+  position: relative;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--ui-track);
+}
+
+.comfortZone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--ui-tone-ok-line) 35%, var(--ui-track));
+}
+
+.comfortMark {
+  position: absolute;
+  top: -4px;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  border-radius: 50%;
+  background: var(--ui-text-1);
+  box-shadow: 0 0 0 3px var(--ui-surface-1);
+}
+
+.comfortMark[data-out] {
+  background: var(--ui-tone-warn-line);
+}
+
+.comfortLabels {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+}
+
+/* ---------------- BatteryBar ---------------- */
+
+.battery {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.batteryBar {
+  position: relative;
+  flex: none;
+  width: 36px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--ui-track);
+  overflow: hidden;
+}
+
+.batteryFill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: var(--ui-text-2);
+}
+
+.battery[data-low] .batteryFill {
+  background: var(--ui-tone-warn-line);
+}
+
+.battery[data-mains] .batteryFill {
+  background: var(--ui-control-off);
+}
+
+.batteryText {
+  color: var(--ui-text-neutral-strong);
+  font-size: var(--ui-fs-body-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.battery[data-low] .batteryText {
+  color: var(--ui-tone-warn-fg);
+}
+
+.battery[data-mains] .batteryText {
+  color: var(--ui-text-3);
+  font-weight: 500;
+}
+
+.battery[data-stale] {
+  opacity: 0.55;
+}
+
+/* ---------------- SignalBars ---------------- */
+
+.signal {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.signalBars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+}
+
+.signalBars > span {
+  width: 3px;
+  border-radius: 1px;
+  background: var(--ui-border-strong);
+}
+
+.signalBars > span[data-on] {
+  background: var(--ui-text-neutral-strong);
+}
+
+.signal[data-weak] .signalBars > span[data-on] {
+  background: var(--ui-tone-warn-line);
+}
+
+.signalText {
+  color: var(--ui-text-neutral-strong);
+  font-size: var(--ui-fs-body-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.signal[data-weak] .signalText {
+  color: var(--ui-tone-warn-fg);
+}
+
+.signal[data-none] .signalText {
+  color: var(--ui-tone-err-fg);
+}
+
+.signal[data-net] .signalText {
+  color: var(--ui-text-3);
+  font-weight: 500;
+}
