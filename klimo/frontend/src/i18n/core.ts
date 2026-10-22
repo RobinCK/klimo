@@ -3,10 +3,9 @@
 // are kept in sync with the code by `npm run i18n` (see i18next-parser.config.js).
 // The language is chosen once at boot; changing it reloads the page, so plain functions
 // (not hooks) are enough everywhere.
-import i18next from 'i18next';
+import i18next, { type Resource } from 'i18next';
 import type { Lang } from '@api/model';
 import en from '../locales/en.json';
-import uk from '../locales/uk.json';
 
 export const LANGS: readonly Lang[] = ['uk', 'en'];
 
@@ -25,10 +24,13 @@ export function isLang(v: unknown): v is Lang {
 /** Initialise once, before the first render. */
 export async function initI18n(lang: Lang): Promise<void> {
   current = lang;
+  // the Ukrainian dictionary is a separate chunk, fetched only when it is the chosen language
+  const resources: Resource = { en: { translation: en } };
+  if (lang === 'uk') resources.uk = { translation: (await import('../locales/uk.json')).default };
   await i18next.init({
     lng: lang,
     fallbackLng: 'en',
-    resources: { en: { translation: en }, uk: { translation: uk } },
+    resources,
     // keys are English sentences, so ':' and '.' inside them must stay literal
     keySeparator: false,
     nsSeparator: false,
