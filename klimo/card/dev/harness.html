@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Klimo · картки на дашборді</title>
+<!--
+  The two dashboard compositions of the cards, on the fake house of fixtures.js:
+  a phone (412 px, light HA theme, summer) and a wall tablet (1180 px, dark HA theme, winter).
+
+    harness.html                    both side by side
+    harness.html?layout=phone       only the phone
+    harness.html?layout=tablet      only the tablet
+    &fonts=1                        load IBM Plex from the panel's node_modules (needs a web server)
+    &mqtt=0                         a Home Assistant without the MQTT service (basic climate mode)
+
+  Open it through any static server rooted at klimo/ (dev/smoke.mjs starts one), or straight
+  from disk without `fonts`.
+-->
+<style>
+  body {
+    margin: 0;
+    padding: 40px;
+    background: #0B0C0E;
+    color: #ECEEF1;
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  .sheet { display: flex; gap: 40px; align-items: flex-start; }
+  .col { display: flex; flex-direction: column; gap: 10px; }
+  .label { color: #B3BAC3; font-size: 13px; font-weight: 600; }
+  .frame { box-sizing: border-box; border: 8px solid #23272D; border-radius: 28px; }
+  .phone { width: 412px; padding: 12px; background: #F2F3F5; display: flex; flex-direction: column; gap: 12px; }
+  .tablet {
+    width: 1180px; padding: 16px; background: #111111;
+    display: grid; grid-template-columns: 380px repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start;
+  }
+  .stack { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .error { padding: 16px 20px; border-radius: 14px; background: #2B0A08; color: #FF9F9A; }
+</style>
+</head>
+<body>
+<div class="sheet" id="root"></div>
+<script src="fixtures.js"></script>
+<script type="module">
+  const params = new URLSearchParams(location.search);
+  const layout = params.get('layout') || 'both';
+  const mqtt = params.get('mqtt') !== '0';
+  const root = document.getElementById('root');
+
+  if (params.get('fonts')) {
+    for (const w of [400, 500, 600, 700]) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = `../../frontend/node_modules/@fontsource/ibm-plex-sans/${w}.css`;
+      document.head.append(link);
+    }
+  }
+
+  function card(tag, config, house) {
+    const el = document.createElement(tag);
+    el.setConfig({ type: `custom:${tag}`, ...config });
+    house.subscribe((hass) => {
+      el.hass = hass;
+    });
+    return el;
+  }
+
+  function column(...children) {
+    const el = document.createElement('div');
+    el.className = 'stack';
+    el.append(...children);
+    return el;
+  }
+
+  function framed(label, frame) {
+    const col = document.createElement('div');
+    col.className = 'col';
+    const caption = document.createElement('span');
+    caption.className = 'label';
+    caption.textContent = label;
+    col.append(caption, frame);
+    root.append(col);
+  }
+
+  /** Phone · 412 px · light theme · cooling: house, the rooms list, a swipeable thermostat. */
+  function phone() {
+    const house = KlimoFixtures.create('summer', { darkMode: false, mqtt });
+    const frame = document.createElement('div');
+    frame.className = 'frame phone';
+    frame.dataset.layout = 'phone';
+    frame.append(
+      card('klimo-house-card', { show_profile: true, profile_change: 'confirm', show_attention: true }, house),
+      card('klimo-rooms-card', { rooms: 'all', variant: 'compact', sort: 'config' }, house),
+      card('klimo-thermostat-card', { rooms: 'all' }, house),
+    );
+    framed('Телефон · 412 px · світла тема · охолодження', frame);
+    return house;
+  }
+
+  /** Tablet · 1180 px · dark theme · heating: a three-column masonry like a sections view. */
+  function tablet() {
+    const house = KlimoFixtures.create('heating_evening', { darkMode: true, mqtt });
+    const frame = document.createElement('div');
+    frame.className = 'frame tablet';
+    frame.dataset.layout = 'tablet';
+    const slugs = ['vitalnia', 'spalnia', 'dytiacha', 'kabinet', 'kukhnia', 'vanna', 'korydor'];
+    frame.append(
+      column(card('klimo-house-card', {}, house), card('klimo-thermostat-card', { room: 'vitalnia' }, house)),
+      column(...slugs.slice(0, 4).map((room) => card('klimo-room-card', { room }, house))),
+      column(card('klimo-system-card', { show: ['sources', 'circuits', 'energy', 'triggers'] }, house), ...slugs.slice(4).map((room) => card('klimo-room-card', { room }, house))),
+    );
+    framed('Планшет · 1180 px · темна тема · опалення', frame);
+    return house;
+  }
+
+  async function start() {
+    const tags = ['klimo-house-card', 'klimo-room-card', 'klimo-rooms-card', 'klimo-thermostat-card', 'klimo-system-card'];
+    const script = document.createElement('script');
+    // HA loads the bundle as a module; browsers refuse module scripts from file://
+    if (location.protocol !== 'file:') script.type = 'module';
+    script.src = '../klimo-cards.js';
+    script.onerror = () => {
+      root.innerHTML = '<div class="error">klimo-cards.js did not load</div>';
+    };
+    document.head.append(script);
+    await Promise.all(tags.map((t) => customElements.whenDefined(t)));
+    const harness = {};
+    if (layout !== 'tablet') harness.phone = phone();
+    if (layout !== 'phone') harness.tablet = tablet();
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    harness.ready = true;
+    window.KlimoHarness = harness;
+  }
+
+  start();
+</script>
+</body>
+</html>
