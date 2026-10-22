@@ -214,10 +214,29 @@ export class WatchService {
       const d = this.detection(rule, ev, cfg, now);
       if (d) active.set(d.dedupKey, d);
     }
+    this.dropHumidityTwins(active, cfg);
     const out = [...active.values()];
     for (const [key, d] of this.lastActive) if (!active.has(key)) out.push({ ...d, active: false });
     this.lastActive = active;
     return out;
+  }
+
+  /**
+   * A temperature + humidity sensor that went quiet is one problem (one card, one message): its
+   * temperature entity speaks for it, as device health does.
+   */
+  private dropHumidityTwins(active: Map<string, Detection>, cfg: EngineConfig): void {
+    const sensors = Object.values(cfg.sensorsByRoom).flat();
+    const sensorOf = (id: EntityId | null | undefined) => (id ? sensors.find((s) => s.entityId === id) : undefined);
+    const quietTemps = [...active.values()]
+      .filter((d) => d.kind === 'sensor_offline')
+      .map((d) => sensorOf(d.entityId))
+      .filter((s) => s?.role === 'temperature' && !!s.haDeviceId);
+    for (const [key, d] of active) {
+      if (d.kind !== 'sensor_offline') continue;
+      const s = sensorOf(d.entityId);
+      if (s?.role === 'humidity' && s.haDeviceId && quietTemps.some((t) => t?.haDeviceId === s.haDeviceId && t.roomId === s.roomId)) active.delete(key);
+    }
   }
 
   /**

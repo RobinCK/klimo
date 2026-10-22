@@ -263,3 +263,22 @@ test('no Home Assistant at boot: blind at once, nothing sent; when it answers th
   assert.ok(e.ha.calls.length > 0);
   e.engine.onModuleDestroy();
 });
+
+test('a clock that jumps back (the simulator switching to an earlier day) does not freeze the commands', async () => {
+  const e = h.makeEngine();
+  await e.boot();
+  await e.advance(40 * SEC);
+  assert.equal(e.engine.health(), 'ok');
+  assert.ok(e.callsTo('switch.boiler_relay').length > 0, 'the boiler was started after the read-only window');
+  // like the simulator's clock (and real timers), pending timers keep their remaining time across the jump
+  const jump = 30 * 24 * 60 * MIN;
+  e.clock.t -= jump;
+  for (const x of e.clock.timers) x.at -= jump;
+  await e.engine.runNow('test');
+  assert.equal(e.engine.health(), 'ok', 'the read-only window does not stretch over the month the clock went back');
+  const keepAlives = e.callsTo('number.boiler_countdown').length;
+  await e.advance(6 * MIN);
+  assert.ok(e.callsTo('number.boiler_countdown').length > keepAlives, 'the relay watchdog is still re-armed');
+  assert.ok(Object.values(e.memory.ledger()).every((r) => r.commandedAt === null || r.commandedAt <= e.clock.now()), 'no ledger time is left in the future');
+  e.engine.onModuleDestroy();
+});

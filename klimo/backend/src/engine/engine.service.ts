@@ -100,6 +100,8 @@ const HA_WAIT_MS = 60 * SEC;
 const HEARTBEAT_MS = 60 * SEC;
 /** Devices report stale values right after a boot or a reconnect: no "hand on the knob" then. */
 const MANUAL_QUIET_MS = 120 * SEC;
+/** A clock that moves back by more than this is a jump (not the ordinary jitter of timers). */
+const CLOCK_BACK_MS = 60 * SEC;
 /** A graceful stop waits at most this long for its fail-safe commands. */
 const STOP_WAIT_MS = 5 * SEC;
 /** A source or pump removed from the configuration is told OFF for this long, then forgotten. */
@@ -623,6 +625,7 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
   private async evaluateOnce(reason: string): Promise<EvaluateResult> {
     if (this.phase === 'starting') return this.preview(this.clock.now()).result;
     const now = this.clock.now();
+    this.rebaseAfterClockJump(now);
     this.lastRunAt = now;
     const cfg = this.config.engineConfig();
     this.refreshInterest(cfg);
@@ -689,6 +692,27 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
     this.scheduleWake(result.nextWakeAt, rec?.nextAt ?? null, now);
     if (reason !== 'tick') this.log.debug(`evaluated (${reason})`);
     return result;
+  }
+
+  /**
+   * The clock moved back (a corrected system clock, the simulator switching to an earlier day): the
+   * read-only window and the command ledger were timed by the old clock and would keep every command
+   * back until it is "later" again. They start over from now, followed by a full comparison.
+   */
+  private rebaseAfterClockJump(now: EpochMs): void {
+    const last = Math.max(this.lastTickAt, this.lastRunAt);
+    if (last === 0 || now >= last - CLOCK_BACK_MS) return;
+    this.log.warn(`the clock moved back by ${Math.round((last - now) / SEC)} s: timers and the command ledger start over from now`);
+    if (this.dryRunUntil > now) {
+      this.dryRunTimer?.cancel();
+      this.dryRunTimer = null;
+      this.dryRunUntil = now;
+    }
+    this.reconciler.rebase(now);
+    // like a reconnect: what the heads show now is read and compared, not taken for hands on the knobs
+    this.reconciler.quietManualDetection(now + MANUAL_QUIET_MS);
+    this.reconciler.requestResync(null, 'the clock change', true);
+    this.lastTickAt = now;
   }
 
   private updateUnits(found: { entityId: EntityId; unit: string }[], decisions: Decision[]): void {
@@ -1116,7 +1140,7 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
         return;
       }
       if (this.phase !== 'running') return;
-      const downSec = down !== null ? Math.round((now - down) / SEC) : 0;
+      const downSec = down !== null ? Math.max(0, Math.round((now - down) / SEC)) : 0;
       this.pendingDecisions.push({ code: 'ha.reconnected', category: 'system', tone: 'ok', params: { downSec } });
       this.reconciler.quietManualDetection(now + MANUAL_QUIET_MS);
       if (this.config.engineConfig().safety.reconcileOnRestart) this.reconciler.requestResync(null, 'ha_reconnected');

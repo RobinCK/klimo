@@ -150,6 +150,15 @@ test('a battery sensor silent for longer than its class allows is offline; two o
     assert.equal(byKey(s.devices.detect(s.clock.now()))['sensor_offline:sensor.kitchen_island_temperature'], undefined);
   }));
 
+test('a temperature + humidity sensor gone quiet is one problem, told by its temperature entity', () =>
+  withHouse(async (s, { kitchen }) => {
+    s.ha.set('sensor.kitchen_shelf_humidity', '49', { device_class: 'humidity' }, { deviceId: 'dev_shelf', reportedAgoMs: 100 * MIN });
+    device(s, 'sensor.kitchen_shelf_humidity', 'dev_shelf', 'WSDCGQ11LM', { manufacturer: 'Aqara' });
+    await s.config.create('sensors', { roomId: kitchen.id, entityId: 'sensor.kitchen_shelf_humidity', role: 'humidity', name: 'Полиця', order: 0 }, ACTOR);
+    const offline = s.devices.detect(s.clock.now()).filter((d) => d.kind === 'sensor_offline' && d.active);
+    assert.deepEqual(offline.map((d) => d.dedupKey), ['sensor_offline:sensor.kitchen_shelf_temperature']);
+  }));
+
 test('a bound entity gone from HA for five minutes is entity_missing; a Zigbee2MQTT bridge offline for a minute is z2m_offline', () =>
   withHouse(async (s) => {
     await s.config.create('z2m', { name: 'Z2M #1', baseTopic: 'zigbee2mqtt', frontendUrl: 'http://z2m.local/', bridgeEntityId: null, resendOnRestart: true }, ACTOR);

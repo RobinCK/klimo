@@ -5,6 +5,7 @@ import { errorText } from '../common/logger';
 import { lazyRef } from '../common/refs';
 import { Db } from '../db/database';
 import { SEED_HA_KEY } from '../db/seed';
+import { houseProfileEdges } from '../engine/core/targets';
 import { fromLocal, toLocal } from '../engine/core/time';
 import { env } from '../env';
 import { defaultPlantMemory, defaultPumpMemory, defaultRoomMemory, defaultSourceMemory } from '../shared/defaults';
@@ -353,6 +354,8 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
     let memory: EngineMemory | null = evaluate ? this.prerollMemory(cfg, prerollFrom, sc) : null;
     let prev: InputSnapshot['prev'] = { rooms: {}, plant: null };
     let last: EvaluateResult | null = null;
+    // the house profile's spans and journal lines come from the shell, not the core: replayed here too
+    let prevHouse: EvaluateResult['houseProfile'] | null = null;
     const roomTemps: Record<Id, [EpochMs, number][]> = {};
     const writeLogs = evaluate ? (await this.spans.range(prerollFrom, t0)).length === 0 : false;
     let engineFailed = false;
@@ -382,9 +385,12 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
             this.ha.applyDesired(d.entityId, d.value, t);
           }
           if (writeLogs) {
-            for (const dec of result.decisions) await this.journal.add(dec, t);
-            if (result.spans.length) await this.spans.apply(result.spans);
+            const edges = result.houseProfile?.activeProfileId ? houseProfileEdges(prevHouse, result.houseProfile, t) : null;
+            for (const dec of [...result.decisions, ...(edges?.decisions ?? [])]) await this.journal.add(dec, t);
+            const spans = [...result.spans, ...(edges?.spans ?? [])];
+            if (spans.length) await this.spans.apply(spans);
           }
+          if (result.houseProfile?.activeProfileId) prevHouse = result.houseProfile;
           this.recordKlimoSensors(cfgAt, result.rooms, t);
         } catch (e) {
           engineFailed = true;

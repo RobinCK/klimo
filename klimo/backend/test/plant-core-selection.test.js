@@ -42,12 +42,18 @@ test('alt bivalence: −9 heat pump → −11 boiler → −9 still boiler → �
   assert.equal(on(res, 's_boiler'), false);
   assert.equal(h.sourceState(res, 's_boiler').role, 'reserve');
   assert.equal(h.sourceState(res, 's_boiler').roleReason.code, 'role.reserve_below');
+  assert.ok(res.plant.why.some((w) => w.code === 'plant.bivalent_hp'), 'above the point the heat pump copes alone');
+  assert.ok(!res.plant.why.some((w) => w.code === 'plant.bivalent_reserve'));
 
   run.outdoor(-11);
   res = settle(run, t0 + 20 * MIN);
   assert.equal(on(res, 's_boiler'), true, 'below the bivalent point the boiler leads');
   assert.equal(on(res, 's_hp'), false);
-  assert.ok(res.plant.why.some((w) => w.code === 'plant.bivalent_hp'));
+  assert.ok(res.plant.why.some((w) => w.code === 'plant.bivalent_reserve' && w.params.sourceId === 's_boiler'), 'below the point the reserve takes over');
+  assert.ok(!res.plant.why.some((w) => w.code === 'plant.bivalent_hp'));
+  // the idle heat pump says why it waits
+  assert.equal(h.sourceState(res, 's_hp').state, 'waiting_season');
+  assert.equal(h.sourceState(res, 's_hp').blockers[0].code, 'source.blocked.bivalence');
 
   run.outdoor(-9);
   res = settle(run, t0 + 40 * MIN);

@@ -268,6 +268,31 @@ export class ReconcilerService {
     this.manualQuietUntil = Math.max(this.manualQuietUntil, until);
   }
 
+  /**
+   * The clock moved back (a corrected system clock, the simulator switching to an earlier day): times the
+   * old clock stamped lie in the future and would hold back sends, retries, keep-alives and manual
+   * detection until the clock catches up. They start over from `now`.
+   */
+  rebase(now: EpochMs): void {
+    if (this.manualQuietUntil > now) this.manualQuietUntil = now;
+    for (const [k, v] of this.suppressUntil) if (v.until > now) this.suppressUntil.delete(k);
+    const past = (t: EpochMs | null) => (t !== null && t > now ? now : t);
+    const ahead = (t: EpochMs | null) => t !== null && t > now;
+    const stale = (r: ActuatorRecord) => [r.commandedAt, r.confirmedAt, r.nextAttemptAt, r.backoffUntil, r.updatedAt, ...r.conflicts].some(ahead);
+    const rows = Object.values(this.memory.ledger())
+      .filter(stale)
+      .map((r): ActuatorRecord => ({
+        ...r,
+        commandedAt: past(r.commandedAt),
+        confirmedAt: past(r.confirmedAt),
+        nextAttemptAt: past(r.nextAttemptAt),
+        backoffUntil: ahead(r.backoffUntil) ? null : r.backoffUntil,
+        conflicts: r.conflicts.filter((t) => t <= now),
+        updatedAt: Math.min(r.updatedAt, now),
+      }));
+    if (rows.length) this.memory.putLedger(rows);
+  }
+
   /** Keeps Klimo's value away from a hand-turned head until `until`; `revert` journals the value going back. */
   suppress(key: string, until: EpochMs, revert: boolean): void {
     this.suppressUntil.set(key, { until, revert });
@@ -397,7 +422,9 @@ export class ReconcilerService {
           r = { ...r, status: 'confirmed', confirmedAt, nextAttemptAt: null };
         }
         if (inResync) resyncMatched++;
-        if (r.commanded === null) r = { ...r, commanded: d.value, commandedAt: r.commandedAt ?? now };
+        // the device holds the wanted value (sent earlier, or set before Klimo had to): that is the value a
+        // hand on the knob is measured against from now on
+        if (r.commanded === null || !sameValue(r.commanded, d.value)) r = { ...r, commanded: d.value, commandedAt: r.commandedAt ?? now };
         // keep-alives (relay watchdog countdown, external temperature) go out even when nothing changed
         if (d.refreshEverySec !== null && r.commandedAt !== null) {
           const due = r.commandedAt + d.refreshEverySec * SEC;
@@ -615,6 +642,10 @@ export class ReconcilerService {
     if (r.status !== 'confirmed' || r.confirmedAt === null || now - r.confirmedAt <= MANUAL_AFTER_CONFIRM_MS) return;
     if (now < this.manualQuietUntil || !d.entityId || this.exercising(d.entityId)) return;
     if ((this.suppressUntil.get(d.key)?.until ?? 0) > now) return;
+    // «off» is sent as the mode alone, so an idle head keeps showing its last setpoint: that is no hand on
+    // the knob (a head switched back on against Klimo is simply put back off)
+    if (r.commanded?.kind === 'climate' && r.commanded.hvacMode === 'off') return;
+    if (obs.state === 'off') return;
     const commanded = r.commanded?.kind === 'climate' ? r.commanded.temperature : null;
     const value = attrNum(obs, 'temperature');
     if (commanded === null || value === null || Math.abs(value - commanded) < MANUAL_MIN_DELTA_C) return;

@@ -1193,8 +1193,12 @@ function sourceStateOf(s: SourceConfig, x: SourceStateInput): SourceState {
   const mode = m.on ? m.mode : idleMode(s, x.selCtx.season);
   const el = mode ? eligibility(s, mode, x.selCtx) : { ok: true, hold: false, incapable: true, blockers: [] as Reason[] };
   const dir = x.sel.hp.get(s.id)?.blocker ?? null;
+  // a heat pump held off below the bivalent point says so (the selection keeps that reason per circuit)
+  const biv = [...x.sel.plans.values()].find((p) => p.bivalent.applies && p.bivalent.hp === s.id && !p.bivalent.hpPermitted);
+  const bivPointC = biv?.bivalent.mode === 'partial' ? cfg.heat.bivalence.hpLimitC : cfg.heat.bivalence.pointC;
+  const bivBlocker: Reason[] = biv && !m.on ? [{ code: 'source.blocked.bivalence', params: { pointC: bivPointC, toutC: x.tout10 } }] : [];
   const seen = new Set<string>();
-  const blockers = [...x.guard, ...(dir ? [dir] : []), ...(m.on ? [] : el.blockers)].filter((b) => {
+  const blockers = [...x.guard, ...(dir ? [dir] : []), ...(m.on ? [] : el.blockers), ...bivBlocker].filter((b) => {
     if (seen.has(b.code)) return false;
     seen.add(b.code);
     return true;
@@ -1307,8 +1311,9 @@ function plantWhy(
   const bp = plans.find((p) => p.bivalent.applies);
   if (bp && plant.heatDemand) {
     const pointC = cfg.heat.bivalence.mode === 'partial' ? cfg.heat.bivalence.hpLimitC : cfg.heat.bivalence.pointC;
-    if (!bp.bivalent.hpPermitted) out.push({ code: 'plant.bivalent_hp', params: { pointC, toutC: x.tout10 } });
-    else if (!bp.bivalent.reserveJoins && bp.bivalent.reserve) out.push({ code: 'plant.bivalent_reserve', params: { sourceId: bp.bivalent.reserve, pointC } });
+    // below the point the reserve takes over; above it the heat pump copes alone
+    if (!bp.bivalent.hpPermitted && bp.bivalent.reserve) out.push({ code: 'plant.bivalent_reserve', params: { sourceId: bp.bivalent.reserve, pointC } });
+    else if (bp.bivalent.hpPermitted && !bp.bivalent.reserveJoins) out.push({ code: 'plant.bivalent_hp', params: { pointC, toutC: x.tout10 } });
   }
   if (plant.bivalent.lagActive && x.pair) out.push({ code: 'plant.lag', params: { sourceId: x.pair.reserveId, minutes: cfg.heat.lag.forMin } });
   if (plant.lead.cool) out.push({ code: 'plant.lead', params: { sourceId: plant.lead.cool, mode: 'cool', toutC: x.tout10 } });

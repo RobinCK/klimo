@@ -104,6 +104,28 @@ test('watch detections: thresholds, dedup keys shared with device health, and th
   }
 });
 
+test('a temperature + humidity sensor gone quiet raises one detection, for its temperature entity', async () => {
+  const h = await openNotify();
+  try {
+    const { room } = await plant(h);
+    const { id: _a, ...sensor } = DEFAULT_SENSOR();
+    for (const id of ['sensor.kitchen_shelf_temperature', 'sensor.kitchen_door_temperature']) await h.config.update('sensors', h.config.list('sensors').find((x) => x.entityId === id).id, { haDeviceId: id.includes('shelf') ? 'dev_shelf' : 'dev_door' }, ACTOR);
+    await h.config.create('sensors', { ...sensor, roomId: room.id, entityId: 'sensor.kitchen_shelf_humidity', role: 'humidity', name: 'На полиці', haDeviceId: 'dev_shelf', order: 3 }, ACTOR);
+    h.ha.set('sensor.kitchen_shelf_temperature', '20.9', { unit_of_measurement: '°C' }, { reportedAgoMs: 100 * MIN });
+    h.ha.set('sensor.kitchen_shelf_humidity', '49', { unit_of_measurement: '%' }, { reportedAgoMs: 100 * MIN });
+    h.ha.set('sensor.kitchen_door_temperature', '21.1', { unit_of_measurement: '°C' }, { reportedAgoMs: 2 * MIN });
+    h.ha.set('sensor.outdoor_temperature', '4.2', { unit_of_measurement: '°C' }, { reportedAgoMs: 3 * MIN });
+    let keys = h.watch.watchDetections(h.clock.now()).filter((d) => d.kind === 'sensor_offline' && d.active).map((d) => d.dedupKey);
+    assert.deepEqual(keys, ['sensor_offline:sensor.kitchen_shelf_temperature']);
+    // only the humidity entity silent: it speaks for itself
+    h.ha.set('sensor.kitchen_shelf_temperature', '20.9', { unit_of_measurement: '°C' });
+    keys = h.watch.watchDetections(h.clock.now()).filter((d) => d.kind === 'sensor_offline' && d.active).map((d) => d.dedupKey);
+    assert.deepEqual(keys, ['sensor_offline:sensor.kitchen_shelf_humidity']);
+  } finally {
+    await h.close();
+  }
+});
+
 test('the watch list: live status, last outage, filters and search', async () => {
   const h = await openNotify();
   try {

@@ -350,10 +350,16 @@ export class DeviceHealthService implements IDeviceHealth, OnModuleInit, OnModul
         }
       }
     }
-    for (const { dev, b, minutes } of offline.values()) {
+    // one problem per device and room: a temperature + humidity sensor that went quiet is one card and one
+    // message (its temperature entity speaks for it)
+    const isTemp = (id: EntityId) => Object.values(cfg.sensorsByRoom).some((list) => list.some((s) => s.entityId === id && s.role === 'temperature'));
+    const reported = new Set<string>();
+    for (const { dev, b, minutes } of [...offline.values()].sort((x, y) => Number(isTemp(y.b.entityId)) - Number(isTemp(x.b.entityId)))) {
       const room = roomOf(b.roomId);
       if (b.role === 'sensor' && room) {
         if (!room.notify.sensorStale) continue;
+        if (reported.has(`${dev.key}:${room.id}`)) continue;
+        reported.add(`${dev.key}:${room.id}`);
         const temps = (cfg.sensorsByRoom[room.id] ?? []).filter((s) => s.role === 'temperature' && s.included);
         const left = temps.filter((s) => !offline.has(s.entityId) && this.ha.getState(s.entityId)?.state !== 'unavailable' && !!this.ha.getState(s.entityId)).length;
         add({ kind: 'sensor_offline', dedupKey: `sensor_offline:${b.entityId}`, active: true, roomId: room.id, entityId: b.entityId, deviceKey: dev.key, facts: { entityId: b.entityId, name: b.label, minutes, left, total: temps.length } });

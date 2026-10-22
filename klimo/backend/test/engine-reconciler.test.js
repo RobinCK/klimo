@@ -232,6 +232,59 @@ test('a head turned by hand is reported once its own value was confirmed for a w
   assert.equal(out.decisions.find((x) => x.code === 'trv.manual_reverted').params.from, 23);
 });
 
+test('a head that already shows the wanted value: its later reports are measured against that value, not an older command', async () => {
+  const s = setup();
+  const manual = [];
+  s.rec.onManualChange((m) => manual.push(m));
+  await s.run([head(21.5)]);
+  s.clock.t += SEC;
+  await s.run([head(21.5)]);
+  assert.equal(s.row('climate.living_trv').commanded.temperature, 21.5);
+  // the house was rebuilt meanwhile (an HA restart, the simulator's new day): the head now shows 19,
+  // which is exactly what the room wants next
+  s.clock.t += 10 * MIN;
+  s.ha.set('climate.living_trv', 'heat', { temperature: 19 }, { silent: true });
+  const out = await s.run([head(19)]);
+  assert.equal(out.sent, 0, 'nothing to send');
+  assert.equal(s.row('climate.living_trv').commanded.temperature, 19);
+  // a periodic report of the head a minute later is no hand on the knob
+  s.clock.t += MIN;
+  s.ha.set('climate.living_trv', 'heat', { current_temperature: 20.2 });
+  s.rec.onStateChanged('climate.living_trv', s.ha.getState('climate.living_trv'), CONFLICT);
+  assert.equal(manual.length, 0);
+});
+
+test('a head switched off keeps showing its old setpoint: later reports of it are not a hand on the knob', async () => {
+  const s = setup();
+  const manual = [];
+  s.rec.onManualChange((m) => manual.push(m));
+  await s.run([head(19.5)]);
+  s.clock.t += 10 * MIN;
+  // the room goes off (a frost-only profile): only the mode is sent, the head still reads 19.5
+  const off = head(7, { minIntervalSec: 0 });
+  off.value = climate(7, 'off');
+  let out = await s.run([off]);
+  assert.equal(out.sent, 1);
+  assert.equal(s.ha.getState('climate.living_trv').state, 'off');
+  assert.equal(s.ha.getState('climate.living_trv').attributes.temperature, 19.5);
+  s.clock.t += SEC;
+  await s.run([off]);
+  assert.equal(s.row('climate.living_trv').status, 'confirmed');
+  // a periodic report of the idle head (its own context) a minute later
+  s.clock.t += MIN;
+  s.ha.set('climate.living_trv', 'off', { current_temperature: 18.9 });
+  s.rec.onStateChanged('climate.living_trv', s.ha.getState('climate.living_trv'), CONFLICT);
+  assert.equal(manual.length, 0);
+  // someone switches it back on by hand: Klimo puts its «off» back instead of adopting a stale number
+  s.ha.foreign('climate.living_trv', 'heat', { temperature: 19.5 }, 'user');
+  s.rec.onStateChanged('climate.living_trv', s.ha.getState('climate.living_trv'), CONFLICT);
+  assert.equal(manual.length, 0);
+  s.clock.t += 10 * SEC;
+  out = await s.run([off]);
+  assert.equal(out.sent, 1);
+  assert.equal(s.ha.getState('climate.living_trv').state, 'off');
+});
+
 test('the boot window only reads: matching rows are confirmed, only a watchdog keep-alive goes out', async () => {
   const s = setup();
   const t0 = s.clock.now();
