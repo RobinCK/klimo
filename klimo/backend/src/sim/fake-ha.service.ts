@@ -4,8 +4,9 @@ import { addDays, dowOfDate, fromLocal, toLocal } from '../engine/core/time';
 import { env } from '../env';
 import type { DesiredValue, EntityId, EpochMs, HaConfigInfo, HaPort, HaRegistries, HaServiceResult, HaStateObj, IBus, MqttTransport, SimFaultRequest } from '../shared/model';
 import { BUS, MQTT_TRANSPORT } from '../tokens';
-import { DEVICES, demoRegistries, deviceOfEntity, entityOfRole, friendlyName, HOME, PERSONS, USERS, z2mBase, type DeviceSpec } from './devices';
+import { DEVICES, demoRegistries, deviceOfEntity, entityOfRole, friendlyName, HOME, PERSONS, USERS, z2mBase, type DeviceSpec, type EntitySpec } from './devices';
 import { evaluateTemplate, TemplateError, type TemplateHost } from './jinja-lite';
+import { inSimLanguage, simText } from './language';
 import { MqttDiscoveryBridge } from './mqtt-bridge';
 import { stream, type Rng } from './random';
 import { isMqttTap, type MqttTap } from './sim-mqtt';
@@ -62,6 +63,11 @@ const OTHER_DELAY = 500;
 const WEAK_LQI = 60;
 const LOSS_WHEN_WEAK = 0.3;
 
+/** HA's friendly name of a demo entity, in the simulator's language. */
+function simFriendlyName(d: DeviceSpec, e: EntitySpec): string {
+  return friendlyName({ ...d, label: simText(d.label, env.sim.lang) }, { ...e, name: e.name && simText(e.name, env.sim.lang) });
+}
+
 function iso(t: EpochMs): string {
   return new Date(t).toISOString();
 }
@@ -98,7 +104,7 @@ export class FakeHaService implements HaPort, TemplateHost, OnModuleDestroy {
   readonly recorder: SimRecorder;
   private online = false;
   private states = new Map<EntityId, HaStateObj>();
-  private reg: HaRegistries = demoRegistries();
+  private reg: HaRegistries = inSimLanguage(demoRegistries(), env.sim.lang);
   private readonly connectionCbs: ((ok: boolean) => void)[] = [];
   private readonly stateCbs: ((id: EntityId, next: HaStateObj | null, prev: HaStateObj | null) => void)[] = [];
   private readonly eventCbs: ((type: string, data: Doc, ctx: { id: string | null; user_id: string | null; parent_id: string | null }) => void)[] = [];
@@ -209,11 +215,11 @@ export class FakeHaService implements HaPort, TemplateHost, OnModuleDestroy {
   }
 
   config(): HaConfigInfo | null {
-    return { time_zone: this.clock.tz(), unit_system: { temperature: '°C' }, language: 'uk', version: '2026.10.0', latitude: HOME.latitude, longitude: HOME.longitude };
+    return { time_zone: this.clock.tz(), unit_system: { temperature: '°C' }, language: env.sim.lang, version: '2026.10.0', latitude: HOME.latitude, longitude: HOME.longitude };
   }
 
   async authUsers(): Promise<{ id: string; name: string; is_admin: boolean; system_generated: boolean }[]> {
-    return USERS.map((u) => ({ ...u }));
+    return USERS.map((u) => ({ ...u, name: simText(u.name, env.sim.lang) }));
   }
 
   async ensureLovelaceResource(url: string): Promise<'created' | 'updated' | 'exists' | 'unsupported'> {
@@ -308,16 +314,16 @@ export class FakeHaService implements HaPort, TemplateHost, OnModuleDestroy {
         lastLqi: d.zigbee?.lqi ?? 0,
       });
       for (const e of d.entities) {
-        this.states.set(e.entityId, { entity_id: e.entityId, state: e.state, attributes: { ...e.attributes, friendly_name: friendlyName(d, e) }, last_changed: iso(at), last_updated: iso(at), last_reported: iso(at), context: ctx });
+        this.states.set(e.entityId, { entity_id: e.entityId, state: e.state, attributes: { ...e.attributes, friendly_name: simFriendlyName(d, e) }, last_changed: iso(at), last_updated: iso(at), last_reported: iso(at), context: ctx });
       }
     }
     for (const p of PERSONS) {
-      this.states.set(p.entityId, { entity_id: p.entityId, state: 'home', attributes: { friendly_name: p.name, user_id: p.userId, device_trackers: [p.tracker], id: p.entityId.slice(7) }, last_changed: iso(at), last_updated: iso(at), last_reported: iso(at), context: ctx });
+      this.states.set(p.entityId, { entity_id: p.entityId, state: 'home', attributes: { friendly_name: simText(p.name, env.sim.lang), user_id: p.userId, device_trackers: [p.tracker], id: p.entityId.slice(7) }, last_changed: iso(at), last_updated: iso(at), last_reported: iso(at), context: ctx });
     }
-    this.states.set('zone.home', { entity_id: 'zone.home', state: String(PERSONS.length), attributes: { friendly_name: 'Дім', latitude: HOME.latitude, longitude: HOME.longitude, radius: 100, passive: false, persons: PERSONS.map((p) => p.entityId) }, last_changed: iso(at), last_updated: iso(at), last_reported: iso(at), context: ctx });
-    this.states.set('weather.home', { entity_id: 'weather.home', state: 'cloudy', attributes: { friendly_name: 'Погода вдома', temperature: 5, temperature_unit: '°C', humidity: 80, cloud_coverage: 60, wind_speed: 12, wind_speed_unit: 'km/h', supported_features: 3 }, last_changed: iso(at), last_updated: iso(at), last_reported: iso(at), context: ctx });
-    this.states.set('sun.sun', { entity_id: 'sun.sun', state: 'below_horizon', attributes: { friendly_name: 'Сонце', elevation: -10, azimuth: 300, rising: false }, last_changed: iso(at), last_updated: iso(at), last_reported: iso(at), context: ctx });
-    this.states.set('calendar.family', { entity_id: 'calendar.family', state: 'off', attributes: { friendly_name: 'Сім’я', message: '', start_time: null, end_time: null }, last_changed: iso(at), last_updated: iso(at), last_reported: iso(at), context: ctx });
+    this.states.set('zone.home', { entity_id: 'zone.home', state: String(PERSONS.length), attributes: { friendly_name: simText('Дім', env.sim.lang), latitude: HOME.latitude, longitude: HOME.longitude, radius: 100, passive: false, persons: PERSONS.map((p) => p.entityId) }, last_changed: iso(at), last_updated: iso(at), last_reported: iso(at), context: ctx });
+    this.states.set('weather.home', { entity_id: 'weather.home', state: 'cloudy', attributes: { friendly_name: simText('Погода вдома', env.sim.lang), temperature: 5, temperature_unit: '°C', humidity: 80, cloud_coverage: 60, wind_speed: 12, wind_speed_unit: 'km/h', supported_features: 3 }, last_changed: iso(at), last_updated: iso(at), last_reported: iso(at), context: ctx });
+    this.states.set('sun.sun', { entity_id: 'sun.sun', state: 'below_horizon', attributes: { friendly_name: simText('Сонце', env.sim.lang), elevation: -10, azimuth: 300, rising: false }, last_changed: iso(at), last_updated: iso(at), last_reported: iso(at), context: ctx });
+    this.states.set('calendar.family', { entity_id: 'calendar.family', state: 'off', attributes: { friendly_name: simText('Сім’я', env.sim.lang), message: '', start_time: null, end_time: null }, last_changed: iso(at), last_updated: iso(at), last_reported: iso(at), context: ctx });
     for (const s of this.states.values()) this.recorder.record(s.entity_id, s.state, s.attributes, at);
   }
 
@@ -875,7 +881,7 @@ export class FakeHaService implements HaPort, TemplateHost, OnModuleDestroy {
         out[id] = { events: [] };
         continue;
       }
-      out[id] = { events: guestEvents(from, to, this.clock.tz()).map((e) => ({ start: iso(e.start), end: iso(e.end), summary: 'Гості', description: 'Друзі на вечерю', location: '' })) };
+      out[id] = { events: guestEvents(from, to, this.clock.tz()).map((e) => ({ start: iso(e.start), end: iso(e.end), summary: simText('Гості', env.sim.lang), description: simText('Друзі на вечерю', env.sim.lang), location: '' })) };
     }
     return out;
   }
@@ -1013,7 +1019,7 @@ function zigbeeDevice(d: DeviceSpec): Doc {
     interview_completed: true,
     supported: true,
     disabled: false,
-    definition: { model: model.join(' ') || d.model, vendor: model.length ? vendor : d.manufacturer, description: d.label, exposes, options: [] },
+    definition: { model: model.join(' ') || d.model, vendor: model.length ? vendor : d.manufacturer, description: simText(d.label, env.sim.lang), exposes, options: [] },
   };
 }
 

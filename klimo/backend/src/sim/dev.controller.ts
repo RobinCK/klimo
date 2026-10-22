@@ -4,12 +4,14 @@ import type { Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ApiException } from '../common/http';
+import { env } from '../env';
 import { lazyRef } from '../common/refs';
 import { any, obj, opt, parse, str } from '../common/validate';
 import type { HaServiceResult, HaStateObj, IMqtt } from '../shared/model';
 import { MQTT } from '../tokens';
 import { USERS } from './devices';
 import { FakeHaService } from './fake-ha.service';
+import { simText } from './language';
 
 const ServiceBody = obj({ domain: str(64, { min: 1, pattern: /^[a-z_][a-z0-9_]*$/ }), service: str(64, { min: 1, pattern: /^[a-z_][a-z0-9_]*$/ }), data: opt(any()) });
 
@@ -21,7 +23,7 @@ function harnessFile(): string | null {
 
 function userOf(key: string | undefined) {
   const u = USERS.find((x) => x.id === `u_${key ?? 'ihor'}`) ?? USERS[0];
-  return { id: u.id, name: u.name, is_admin: u.is_admin };
+  return { id: u.id, name: simText(u.name, env.sim.lang), is_admin: u.is_admin };
 }
 
 /**
@@ -52,7 +54,7 @@ export class DevController {
     // with an external broker Klimo's entities may only be known to the MQTT side
     const known = new Set(states.map((s) => s.entity_id));
     for (const s of this.mqtt()?.asHaStates() ?? []) if (!known.has(s.entity_id)) states.push(s);
-    return { states, user: userOf(user), themes: { darkMode: theme !== 'light' }, language: 'uk' };
+    return { states, user: userOf(user), themes: { darkMode: theme !== 'light' }, language: env.sim.lang };
   }
 
   @Post('service')

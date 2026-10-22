@@ -42,6 +42,7 @@ import { CONFIG_STORE, ENGINE, EVALUATE, EVENTS, INCIDENTS, JOURNAL, MEMORY_STOR
 import { Autopilot, type Command } from './autopilot';
 import { buildDemoHouse, ROOM_IDS } from './demo-house';
 import { DEVICES, entityOfRole, entitySpec, ROOM_KEYS, type DeviceSpec, type RoomKey } from './devices';
+import { simText } from './language';
 import { FakeHaService, guestEvents } from './fake-ha.service';
 import { stream, type Rng } from './random';
 import { climateFor, SCENARIOS, scenarioStart, type Scenario } from './scenarios';
@@ -219,7 +220,7 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
       await this.db.kvSet(DEMO_KEY, 'kept');
       return;
     }
-    const bundle = buildDemoHouse(this.config.exportBundle(), this.simClock.now());
+    const bundle = buildDemoHouse(this.config.exportBundle(), this.simClock.now(), env.sim.lang);
     const result = await this.config.importBundle(bundle, { dryRun: false }, SIM_ACTOR);
     if (!result.ok) {
       this.log.error(`demo house rejected: ${result.issues.slice(0, 8).map((i) => `${i.path} ${i.code}`).join('; ')}`);
@@ -324,7 +325,7 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
       duration: o.duration,
       createdAt: t0 + o.createdMin * MIN,
       until: o.untilLocalMin === null ? null : fromLocal(day, o.untilLocalMin, this.simClock.tz()),
-      by: { via: 'ui', userId: 'u_ihor', userName: 'Ігор', contextId: null },
+      by: { via: 'ui', userId: 'u_ihor', userName: simText('Ігор', env.sim.lang), contextId: null },
       previous: null,
       revertToken: null,
       revertUntil: null,
@@ -493,7 +494,7 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
     const calendars = cfg.activationRules.filter((r) => r.enabled && r.config.type === 'calendar').map((r) => (r.config.type === 'calendar' ? r.config.calendarEntityId : ''));
     const calendarEvents: InputSnapshot['calendarEvents'] = {};
     for (const c of new Set(calendars)) {
-      calendarEvents[c] = c === 'calendar.family' ? guestEvents(t, t + 2 * DAY, this.simClock.tz()).map((e) => ({ ...e, summary: 'Гості', description: 'Друзі на вечерю', location: '' })) : [];
+      calendarEvents[c] = c === 'calendar.family' ? guestEvents(t, t + 2 * DAY, this.simClock.tz()).map((e) => ({ ...e, summary: simText('Гості', env.sim.lang), description: simText('Друзі на вечерю', env.sim.lang), location: '' })) : [];
     }
     const mean = this.outdoorMean(t, DAY / 2);
     return buildSnapshot(cfg, {
@@ -899,7 +900,7 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
     const ev = guestEvents(at - DAY, at + DAY, this.simClock.tz()).find((e) => e.start <= at && at < e.end);
     const upcoming = guestEvents(at, at + 7 * DAY, this.simClock.tz())[0];
     const shown = ev ?? upcoming;
-    this.ha.setEntity('calendar.family', ev ? 'on' : 'off', { message: shown ? 'Гості' : '', start_time: shown ? new Date(shown.start).toISOString() : null, end_time: shown ? new Date(shown.end).toISOString() : null }, at);
+    this.ha.setEntity('calendar.family', ev ? 'on' : 'off', { message: shown ? simText('Гості', env.sim.lang) : '', start_time: shown ? new Date(shown.start).toISOString() : null, end_time: shown ? new Date(shown.end).toISOString() : null }, at);
   }
 
   /** Mean of the outdoor sensor over the last `span` (the 10-min mean the plant decides by). */

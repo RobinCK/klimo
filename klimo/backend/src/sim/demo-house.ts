@@ -27,6 +27,7 @@ import type {
   EpochMs,
   ExportBundle,
   Id,
+  Lang,
   Manifold,
   NotifyTarget,
   ProfileRoomSetting,
@@ -40,6 +41,7 @@ import type {
   Z2mInstance,
 } from '../shared/model';
 import { DEVICES, entityOfRole, type DeviceSpec, type RoomKey } from './devices';
+import { inSimLanguage } from './language';
 
 /* =====================================================================================================
  * The demo house shown throughout the UI, as one configuration bundle imported into an empty database: seven
@@ -165,15 +167,18 @@ function trvSiblings(d: DeviceSpec): TrvSiblings {
 
 const roomDevices = (key: RoomKey, kind: DeviceSpec['binding']['kind']) => DEVICES.filter((d) => d.binding.kind === kind && 'room' in d.binding && d.binding.room === key);
 
-/** The demo house on top of the first-boot seed (profiles, house schedule, triggers, rules, defaults). */
-export function buildDemoHouse(base: ExportBundle, now: EpochMs): ExportBundle {
+/**
+ * The demo house on top of the first-boot seed (profiles, house schedule, triggers, rules, defaults),
+ * named in Ukrainian or, with `lang: 'en'`, in English.
+ */
+export function buildDemoHouse(base: ExportBundle, now: EpochMs, lang: Lang = 'uk'): ExportBundle {
   const b = deepClone(base);
   b.exportedAt = now;
 
   b.settings = {
     ...b.settings,
     houseName: 'Дім',
-    notificationLanguage: 'uk',
+    notificationLanguage: lang,
     outdoor: { ...b.settings.outdoor, sensorEntityId: 'sensor.outdoor_temperature', weatherEntityId: 'weather.home' },
     presence: { ...b.settings.presence, personEntityIds: ['person.ihor', 'person.olia'] },
     onboardingDismissed: true,
@@ -406,7 +411,7 @@ export function buildDemoHouse(base: ExportBundle, now: EpochMs): ExportBundle {
     resendOnRestart: true,
   });
   b.devices = { ...b.devices, meta: [], z2m: [z2m(1), z2m(2)] };
-  return b;
+  return inSimLanguage(b, lang);
 }
 
 function demoSources(now: EpochMs): SourceConfig[] {

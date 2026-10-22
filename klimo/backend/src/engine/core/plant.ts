@@ -1235,7 +1235,8 @@ function sourceStateOf(s: SourceConfig, x: SourceStateInput): SourceState {
   } else if (x.want) state = 'waiting_guard';
   else if (room?.paused) state = 'paused';
   else if (blockers.some((b) => b.code === 'source.blocked.trigger' || b.code === 'source.blocked.condition')) state = 'waiting_trigger';
-  else if (blockers.some((b) => b.code === 'source.blocked.season' || b.code === 'source.blocked.cutoff' || b.code === 'source.blocked.bivalence')) state = 'waiting_season';
+  else if (blockers.some((b) => b.code === 'source.blocked.season' || b.code === 'source.blocked.cutoff')) state = 'waiting_season';
+  // a source held by the bivalence point is in season, it is the reserve: standby, and the blocker says why
   else state = 'idle';
 
   const { role, reason: roleReason } = roleOf(s, x);

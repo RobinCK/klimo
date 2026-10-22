@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import type { SimScenarioId } from './shared/model';
+import type { Lang, SimScenarioId } from './shared/model';
 
 /**
  * Add-on options come from /data/options.json (written by the Supervisor from the user's add-on
@@ -45,6 +45,8 @@ export interface Env {
     speed: number;
     seed: number;
     warmup: boolean;
+    /** Language of the demo house: names, the fake HA's language and so Klimo's notification language. */
+    lang: Lang;
   };
   /** Development: requests without ingress headers are treated as an HA admin. */
   devAdmin: boolean;
@@ -57,6 +59,7 @@ type Options = Record<string, unknown>;
 
 const LOG_LEVELS: readonly LogLevel[] = ['trace', 'debug', 'info', 'warning', 'error'];
 const DRIVERS: readonly DbDriver[] = ['sqlite', 'mariadb', 'postgres'];
+const SIM_LANGS: readonly Lang[] = ['uk', 'en'];
 const SCENARIOS: readonly SimScenarioId[] = ['heating_evening', 'frost_morning', 'blackout_sun', 'shoulder', 'summer'];
 
 function readOptions(dataDir: string): Options {
@@ -127,6 +130,7 @@ export function loadEnv(vars: Vars = process.env, options?: Options): Env {
       speed: Math.min(600, Math.max(0, num(vars.KLIMO_SIM_SPEED) ?? 1)),
       seed: num(vars.KLIMO_SIM_SEED) ?? 42,
       warmup: vars.KLIMO_SIM_WARMUP !== '0',
+      lang: pick(vars.KLIMO_SIM_LANG, SIM_LANGS, 'uk'),
     },
     devAdmin: flag(vars.KLIMO_DEV_ADMIN),
     ingressOnly: !simulate && !flag(vars.KLIMO_DEV_ADMIN) && !!vars.SUPERVISOR_TOKEN,
