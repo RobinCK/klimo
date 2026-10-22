@@ -55,7 +55,7 @@ test('energy setup binds entities and wakes the seeded triggers and rules', asyn
   }
 });
 
-test('the first-boot setup completes from Home Assistant once', async () => {
+test('the first-boot setup completes from Home Assistant once and keeps the English seed', async () => {
   const s = await openStores();
   try {
     const states = [
@@ -68,7 +68,8 @@ test('the first-boot setup completes from Home Assistant once', async () => {
     const ha = {
       connected: true,
       allStates: () => states,
-      config: () => ({ language: 'en', time_zone: 'Europe/Kyiv', unit_system: { temperature: '°C' }, version: '2026.10.0', latitude: 0, longitude: 0 }),
+      // a Ukrainian Home Assistant no longer turns the seed or the notifications Ukrainian
+      config: () => ({ language: 'uk', time_zone: 'Europe/Kyiv', unit_system: { temperature: '°C' }, version: '2026.10.0', latitude: 0, longitude: 0 }),
       registries: () => ({ areas: [], devices: [], entities: [] }),
       onConnection: () => undefined,
     };

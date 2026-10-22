@@ -20,11 +20,13 @@ async function acSource(config, roomId, extra = {}) {
   return config.create('sources', { ...base, ...extra }, ACTOR);
 }
 
-test('first boot seeds settings, profiles, schedule, triggers, rules and targets', () =>
-  withStores(async ({ config, dir, clock }) => {
+test('first boot seeds settings, profiles, schedule, triggers, rules and targets, named in English', () =>
+  withStores(async ({ config, db, dir, clock }) => {
     assert.equal(config.revision(), 1);
     const settings = config.singleton('settings');
-    assert.equal(settings.houseName, 'Дім');
+    assert.equal(settings.houseName, 'Home');
+    assert.equal(settings.notificationLanguage, 'en');
+    assert.equal(settings.uiLanguage, 'auto');
     assert.equal(settings.defaultProfileId, 'home');
     assert.deepEqual(settings.targetLimits, { heatMinC: 5, heatMaxC: 30, coolMinC: 16, coolMaxC: 32, stepC: 0.5 });
     assert.equal(config.singleton('safety').frostC, 7);
@@ -32,12 +34,12 @@ test('first boot seeds settings, profiles, schedule, triggers, rules and targets
 
     const profiles = config.list('profiles');
     assert.deepEqual(profiles.map((p) => [p.id, p.name, p.kind, p.heatC, p.coolC]), [
-      ['home', 'Дома', 'system', 21, 25],
-      ['away', 'Поза домом', 'system', 18, 28],
-      ['eco', 'Еко', 'system', 19, 27],
-      ['night', 'Ніч', 'custom', 19.5, 26],
-      ['guests', 'Гості', 'custom', 22, 24.5],
-      ['vacation', 'Відпустка', 'custom', 12, 30],
+      ['home', 'Home', 'system', 21, 25],
+      ['away', 'Away', 'system', 18, 28],
+      ['eco', 'Eco', 'system', 19, 27],
+      ['night', 'Night', 'custom', 19.5, 26],
+      ['guests', 'Guests', 'custom', 22, 24.5],
+      ['vacation', 'Vacation', 'custom', 12, 30],
     ]);
     assert.equal(profiles.find((p) => p.id === 'vacation').frostOnly, true);
 
@@ -48,19 +50,27 @@ test('first boot seeds settings, profiles, schedule, triggers, rules and targets
     assert.equal(fmt(house.days[6]), '0-480:night 480-1410:home 1410-1440:night');
 
     const triggers = config.list('triggers');
-    assert.deepEqual(triggers.map((t) => t.id), ['blackout', 'solar', 'night_tariff', 'frost', 'battery_low']);
+    assert.deepEqual(triggers.map((t) => [t.id, t.name]), [
+      ['blackout', 'Blackout'],
+      ['solar', 'Sun during blackout'],
+      ['night_tariff', 'Night tariff'],
+      ['frost', 'Frost'],
+      ['battery_low', 'Battery low'],
+    ]);
     const frost = config.get('triggers', 'frost');
     assert.deepEqual(frost.system, { boundTo: 'heat.bivalence' });
     assert.equal(frost.condition.op, 'outdoor');
     assert.equal(frost.condition.value, -10);
     assert.equal(frost.condition.exitAt, -8);
     assert.equal(config.get('triggers', 'blackout').whenUnknown, 'true');
-    assert.deepEqual(config.list('rules').map((r) => [r.id, r.priority, r.enabled]), [
-      ['economy', 10, false],
-      ['store_heat', 20, true],
-      ['preheat_night', 30, false],
+    assert.deepEqual(config.list('rules').map((r) => [r.id, r.name, r.priority, r.enabled]), [
+      ['economy', 'Save energy', 10, false],
+      ['store_heat', 'Store heat', 20, true],
+      ['preheat_night', 'Electric pre-heat', 30, false],
     ]);
-    assert.deepEqual(config.list('targets').map((t) => t.channel).sort(), ['ha_event', 'ha_persistent']);
+    assert.deepEqual(config.list('targets').map((t) => [t.channel, t.name]).sort(), [['ha_event', 'Automations'], ['ha_persistent', 'HA panel']]);
+    // nothing on a fresh install is left for the one-time rename of Ukrainian seed names
+    assert.equal(await db.kvGet('seed.english'), 'done');
     assert.equal(config.list('activationRules').length, 3);
     assert.deepEqual(config.singleton('energy').activeWhen.triggerId, 'blackout');
 
@@ -74,6 +84,54 @@ test('first boot seeds settings, profiles, schedule, triggers, rules and targets
       await again.close({ keep: true });
     }
   }));
+
+test('names 0.1.0 seeded in Ukrainian move to English once; renamed and own rows keep theirs', async () => {
+  // a 0.1.0 database: the Ukrainian seed, a few rows the household renamed or added, no marker yet
+  let s = await openStores();
+  const { dir, clock } = s;
+  try {
+    const c = s.config;
+    await c.patchSingleton('settings', { houseName: 'Дім', notificationLanguage: 'uk' }, ACTOR);
+    const uk = { home: 'Дома', away: 'Поза домом', eco: 'Еко', night: 'Ніч (будні)', guests: 'Гості', vacation: 'Відпустка' };
+    for (const [id, name] of Object.entries(uk)) await c.update('profiles', id, { name }, ACTOR);
+    await c.create('profiles', { name: 'Guests', kind: 'custom', color: '#E87AB4', ink: '#2A0718', icon: 'users', heatC: 22, coolC: 24.5, frostOnly: false, order: 6 }, ACTOR);
+    const ukTriggers = { blackout: 'Блекаут', solar: 'Сонце при блекауті', night_tariff: 'Нічний тариф', frost: 'Мороз', battery_low: 'Батарея < 40 %' };
+    for (const [id, name] of Object.entries(ukTriggers)) await c.update('triggers', id, { name }, ACTOR);
+    const ukRules = { economy: 'Економити', store_heat: 'Накопичити тепло', preheat_night: 'Передгрів електрикою' };
+    for (const [id, name] of Object.entries(ukRules)) await c.update('rules', id, { name }, ACTOR);
+    for (const t of c.list('targets')) await c.update('targets', t.id, { name: t.channel === 'ha_persistent' ? 'Панель HA' : 'Автоматизації' }, ACTOR);
+    await s.db.kvSet('seed.english', null);
+    await s.close({ keep: true });
+
+    s = await openStores({ dir, clock });
+    const settings = s.config.singleton('settings');
+    assert.equal(settings.houseName, 'Home');
+    // the notification language is the household's choice and stays
+    assert.equal(settings.notificationLanguage, 'uk');
+    assert.deepEqual(s.config.list('profiles').map((p) => [p.id in uk ? p.id : 'own', p.name]), [
+      ['home', 'Home'],
+      ['away', 'Away'],
+      ['eco', 'Eco'],
+      ['night', 'Ніч (будні)'],
+      // «Guests» is taken by the household's own profile
+      ['guests', 'Гості'],
+      ['vacation', 'Vacation'],
+      ['own', 'Guests'],
+    ]);
+    assert.deepEqual(s.config.list('triggers').map((t) => t.name), ['Blackout', 'Sun during blackout', 'Night tariff', 'Frost', 'Батарея < 40 %']);
+    assert.deepEqual(s.config.list('rules').map((r) => r.name), ['Save energy', 'Store heat', 'Electric pre-heat']);
+    assert.deepEqual(s.config.list('targets').map((t) => t.name).sort(), ['Automations', 'HA panel']);
+    assert.equal(await s.db.kvGet('seed.english'), 'done');
+
+    // it ran once: a Ukrainian name chosen afterwards is the household's own
+    await s.config.update('profiles', 'home', { name: 'Дома' }, ACTOR);
+    await s.close({ keep: true });
+    s = await openStores({ dir, clock });
+    assert.equal(s.config.get('profiles', 'home').name, 'Дома');
+  } finally {
+    await s.close();
+  }
+});
 
 test('create and update bump the revision and announce the change', () =>
   withStores(async ({ config, busEvents, sent }) => {

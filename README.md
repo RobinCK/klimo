@@ -51,7 +51,8 @@ Then find **Klimo** in the store and click **Install**. Or add it manually:
 
 On the first start Klimo creates six profiles (Home, Away, Eco, Night, Guests, Vacation), a weekly
 house schedule and five triggers (Blackout, Sun during blackout, Night tariff, Frost, Battery low).
-Then:
+They and the notifications start in English — rename anything, and pick the notification language in
+**Settings → Units, languages and look**. Then:
 
 1. **System → Sources → Add a source** for every heat pump, boiler, air conditioner or heater.
 2. **Rooms → Add a room**: give it a name and a Home Assistant area — Klimo finds the radiator
@@ -449,7 +450,7 @@ speed, the scenario, the outdoor temperature, opens windows and injects device f
 |---|---|---|
 | `KLIMO_SIM_SCENARIO` | `heating_evening` | `heating_evening`, `frost_morning`, `blackout_sun`, `shoulder` or `summer` |
 | `KLIMO_SIM_SPEED` | `1` | virtual seconds per real second (0 freezes the clock, at most 600) |
-| `KLIMO_SIM_LANG` | `uk` | `en` names the demo house in English |
+| `KLIMO_SIM_LANG` | `en` | `uk` names the demo house in Ukrainian |
 | `KLIMO_SIM_START` | the scenario's time | local start time, e.g. `2026-10-21T19:10` |
 | `KLIMO_SIM_SEED` | `42` | seed of the sensor noise, so runs are reproducible |
 | `KLIMO_SIM_WARMUP` | `1` | `0` skips the history warm-up |

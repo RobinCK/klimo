@@ -10,7 +10,7 @@ import {
   type EnergyBindings,
   type RuleSourceSets,
 } from '../shared/defaults';
-import type { Actor, ConditionNode, EnergyPolicy, IConfigStore, SourceConfig, Trigger, TriggerRule } from '../shared/model';
+import type { Actor, ConditionNode, EnergyPolicy, IConfigStore, Lang, SourceConfig, Trigger, TriggerRule } from '../shared/model';
 import { mapCondition, walkCondition } from './refs';
 
 /* =====================================================================================================
@@ -50,7 +50,8 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
 export async function applyEnergySetup(config: IConfigStore, entities: EnergyPolicy['entities'], actor: Actor): Promise<EnergyPolicy> {
   return config.transaction(async (tx) => {
-    const lang = tx.singleton('settings').notificationLanguage;
+    // a seeded trigger or rule the household deleted comes back with its English seed name
+    const lang: Lang = 'en';
     const e = bindings(entities);
     const energy = tx.singleton('energy');
     const sets = ruleSourceSets(tx.list('sources'));

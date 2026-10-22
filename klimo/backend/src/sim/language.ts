@@ -2,7 +2,7 @@ import { isPlainObject, seedName, seedProfiles } from '../shared/defaults';
 import type { Lang } from '../shared/model';
 
 /**
- * The demo house is Ukrainian at heart; `KLIMO_SIM_LANG=en` renders it in English instead: room,
+ * The demo house is written in Ukrainian and shown in English unless `KLIMO_SIM_LANG=uk`: room,
  * device and source names, the fake Home Assistant's language and friendly names, and through them
  * Klimo's notification language. Only display names change — ids, slugs and entity ids stay the same,
  * so scenarios, tests and the card harness work identically in both languages.

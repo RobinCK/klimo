@@ -22,12 +22,18 @@ import {
   seedRules,
   seedTriggers,
 } from '../shared/defaults';
-import type { Actor, ActivationRule, EpochMs, GeneralSettings, HaPort, HaStateObj, IBus, IConfigStore, IEntitySearch, Lang, NotifyTarget } from '../shared/model';
+import type { Actor, ActivationRule, EpochMs, GeneralSettings, HaPort, HaStateObj, IBus, IConfigStore, Id, IEntitySearch, Lang, NotifyTarget } from '../shared/model';
 import { BUS, CONFIG_STORE, ENTITY_SEARCH, HA_PORT } from '../tokens';
 import { Db } from './database';
 
-/** kv marker: the seed still waits for Home Assistant to pick entities and the language. */
+/** kv marker: the seed still waits for Home Assistant to pick entities. */
 export const SEED_HA_KEY = 'seed.ha';
+
+/** kv marker: names an older version seeded in Ukrainian were checked and moved to English. */
+export const SEED_EN_KEY = 'seed.english';
+
+/** Seeded names and the notification language start in English whatever Home Assistant speaks. */
+const SEED_LANG: Lang = 'en';
 
 const SYSTEM: Actor = { via: 'system', userId: null, userName: null, contextId: null };
 
@@ -36,7 +42,8 @@ const SYSTEM: Actor = { via: 'system', userId: null, userName: null, contextId: 
  * plan, the seeded triggers and rules, the HA panel and automation-event targets. Rooms, sources,
  * circuits and pumps are never seeded — the house is described by its owner.
  */
-export function seedGraph(lang: Lang, now: EpochMs): ConfigGraph {
+export function seedGraph(now: EpochMs): ConfigGraph {
+  const lang = SEED_LANG;
   const g = emptyGraph();
   g.settings = { ...defaultSettings(lang), updatedAt: now };
   g.safety = { ...defaultSafety(), updatedAt: now };
@@ -69,6 +76,39 @@ export function seedGraph(lang: Lang, now: EpochMs): ConfigGraph {
   return g;
 }
 
+/**
+ * 0.1.0 seeded Ukrainian names whatever Home Assistant spoke. A row whose name is still exactly the
+ * Ukrainian seed name gets the English one; anything the household renamed or created keeps its name,
+ * and so does a seeded row whose English name another row already took. The notification language
+ * stays as it is — it is a choice in Settings. Returns the number of renamed rows.
+ */
+export function englishSeedNames(g: ConfigGraph, now: EpochMs): number {
+  let renamed = 0;
+  const rename = <T extends { id: Id; name: string }>(rows: Map<Id, T>, id: Id, from: string, to: string): void => {
+    const row = rows.get(id);
+    if (!row || row.name !== from) return;
+    const lower = to.toLowerCase();
+    if ([...rows.values()].some((o) => o.id !== id && o.name.trim().toLowerCase() === lower)) return;
+    rows.set(id, { ...row, name: to });
+    renamed++;
+  };
+  const pairs = <T extends { id: Id; name: string }>(uk: readonly T[], en: readonly T[]) => uk.map((r, i) => [r.id, r.name, en[i].name] as const);
+
+  if (g.settings.houseName === defaultSettings('uk').houseName) {
+    g.settings = { ...g.settings, houseName: defaultSettings(SEED_LANG).houseName, updatedAt: now };
+    renamed++;
+  }
+  for (const [id, uk, en] of pairs(seedProfiles('uk'), seedProfiles(SEED_LANG))) rename(g.profiles, id, uk, en);
+  for (const [id, uk, en] of pairs(seedTriggers('uk'), seedTriggers(SEED_LANG))) rename(g.triggers, id, uk, en);
+  for (const [id, uk, en] of pairs(seedRules('uk'), seedRules(SEED_LANG))) rename(g.rules, id, uk, en);
+  // the two seeded targets have random ids: the channel tells them apart
+  for (const t of [...g.targets.values()]) {
+    const key = t.channel === 'ha_persistent' ? 'panel' : t.channel === 'ha_event' ? 'automations' : null;
+    if (key) rename(g.targets, t.id, seedName(key, 'uk'), seedName(key, SEED_LANG));
+  }
+  return renamed;
+}
+
 const OUTDOOR_HINTS = ['outdoor', 'outside', 'exterior', 'надвор', 'зовн'];
 
 /** First `sensor.*` temperature whose id or name says it is outside. */
@@ -81,14 +121,10 @@ export function pickOutdoorSensor(states: readonly HaStateObj[]): string | null 
   return null;
 }
 
-export function haLanguage(language: string | null | undefined): Lang {
-  return language?.toLowerCase().startsWith('uk') ? 'uk' : 'en';
-}
-
 /**
- * Completes the first-boot seed once Home Assistant is reachable: notification language from HA,
- * the outdoor sensor and weather entity, the household persons and one target per mobile app.
- * It only fills gaps, so it is safe whenever it runs; the simulator brings its own demo house.
+ * Completes the first-boot seed once Home Assistant is reachable: the outdoor sensor and weather
+ * entity, the household persons and one target per mobile app. It only fills gaps, so it is safe
+ * whenever it runs; the simulator brings its own demo house.
  */
 @Injectable()
 export class SeedService implements OnApplicationBootstrap, OnModuleDestroy {
@@ -139,7 +175,6 @@ export class SeedService implements OnApplicationBootstrap, OnModuleDestroy {
     if (!ha?.connected || (await this.db.kvGet(SEED_HA_KEY)) !== 'pending') return;
     try {
       const states = ha.allStates();
-      const lang = haLanguage(ha.config()?.language);
       const services = (await this.search()?.notifyServices().catch(() => [])) ?? [];
       const telegramIntegration =
         ha.registries().entities.some((e) => e.platform === 'telegram_bot') || services.some((s) => s.service.includes('telegram'));
@@ -147,11 +182,6 @@ export class SeedService implements OnApplicationBootstrap, OnModuleDestroy {
       await this.config.transaction(async (tx) => {
         const settings = tx.singleton('settings');
         const patch: Partial<GeneralSettings> = {};
-        if (settings.notificationLanguage !== lang) {
-          patch.notificationLanguage = lang;
-          if (settings.houseName === defaultSettings(settings.notificationLanguage).houseName) patch.houseName = defaultSettings(lang).houseName;
-          await this.renameSeeded(tx, settings.notificationLanguage, lang);
-        }
         if (!settings.outdoor.sensorEntityId || !settings.outdoor.weatherEntityId) {
           patch.outdoor = {
             ...settings.outdoor,
@@ -189,27 +219,6 @@ export class SeedService implements OnApplicationBootstrap, OnModuleDestroy {
       this.log.log('first-boot setup completed from Home Assistant');
     } catch (e) {
       this.log.warn(`could not complete the first-boot setup yet: ${errorText(e)}`);
-    }
-  }
-
-  /** Seeded names follow the HA language unless the household renamed them. */
-  private async renameSeeded(tx: IConfigStore, from: Lang, to: Lang): Promise<void> {
-    const before = new Map(seedProfiles(from).map((p) => [p.id, p.name]));
-    const after = new Map(seedProfiles(to).map((p) => [p.id, p.name]));
-    for (const p of tx.list('profiles')) {
-      if (before.get(p.id) === p.name && after.has(p.id)) await tx.update('profiles', p.id, { name: after.get(p.id) }, SYSTEM);
-    }
-    for (const t of tx.list('triggers')) {
-      const key = t.id as Parameters<typeof seedName>[0];
-      if (['blackout', 'solar', 'night_tariff', 'frost', 'battery_low'].includes(t.id) && t.name === seedName(key, from)) await tx.update('triggers', t.id, { name: seedName(key, to) }, SYSTEM);
-    }
-    for (const r of tx.list('rules')) {
-      const key = r.id as Parameters<typeof seedName>[0];
-      if (['economy', 'store_heat', 'preheat_night'].includes(r.id) && r.name === seedName(key, from)) await tx.update('rules', r.id, { name: seedName(key, to) }, SYSTEM);
-    }
-    for (const t of tx.list('targets')) {
-      if (t.channel === 'ha_persistent' && t.name === seedName('panel', from)) await tx.update('targets', t.id, { name: seedName('panel', to) }, SYSTEM);
-      if (t.channel === 'ha_event' && t.name === seedName('automations', from)) await tx.update('targets', t.id, { name: seedName('automations', to) }, SYSTEM);
     }
   }
 }

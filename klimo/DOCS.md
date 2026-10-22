@@ -42,6 +42,11 @@ and the watchdog) and its own container; other add-ons on the internal network a
 4. **Schedule**: the house schedule ships with weekday and weekend plans over the six seeded profiles
    (Home, Away, Eco, Night, Guests, Vacation); adjust the targets and the blocks.
 
+Profiles, triggers and actions are created with English names and notifications start in English,
+whatever language Home Assistant speaks; rename anything, and pick the notification language in
+**Settings → Units, languages and look**. An install that started on 0.1.0 gets the English name for
+every seeded name nobody changed; its notification language stays as it was.
+
 After every start Klimo watches for 20 seconds before it switches anything, and it compares every
 device with what it expects before it sends a command.
 

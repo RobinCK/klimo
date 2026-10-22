@@ -20,6 +20,9 @@ const { SCENARIOS, scenarioStart } = require('../dist/sim/scenarios');
 
 Logger.overrideLogger(false);
 
+// the simulator tests read the demo house in the language it is written in (the add-on shows it in English)
+env.sim.lang = 'uk';
+
 /** Wed 2026-10-21 19:10 in Kyiv — the demo's heating evening. */
 const EVENING = scenarioStart(SCENARIOS.heating_evening);
 

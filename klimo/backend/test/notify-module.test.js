@@ -12,6 +12,7 @@ const { SpanStore } = require('../dist/journal/span.store');
 const { NotifyModule } = require('../dist/notify/notify.module');
 const T = require('../dist/tokens');
 const { FakeClock, FakeHa, det, tempDir } = require('./notify-harness');
+const { seedInUkrainian } = require('./foundation-harness');
 
 test('the notification module wires up through Nest and serves its three ports', async () => {
   const dir = tempDir();
@@ -25,6 +26,7 @@ test('the notification module wires up through Nest and serves its three ports',
   await overrides.load();
   const config = new ConfigStore(db, clock, bus, events, overrides);
   await config.load();
+  await seedInUkrainian(config);
   const ha = new FakeHa(clock);
   const supervisor = { panelPath: () => null, addonVersion: () => '0.1.0', mqttService: async () => null };
 

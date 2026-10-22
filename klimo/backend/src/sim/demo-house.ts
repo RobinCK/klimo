@@ -14,6 +14,8 @@ import {
   nightTariffCondition,
   newSourceConfig,
   preheatNightRule,
+  seedProfiles,
+  seedTriggers,
   solarCondition,
   storeHeatRule,
   type EnergyBindings,
@@ -270,6 +272,9 @@ export function buildDemoHouse(base: ExportBundle, now: EpochMs, lang: Lang = 'u
   b.emitters = emitters;
   b.emitterDevices = heads;
 
+  // the demo is written in Ukrainian and translated at the end, while the seed underneath is English
+  const ukProfiles = new Map(seedProfiles('uk').map((p) => [p.id, p.name]));
+  b.profiles = b.profiles.map((p) => ({ ...p, name: ukProfiles.get(p.id) ?? p.name }));
   b.profileRooms = PROFILE_ROOMS.map(([profileId, key, mode, heatC, coolC]): ProfileRoomSetting => ({ profileId, roomId: ROOM_IDS[key], mode, heatC, coolC, writtenAt: null }));
   const kids: Schedule = { id: `room_${ROOM_IDS.kids}`, scope: 'room', roomId: ROOM_IDS.kids, enabled: true, days: kidsDays(), updatedAt: now };
   b.schedules = [...b.schedules.filter((s) => s.scope === 'house'), kids];
@@ -361,7 +366,8 @@ export function buildDemoHouse(base: ExportBundle, now: EpochMs, lang: Lang = 'u
     battery_low: batteryLowCondition(ENERGY_ENTITIES),
     night_tariff: nightTariffCondition(ENERGY_ENTITIES),
   };
-  b.triggers = b.triggers.map((t) => (conditions[t.id] ? { ...t, condition: conditions[t.id], enabled: true } : t));
+  const ukTriggers = new Map(seedTriggers('uk').map((t) => [t.id, t.name]));
+  b.triggers = b.triggers.map((t) => ({ ...t, name: ukTriggers.get(t.id) ?? t.name, ...(conditions[t.id] ? { condition: conditions[t.id], enabled: true } : {}) }));
   const sets = {
     gasBoilers: [SOURCE_IDS.boiler],
     heatPumps: [SOURCE_IDS.heatPump],

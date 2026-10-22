@@ -130,7 +130,7 @@ export function loadEnv(vars: Vars = process.env, options?: Options): Env {
       speed: Math.min(600, Math.max(0, num(vars.KLIMO_SIM_SPEED) ?? 1)),
       seed: num(vars.KLIMO_SIM_SEED) ?? 42,
       warmup: vars.KLIMO_SIM_WARMUP !== '0',
-      lang: pick(vars.KLIMO_SIM_LANG, SIM_LANGS, 'uk'),
+      lang: pick(vars.KLIMO_SIM_LANG, SIM_LANGS, 'en'),
     },
     devAdmin: flag(vars.KLIMO_DEV_ADMIN),
     ingressOnly: !simulate && !flag(vars.KLIMO_DEV_ADMIN) && !!vars.SUPERVISOR_TOKEN,

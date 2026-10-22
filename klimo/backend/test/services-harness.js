@@ -19,6 +19,7 @@ const { RoomSetupService } = require('../dist/engine/services/room-setup.service
 const { SystemPreviewService } = require('../dist/engine/services/system-preview.service');
 const { DeviceHealthService } = require('../dist/engine/services/device-health.service');
 const { emptyRoomState, emptySeasonState, emptyHouseProfileState, emptyPlantState } = require('../dist/engine/services/mappers');
+const { seedInUkrainian } = require('./foundation-harness');
 
 Logger.overrideLogger(false);
 
@@ -280,6 +281,9 @@ async function openServices(opts = {}) {
   await overrides.load();
   const config = new ConfigStore(db, clock, bus, events, overrides);
   await config.load();
+  // names and texts are checked in Ukrainian
+  await seedInUkrainian(config);
+  sent.length = 0;
   const journal = new JournalService(db, events, bus);
   const spans = new SpanStore(db, events);
   await spans.load();

@@ -12,6 +12,7 @@ const { ConfigStore } = require('../dist/config/config.store');
 const { JournalService } = require('../dist/journal/journal.service');
 const { SpanStore } = require('../dist/journal/span.store');
 const { DEFAULT_TARGET } = require('../dist/shared/defaults');
+const { seedInUkrainian } = require('./foundation-harness');
 const { TextsService } = require('../dist/notify/texts.service');
 const { IncidentService } = require('../dist/notify/incidents.service');
 const { ChannelHealth } = require('../dist/notify/channels/health');
@@ -250,6 +251,9 @@ async function openNotify(opts = {}) {
   await overrides.load();
   const config = new ConfigStore(db, clock, bus, events, overrides);
   await config.load();
+  // the notification texts are checked in Ukrainian
+  await seedInUkrainian(config);
+  sent.length = 0;
   const journal = new JournalService(db, events, bus);
   const spans = new SpanStore(db, events);
   await spans.load();

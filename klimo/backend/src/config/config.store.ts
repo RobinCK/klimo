@@ -6,9 +6,9 @@ import { ID_PREFIX, newId } from '../common/ids';
 import { errorText } from '../common/logger';
 import { lazyRef } from '../common/refs';
 import { roundStep } from '../engine/core/util';
-import { appVersion } from '../env';
+import { appVersion, env } from '../env';
 import { Db } from '../db/database';
-import { seedGraph, SEED_HA_KEY } from '../db/seed';
+import { englishSeedNames, seedGraph, SEED_EN_KEY, SEED_HA_KEY } from '../db/seed';
 import {
   adapterDefaults,
   autoInk,
@@ -203,13 +203,18 @@ export class ConfigStore implements IConfigStore {
     await this.db.exclusive(async () => {
       const { graph, missingSingletons } = await loadGraph(this.db.manager);
       const fresh = missingSingletons.includes('settings');
-      this.graph = fresh ? seedGraph('uk', this.clock.now()) : graph;
+      this.graph = fresh ? seedGraph(this.clock.now()) : graph;
       // a fresh install writes the whole seed; otherwise only singletons without a row yet (new in this version)
       const base: RowSnapshot = fresh ? new Map() : snapshotRows(graph, (t) => this.cols(t));
       if (!fresh) for (const t of CONFIG_TABLES) if (t.singleton && missingSingletons.includes(t.singleton)) base.delete(t.name);
+      // once per database: names 0.1.0 seeded in Ukrainian become English (the demo house keeps its language)
+      const namesChecked = (await this.db.kvGet(SEED_EN_KEY)) !== null;
+      const renamed = !fresh && !namesChecked && !env.simulate ? englishSeedNames(this.graph, this.clock.now()) : 0;
       const changes = diffRows(base, this.graph, (t) => this.cols(t));
       if (changes.length) await this.db.ds.transaction((em) => writeChanges(em, changes));
       if (fresh) await this.db.kvSet(SEED_HA_KEY, 'pending');
+      if (!namesChecked) await this.db.kvSet(SEED_EN_KEY, 'done');
+      if (renamed) this.log.log(`${renamed} seeded name(s) moved to English`);
       this.committed = snapshotRows(this.graph, (t) => this.cols(t));
       this.log.log(
         fresh

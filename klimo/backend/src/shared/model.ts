@@ -417,7 +417,7 @@ export interface RoomDefaults {
 
 /** Singleton `settings`. */
 export interface GeneralSettings {
-  houseName: string; // 'Дім'
+  houseName: string; // 'Home'
   outdoor: {
     sensorEntityId: EntityId | null; // auto-picked on first boot
     weatherEntityId: EntityId | null; // fallback temperature + forecasts
@@ -427,7 +427,7 @@ export interface GeneralSettings {
   /** Display units only (Klimo is °C inside). 'auto' = HA unit system. */
   units: 'auto' | 'C' | 'F';
   /** Language of notifications, card texts, MQTT entity names, journal exports. */
-  notificationLanguage: Lang; // 'uk' if HA language starts with 'uk', else 'en'
+  notificationLanguage: Lang; // 'en' until changed in Settings
   /** Default SPA language ('auto' = HA user language via the parent frame, then browser). */
   uiLanguage: 'auto' | Lang;
   defaultProfileId: Id; // 'home' — used when no layer has an opinion

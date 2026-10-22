@@ -95,6 +95,25 @@ async function openStores(opts = {}) {
   };
 }
 
+/**
+ * The seed in Ukrainian, as 0.1.0 created it (a fresh install is English now): notification language,
+ * house name and the seeded profile, trigger, rule and target names. For tests that read Ukrainian texts.
+ */
+async function seedInUkrainian(config) {
+  const D = require('../dist/shared/defaults');
+  const actor = { via: 'system', userId: null, userName: null, contextId: null };
+  await config.transaction(async (tx) => {
+    await tx.patchSingleton('settings', { houseName: D.defaultSettings('uk').houseName, notificationLanguage: 'uk' }, actor);
+    for (const p of D.seedProfiles('uk')) if (tx.get('profiles', p.id)) await tx.update('profiles', p.id, { name: p.name }, actor);
+    for (const t of D.seedTriggers('uk')) if (tx.get('triggers', t.id)) await tx.update('triggers', t.id, { name: t.name }, actor);
+    for (const r of D.seedRules('uk')) if (tx.get('rules', r.id)) await tx.update('rules', r.id, { name: r.name }, actor);
+    for (const t of tx.list('targets')) {
+      if (t.channel === 'ha_persistent') await tx.update('targets', t.id, { name: D.seedName('panel', 'uk') }, actor);
+      if (t.channel === 'ha_event') await tx.update('targets', t.id, { name: D.seedName('automations', 'uk') }, actor);
+    }
+  });
+}
+
 /** Runs `fn` and returns the ApiException it throws (fails the test when nothing is thrown). */
 async function rejection(fn) {
   try {
@@ -105,4 +124,4 @@ async function rejection(fn) {
   throw new Error('expected the call to be rejected');
 }
 
-module.exports = { FakeClock, ACTOR, openStores, tempDir, rejection };
+module.exports = { FakeClock, ACTOR, openStores, tempDir, rejection, seedInUkrainian };

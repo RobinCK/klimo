@@ -33,10 +33,10 @@ async function withStores(fn) {
   }
 }
 
-test('KLIMO_SIM_LANG picks the demo language; Ukrainian stays the default', () => {
-  assert.equal(loadEnv({ KLIMO_SIMULATE: '1' }, {}).sim.lang, 'uk');
-  assert.equal(loadEnv({ KLIMO_SIMULATE: '1', KLIMO_SIM_LANG: 'en' }, {}).sim.lang, 'en');
-  assert.equal(loadEnv({ KLIMO_SIMULATE: '1', KLIMO_SIM_LANG: 'de' }, {}).sim.lang, 'uk');
+test('KLIMO_SIM_LANG picks the demo language; English is the default', () => {
+  assert.equal(loadEnv({ KLIMO_SIMULATE: '1' }, {}).sim.lang, 'en');
+  assert.equal(loadEnv({ KLIMO_SIMULATE: '1', KLIMO_SIM_LANG: 'uk' }, {}).sim.lang, 'uk');
+  assert.equal(loadEnv({ KLIMO_SIMULATE: '1', KLIMO_SIM_LANG: 'de' }, {}).sim.lang, 'en');
 });
 
 test('the English demo house has no Ukrainian left, keeps every id and slug, and imports', () =>
@@ -51,8 +51,13 @@ test('the English demo house has no Ukrainian left, keeps every id and slug, and
     assert.deepEqual(en.rooms.map((r) => r.name), ['Living room', 'Bedroom', 'Kids’ room', 'Study', 'Kitchen', 'Bathroom', 'Hall']);
     assert.deepEqual(en.rooms.map((r) => [r.id, r.slug, r.haAreaId]), uk.rooms.map((r) => [r.id, r.slug, r.haAreaId]));
     assert.deepEqual(en.sources.map((s) => s.id), uk.sources.map((s) => s.id));
+    // the seed underneath is English; the Ukrainian demo names the seeded rows in Ukrainian
+    assert.equal(base.profiles.find((p) => p.id === 'home').name, 'Home');
+    assert.equal(uk.profiles.find((p) => p.id === 'home').name, 'Дома');
+    assert.equal(uk.triggers.find((t) => t.id === 'blackout').name, 'Блекаут');
     // the seed's own names follow the seed's English, the calendar match follows the fake calendar
     assert.equal(en.profiles.find((p) => p.id === 'home').name, 'Home');
+    assert.equal(en.triggers.find((t) => t.id === 'blackout').name, 'Blackout');
     assert.equal(en.activationRules.find((r) => r.config.type === 'calendar').config.match.contains, simText('Гості', 'en'));
     assert.equal(en.emitters.find((e) => e.id === 'e_living_radiator').name, 'Radiators · 2 heads');
 
