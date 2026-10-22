@@ -201,7 +201,7 @@ class V {
 const SWITCHABLE = ['switch', 'input_boolean', 'light', 'valve', 'fan'];
 const NUMBER = ['number', 'input_number'];
 const SENSOR_DOMAINS: Record<RoomSensor['role'], string[]> = {
-  temperature: ['sensor', 'input_number', 'number'],
+  temperature: ['sensor', 'input_number', 'number', 'climate'], // a climate: its current_temperature
   humidity: ['sensor', 'input_number', 'number'],
   contact: ['binary_sensor', 'input_boolean', 'cover'],
   floor_probe: ['sensor', 'input_number', 'number'],

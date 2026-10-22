@@ -2488,6 +2488,8 @@ export interface HaEntityDto {
   score?: number;
   /** What it can be in a room (only when asked with `wizard`). */
   wizard?: WizardRoleHint;
+  /** The temperature it reads in °C: a sensor's state, a climate's current_temperature (only with `wizard`). */
+  valueC?: Celsius | null;
 }
 /** Add-room wizard: `suggested` is one role when clear, two (likeliest first) when it could be either; `possible` is every role it can take. */
 export interface WizardRoleHint {

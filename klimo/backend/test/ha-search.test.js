@@ -311,3 +311,66 @@ test('registry index follows new entities and registry updates', () => {
   ha.setRegistries({ ...ha.regs, areas: [...ha.regs.areas, { area_id: 'kitchen', name: 'Кухня' }] });
   assert.ok(search.areas().some((a) => a.areaId === 'kitchen'));
 });
+
+test('wizard search: every entity with the room role it most likely has, ambiguous ones with two', () => {
+  const { search, ha } = house();
+  // a Zigbee thermostat on a radiator with no area: the add-room wizard has to find it by name
+  ha.set(state('climate.zig_thermostat_office', 'heat', { hvac_modes: ['off', 'heat'], current_temperature: 21.5, temperature: 22, friendly_name: 'Office thermostat' }));
+  const hint = (id) => search.search({ q: id, wizard: 'any' }).find((e) => e.entityId === id)?.wizard ?? null;
+
+  const office = search.search({ q: 'office thermostat', wizard: 'any' });
+  const zig = office.find((e) => e.entityId === 'climate.zig_thermostat_office');
+  assert.deepEqual(zig.wizard, { suggested: ['trv'], possible: ['trv', 'heater'] });
+  assert.equal(zig.valueC, 21.5, 'the room temperature it reads, not «heat»');
+
+  assert.deepEqual(hint('climate.living_trv'), { suggested: ['trv'], possible: ['trv', 'heater'] });
+  assert.deepEqual(hint('climate.bedroom_ac').suggested, ['ac']);
+  assert.deepEqual(hint('climate.hall_thermostat'), { suggested: ['ac', 'trv'], possible: ['ac', 'trv', 'heater'] });
+  assert.deepEqual(hint('sensor.living_temperature').suggested, ['temp_humidity']);
+  assert.deepEqual(hint('sensor.living_humidity').suggested, ['temp_humidity']);
+  assert.deepEqual(hint('sensor.bedroom_temperature').suggested, ['temperature']);
+  assert.deepEqual(hint('binary_sensor.living_window'), { suggested: ['window'], possible: ['window', 'door'] });
+  // a plug could drive a heater or a floor zone: the wizard asks
+  assert.deepEqual(hint('switch.bedroom_plug').suggested, ['heater', 'floor_zone']);
+  // a head's own settings, its diagnostics, power meters and the outdoor sensor are no room devices
+  for (const id of ['switch.living_trv_child_lock', 'number.radiator_ext', 'sensor.living_trv_battery', 'sensor.bedroom_plug_power', 'sensor.outdoor_temperature', 'person.ihor']) {
+    assert.equal(hint(id), null, id);
+  }
+  // without `wizard` the picker DTO stays as it was
+  assert.equal(search.search({ q: 'climate.zig_thermostat_office' })[0].wizard, undefined);
+});
+
+test('wizard search for a role: what can take it, the likeliest first, the room’s area before the rest', () => {
+  const { search, ha } = house();
+  ha.set(state('climate.zig_thermostat_office', 'heat', { hvac_modes: ['off', 'heat'], current_temperature: 21.5, friendly_name: 'Office thermostat' }));
+  const trv = search.search({ wizard: 'trv' }).map((e) => e.entityId);
+  // heat-only climates (a head, two thermostats) first
+  assert.deepEqual(trv.slice(0, 3).sort(), ['climate.living_trv', 'climate.office_floor', 'climate.zig_thermostat_office']);
+  assert.ok(trv.includes('climate.bedroom_ac'), 'an AC can still be switched to a head by hand');
+  assert.ok(trv.indexOf('climate.hall_thermostat') < trv.indexOf('climate.bedroom_ac'), 'heat-and-cool thermostat before a clear AC');
+  assert.equal(trv.some((id) => !id.startsWith('climate.')), false);
+
+  const temps = search.search({ wizard: 'temperature', nearAreaId: 'bedroom' }).map((e) => e.entityId);
+  assert.equal(temps[0], 'sensor.bedroom_temperature');
+  assert.equal(temps.includes('sensor.outdoor_temperature'), false);
+  const plain = search.search({ q: 'temperature', wizard: 'temperature' });
+  const near = search.search({ q: 'temperature', wizard: 'temperature', nearAreaId: 'bedroom' });
+  const score = (list, id) => list.find((e) => e.entityId === id).score;
+  assert.equal(score(near, 'sensor.bedroom_temperature') - score(plain, 'sensor.bedroom_temperature'), 25);
+});
+
+test('discovery lists the roles a candidate can be switched to; a floor thermostat is a heater, never a zone valve', () => {
+  const { search, ha } = house();
+  const d = search.discoverArea('living_room');
+  const by = Object.fromEntries(d.candidates.map((c) => [c.entityId, c]));
+  assert.deepEqual(by['climate.living_trv'].possibleRoles, ['trv', 'heater']);
+  assert.deepEqual(by['binary_sensor.living_window'].possibleRoles, ['window', 'door']);
+  ha.set(state('climate.bathroom_floor_heating', 'heat', { hvac_modes: ['off', 'heat'], current_temperature: 24, friendly_name: 'Bathroom floor' }));
+  ha.setRegistries({
+    ...ha.regs,
+    entities: [...ha.regs.entities, { entity_id: 'climate.bathroom_floor_heating', device_id: null, area_id: 'garage', platform: 'tuya', unique_id: 'bf1', disabled_by: null, hidden_by: null, original_name: null, name: null, entity_category: null }],
+  });
+  const floor = search.discoverArea('garage').candidates.find((c) => c.entityId === 'climate.bathroom_floor_heating');
+  assert.equal(floor.role, 'heater');
+  assert.deepEqual(floor.possibleRoles, ['heater', 'trv']);
+});

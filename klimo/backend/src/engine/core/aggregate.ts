@@ -59,12 +59,18 @@ export function trvLocalTemp(snap: EntitySnap | undefined): number | null {
   return numAttr(snap, 'current_temperature', 'local_temperature');
 }
 
+/** A room sensor's number; a climate stands in with its current_temperature (a thermostat without a separate sensor). */
+export function sensorNum(entityId: string, snap: EntitySnap | undefined): number | null {
+  if (!snap || !snap.available) return null;
+  return entityId.startsWith('climate.') ? numAttr(snap, 'current_temperature') : snap.num;
+}
+
 /** Status of a sensor that reports a value: excluded › unavailable › stale › ok. */
 export function sensorStatus(s: RoomSensor, snap: EntitySnap | undefined, now: EpochMs, staleAfterMin: number): SensorStatus {
   if (!s.included) return 'excluded';
   if (!snap || !snap.available) return 'unavailable';
   if (s.role !== 'contact') {
-    if (snap.num === null) return 'unavailable';
+    if (sensorNum(s.entityId, snap) === null) return 'unavailable';
     if (now - snap.lastReported > staleAfterMin * MIN_MS) return 'stale';
   }
   return 'ok';
@@ -136,8 +142,8 @@ export function aggregateRoom(
     };
     if (snap && snap.available) {
       if (s.role === 'contact') reading.contactOpen = isContactOpen(snap);
-      else if (s.role === 'humidity') reading.humidityPct = snap.num;
-      else reading.rawC = snap.num;
+      else if (s.role === 'humidity') reading.humidityPct = sensorNum(s.entityId, snap);
+      else reading.rawC = sensorNum(s.entityId, snap);
     }
     if (s.role === 'temperature' && status === 'ok' && reading.rawC !== null) {
       const prev = ema[s.id];

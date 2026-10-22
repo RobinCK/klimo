@@ -14,6 +14,7 @@ import type {
   IEntitySearch,
   NotifyServiceDto,
   UsageRef,
+  WizardRoleHint,
 } from '../shared/model';
 import { CONFIG_STORE, HA_PORT } from '../tokens';
 import {
@@ -28,19 +29,29 @@ import {
   looksLikeTrv,
   matchesRole,
   setpointStepC,
+  type DeviceContext,
+  type EntityFacts,
   type SiblingRef,
   siblingRole,
   trvCapabilities,
   trvSiblings,
   trvStrategies,
+  wizardRoles,
 } from './classify';
 import { type EntityRecord, RegistryService } from './registry.service';
 import { haSlug, matchScore, SCORE, searchKey } from './search-text';
-import { isAvailableState, parseNumber, powerKw, stateValue, tempAttr } from './units';
+import { isAvailableState, parseNumber, powerKw, stateValue, tempAttr, tempUnit, type TempUnit } from './units';
+
+const NUMBER_DOMAINS = new Set(['number', 'input_number']);
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 500;
 const PRESELECT_CONFIDENCE = 0.7;
+/** In the add-room wizard the room's area outranks a better-worded match elsewhere, not an exact id. */
+const NEAR_AREA = 25;
+/** Wizard search for a role: the entities whose likeliest role it is come first. */
+const ROLE_FIRST = 15;
+const ROLE_ALSO = 8;
 /** Devices «Не використовуються в Klimo» lists only what is clearly a climate device. */
 const UNASSIGNED_CONFIDENCE = 0.5;
 
@@ -82,7 +93,7 @@ export class EntitySearchService implements IEntitySearch {
     const domains = q.domain?.length ? new Set(q.domain) : null;
     const classes = q.deviceClass?.length ? new Set(q.deviceClass) : null;
 
-    const hits: { r: EntityRecord; score: number; name: string }[] = [];
+    const hits: { r: EntityRecord; score: number; name: string; wizard: WizardRoleHint | null }[] = [];
     for (const r of this.registry.records()) {
       if (this.registry.isOwn(r) || r.reg?.disabled_by) continue;
       if (domains && !domains.has(r.domain)) continue;
@@ -91,6 +102,8 @@ export class EntitySearchService implements IEntitySearch {
       const f = this.registry.facts(r);
       if (classes && !(f.deviceClass && classes.has(f.deviceClass))) continue;
       if (q.role && !matchesRole(q.role, f, this.siblingRefs(r).map((s) => s.role))) continue;
+      const wizard = q.wizard ? this.wizardHint(r, f) : null;
+      if (q.wizard && (!wizard || (q.wizard !== 'any' && !wizard.possible.includes(q.wizard)))) continue;
 
       let score = 0;
       if (query) {
@@ -107,10 +120,41 @@ export class EntitySearchService implements IEntitySearch {
       } else if (r.reg?.hidden_by) continue;
       if (isAvailableState(f.state?.state)) score += SCORE.available;
       if (nearArea && r.areaId === nearArea) score += SCORE.nearRoom;
-      hits.push({ r, score, name: f.name });
+      if (q.nearAreaId && r.areaId === q.nearAreaId) score += NEAR_AREA;
+      if (wizard && q.wizard && q.wizard !== 'any') score += wizard.suggested[0] === q.wizard ? ROLE_FIRST : wizard.suggested.includes(q.wizard) ? ROLE_ALSO : 0;
+      hits.push({ r, score, name: f.name, wizard });
     }
     hits.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'uk') || a.r.entityId.localeCompare(b.r.entityId));
-    return hits.slice(0, limit).map((h) => this.registry.toDto(h.r, this.usedBy(h.r.entityId, referenced), h.score));
+    const haUnit = this.registry.haUnit();
+    return hits.slice(0, limit).map((h) => {
+      const dto = this.registry.toDto(h.r, this.usedBy(h.r.entityId, referenced), h.score);
+      if (h.wizard) {
+        dto.wizard = h.wizard;
+        dto.valueC = this.valueC(h.r, haUnit);
+      }
+      return dto;
+    });
+  }
+
+  /** What an entity can be in the add-room wizard, judged with its device's other entities. */
+  private wizardHint(r: EntityRecord, f: EntityFacts): WizardRoleHint | null {
+    return wizardRoles(f, this.deviceContext(r));
+  }
+
+  private deviceContext(r: EntityRecord): DeviceContext {
+    const siblingFacts = this.registry.siblings(r).map((s) => this.registry.facts(s));
+    return {
+      siblingRoles: this.siblingRefs(r).map((s) => s.role),
+      hasClimate: siblingFacts.some((s) => s.domain === 'climate'),
+      hasTemperature: siblingFacts.some(isTemperatureSensor),
+      hasHumidity: siblingFacts.some(isHumiditySensor),
+    };
+  }
+
+  private valueC(r: EntityRecord, haUnit: TempUnit): number | null {
+    const f = this.registry.facts(r);
+    if (r.domain === 'climate') return tempAttr(f.state, 'current_temperature', haUnit);
+    return isTemperatureSensor(f) || (NUMBER_DOMAINS.has(r.domain) && tempUnit(f.unit) !== null) ? stateValue(f.state, haUnit) : null;
   }
 
   private usedBy(entityId: EntityId, referenced: Set<EntityId>): UsageRef[] {
@@ -199,14 +243,10 @@ export class EntitySearchService implements IEntitySearch {
       if (this.registry.isOwn(r) || r.reg?.disabled_by || r.reg?.hidden_by) continue;
       const f = this.registry.facts(r);
       const siblings = this.siblingRefs(r);
-      const siblingFacts = this.registry.siblings(r).map((s) => this.registry.facts(s));
-      const guess = discoveryGuess(f, {
-        siblingRoles: siblings.map((s) => s.role),
-        hasClimate: siblingFacts.some((s) => s.domain === 'climate'),
-        hasTemperature: siblingFacts.some(isTemperatureSensor),
-        hasHumidity: siblingFacts.some(isHumiditySensor),
-      });
+      const ctx = this.deviceContext(r);
+      const guess = discoveryGuess(f, ctx);
       if (!guess) continue;
+      const possible = wizardRoles(f, ctx)?.possible ?? [];
 
       const available = isAvailableState(f.state?.state);
       const confidence = Math.round((available ? guess.confidence : guess.confidence * 0.8) * 100) / 100;
@@ -237,6 +277,7 @@ export class EntitySearchService implements IEntitySearch {
         confidence,
         preselected: wizard && confidence >= PRESELECT_CONFIDENCE && takenByRoomId === null,
         takenByRoomId: wizard ? takenByRoomId : null,
+        possibleRoles: [guess.role, ...possible.filter((x) => x !== guess.role)],
       });
     }
     const rank = (role: DiscoveryCandidate['role']) => DISCOVERY_ROLE_ORDER.indexOf(role);

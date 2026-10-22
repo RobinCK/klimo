@@ -96,6 +96,21 @@ test('an offset learned for only 10 minutes is not trusted: no data', () => {
   assert.equal(out.result.valueC, null);
 });
 
+test('a thermostat as the room sensor: its current_temperature counts, not its hvac state', () => {
+  const room = h.makeRoom({ temperature: { ...h.makeRoom().temperature, method: 'primary' } });
+  const sensors = [h.sensor('s1', 'climate.office', 'temperature')];
+  const live = aggregateRoom(room, sensors, [], h.makeInputs(NOW, { 'climate.office': h.trvSnap('climate.office', NOW, 21.4) }), {}, learnedNone());
+  assert.equal(live.readings[0].status, 'ok');
+  assert.equal(live.readings[0].rawC, 21.4);
+  assert.equal(live.result.valueC, 21.4);
+  assert.equal(live.result.fallback, 'none');
+  // no reading yet (a head that has not reported its temperature): unavailable, never 0
+  const blank = h.snap('climate.office', 'heat', { num: null, at: NOW, attrs: {} });
+  const none = aggregateRoom(room, sensors, [], h.makeInputs(NOW, { 'climate.office': blank }), {}, learnedNone());
+  assert.equal(none.readings[0].status, 'unavailable');
+  assert.equal(none.result.valueC, null);
+});
+
 test('EMA smooths a step: τ 5 min → 63 % after 5 minutes; a long gap restarts it', () => {
   const ema = { s1: { value: 20, at: NOW - 5 * h.MIN } };
   const smooth = { temperature: { ...h.makeRoom().temperature, smoothingMin: 5 } };

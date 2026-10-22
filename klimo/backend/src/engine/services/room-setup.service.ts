@@ -76,7 +76,8 @@ const DEVICE_ROLES: readonly WizardDeviceRole[] = ['trv', 'temperature', 'humidi
 
 const ROLE_DOMAINS: Record<WizardDeviceRole, readonly string[]> = {
   trv: ['climate'],
-  temperature: ['sensor', 'input_number', 'number'],
+  // a climate gives its current_temperature (a thermostat's own reading when there is no sensor)
+  temperature: ['sensor', 'input_number', 'number', 'climate'],
   humidity: ['sensor', 'input_number', 'number'],
   temp_humidity: ['sensor'],
   window: ['binary_sensor', 'input_boolean', 'cover'],
@@ -224,7 +225,6 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
       else if (this.ha.connected && !this.search.areas().some((a) => a.areaId === d.haAreaId)) issues.push({ path: 'haAreaId', code: 'not_found' });
     }
     const kinds = Array.isArray(d.emitterKinds) ? d.emitterKinds : [];
-    if (!kinds.length) issues.push({ path: 'emitterKinds', code: 'min_items', params: { min: 1 } });
     kinds.forEach((k, i) => {
       if (!(EMITTER_KINDS as readonly string[]).includes(k)) issues.push({ path: `emitterKinds.${i}`, code: 'enum', params: { values: EMITTER_KINDS.join('|') } });
     });
@@ -235,6 +235,8 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
   private stepDeviceIssues(cfg: EngineConfig, d: Partial<CreateRoomRequest>): ApiErrorIssue[] {
     const issues: ApiErrorIssue[] = [];
     const kinds = new Set(Array.isArray(d.emitterKinds) ? d.emitterKinds : []);
+    // what heats the room follows from the devices picked on this step
+    if (!kinds.size) issues.push({ path: 'emitterKinds', code: 'min_items', params: { min: 1 } });
     const devices = Array.isArray(d.devices) ? d.devices : [];
     const seen = new Set<string>();
     const roomName = (id: Id) => cfg.rooms.find((r) => r.id === id)?.name ?? '';
@@ -331,7 +333,8 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
     for (const dev of devices) {
       if (dev?.role !== 'temperature' && dev?.role !== 'temp_humidity') continue;
       const id = dev.role === 'temp_humidity' ? this.temperatureOf(dev.entityId) : dev.entityId;
-      const n = id ? Number(this.ha.getState(id)?.state) : NaN;
+      const st = id ? this.ha.getState(id) : undefined;
+      const n = id && domainOf(id) === 'climate' ? Number(st?.attributes.current_temperature ?? NaN) : Number(st?.state);
       if (Number.isFinite(n)) temps.push(n);
     }
     const probes = this.trvProbes(devices);

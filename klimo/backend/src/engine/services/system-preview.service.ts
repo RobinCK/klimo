@@ -38,6 +38,7 @@ import type {
 } from '../../shared/model';
 import { CLOCK, CONFIG_STORE, HA_PORT, OVERRIDE_STORE } from '../../tokens';
 import { fromLocal, toLocal } from '../core/time';
+import { sensorNum } from '../core/aggregate';
 import { bindingRows, emptyPlantState, snapOf } from './mappers';
 import { buildSchema } from './schema.builder';
 import { EngineAccess } from './support';
@@ -196,7 +197,14 @@ export class SystemPreviewService implements ISystemPreview {
       for (const sensors of Object.values(cfg.sensorsByRoom)) {
         for (const s of sensors) {
           const snap = inputs.entities[s.entityId];
-          if ((s.role !== 'temperature' && s.role !== 'floor_probe') || !snap || snap.num === null) continue;
+          if ((s.role !== 'temperature' && s.role !== 'floor_probe') || !snap) continue;
+          const own = s.entityId.startsWith('climate.') ? sensorNum(s.entityId, snap) : null;
+          if (own !== null) {
+            // a thermostat standing in as the sensor: its attributes are HA's own object, so copy
+            snap.attrs = { ...snap.attrs, current_temperature: round1(own + offset) };
+            continue;
+          }
+          if (snap.num === null) continue;
           snap.num = round1(snap.num + offset);
           snap.state = String(snap.num);
         }

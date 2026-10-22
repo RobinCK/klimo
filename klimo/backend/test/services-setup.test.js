@@ -81,7 +81,10 @@ test('wizard validation is per step and names the field', () =>
   withSetup(async (s) => {
     let v = s.setup.validate({ step: 1, draft: { name: '', emitterKinds: [], demandPolicy: 'call' } });
     assert.equal(v.ok, false);
-    assert.deepEqual(v.issues.map((i) => [i.path, i.code]), [['name', 'required'], ['emitterKinds', 'min_items']]);
+    // what heats the room follows from the devices: step 1 does not ask for it
+    assert.deepEqual(v.issues.map((i) => [i.path, i.code]), [['name', 'required']]);
+    v = s.setup.validate({ step: 2, draft: { name: 'Спальня', emitterKinds: [], demandPolicy: 'call', devices: [{ role: 'temperature', entityId: BED_T }] } });
+    assert.deepEqual(v.issues.map((i) => [i.path, i.code]), [['emitterKinds', 'min_items']]);
 
     v = s.setup.validate({ step: 1, draft: { name: 'Спальня', emitterKinds: ['trv'], demandPolicy: 'call' } });
     assert.equal(v.ok, true);
@@ -331,4 +334,24 @@ test('a house in °F: a head the search does not know gets its setpoint range in
     const [head] = cfg.devicesByEmitter[rad.id];
     assert.deepEqual(head.capabilities.setpointRange, [5, 30], '41–86 °F');
     assert.equal(head.capabilities.setpointStep, 0.56, 'a whole °F');
+  }));
+
+test('a thermostat without a separate sensor gives the room its own temperature', () =>
+  withSetup(async (s) => {
+    // the user's case: a Zigbee thermostat on a radiator, no area, no room sensor
+    const draft = request({ name: 'Office', emitterKinds: ['trv'], devices: [{ role: 'trv', entityId: TRV }, { role: 'temperature', entityId: TRV, name: 'Thermostat' }] });
+    const v = s.setup.validate({ step: 3, draft });
+    assert.deepEqual(v.issues, []);
+    assert.equal(v.hints.methodValues.primary, 19.4, 'current_temperature, not the hvac state');
+
+    const report = await s.setup.create(draft, ACTOR);
+    const cfg = s.config.engineConfig();
+    assert.deepEqual(cfg.sensorsByRoom[report.roomId].map((x) => [x.role, x.entityId, x.name]), [['temperature', TRV, 'Thermostat']]);
+    const devices = (cfg.emittersByRoom[report.roomId] ?? []).flatMap((e) => cfg.devicesByEmitter[e.id] ?? []);
+    assert.deepEqual(devices.map((d) => [d.kind, d.entityId]), [['trv', TRV]]);
+    assert.equal(s.config.room(report.roomId).temperature.method, 'primary');
+
+    // a climate is no humidity sensor
+    const bad = s.setup.validate({ step: 2, draft: request({ devices: [{ role: 'trv', entityId: TRV }, { role: 'humidity', entityId: TRV }] }) });
+    assert.ok(bad.issues.some((i) => i.path === 'devices.1.entityId' && i.code === 'domain'));
   }));

@@ -685,6 +685,8 @@ export const entityQuery = obj({
   role: opt(oneOf(ROLE_PRESETS)),
   unassigned: opt(bool({ coerce: true })),
   nearRoomId: opt(id()),
+  nearAreaId: opt(str(255, { min: 1 })),
+  wizard: opt(oneOf([...WIZARD_ROLES, 'any'] as const)),
   limit: opt(int(1, 500, { coerce: true })),
 });
 
