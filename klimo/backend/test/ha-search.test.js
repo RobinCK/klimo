@@ -178,7 +178,10 @@ test('role presets: TRV vs AC heuristics', () => {
   const temps = ids('temperature');
   assert.ok(temps.includes('sensor.living_temperature'));
   assert.equal(temps.includes('sensor.living_trv_battery'), false);
-  assert.deepEqual(ids('outdoor'), ['sensor.outdoor_temperature']);
+  // any thermometer can be an outdoor one; those that say so come first
+  const outdoor = search.search({ role: 'outdoor' }).map((e) => e.entityId);
+  assert.equal(outdoor[0], 'sensor.outdoor_temperature');
+  assert.deepEqual([...outdoor].sort(), temps);
   assert.deepEqual(ids('contact'), ['binary_sensor.living_window']);
   assert.deepEqual(ids('power'), ['sensor.bedroom_ac_power', 'sensor.bedroom_plug_power']);
   assert.deepEqual(ids('person'), ['person.ihor']);

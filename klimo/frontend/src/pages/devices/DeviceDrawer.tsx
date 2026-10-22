@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { DeviceDetailDto, DeviceHealth, DeviceHealthSettings, EntityId, EpochMs, UsageRef } from '@api/model';
 import { api } from '@api/endpoints';
-import { useEntitySearch, useMutation, useResource } from '@data';
+import { useEntitySearch, useLiveEvent, useMutation, useResource } from '@data';
 import { paths } from '@app';
 import {
   BatteryBar,
@@ -244,7 +244,7 @@ function History({ detail, now, health }: { detail: DeviceDetailDto; now: EpochM
           <Stack gap="2xs">
             <Row justify="between">
               <MiniTag>{t('Signal')}</MiniTag>
-              <SignalBars bars={s.bars} weak={s.weak} label={s.label} />
+              <SignalBars bars={s.bars} weak={s.weak} label={s.label} title={s.hint} />
             </Row>
             <Sparkline values={lqi} below={0} above={0} tone={s.weak ? 'warn' : 'hold'} ariaLabel={t('Signal over the last 7 days')} />
           </Stack>
@@ -293,8 +293,13 @@ export function DeviceDrawer({
     reloadOn: ['device_meta', 'device_health', 'sensor', 'room', 'source'],
   });
   const resend = useMutation((key: string) => api.devices.resend(key), { okToast: t('Sending again…') });
+  // outages and the command log of a device that just came back (or went) are read again
+  useLiveEvent('devices', (keys) => {
+    if (deviceKey && keys.includes(deviceKey)) void res.reload();
+  });
   const detail = res.data && res.data.device.key === deviceKey ? res.data : null;
-  const device = detail?.device ?? fallback;
+  // the list row follows live events and the minute refresh; the detail, loaded once, adds the history
+  const device = fallback ?? detail?.device ?? null;
   const changed = () => {
     void res.reload();
     onChanged();

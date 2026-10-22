@@ -220,7 +220,7 @@
 }
 
 .signal[data-weak] .signalBars > span[data-on] {
-  background: var(--ui-tone-warn-line);
+  background: var(--ui-tone-err-line);
 }
 
 .signalText {
@@ -231,11 +231,13 @@
 }
 
 .signal[data-weak] .signalText {
-  color: var(--ui-tone-warn-fg);
+  color: var(--ui-tone-err-fg);
 }
 
+/* no reading is not a bad reading: a muted dash */
 .signal[data-none] .signalText {
-  color: var(--ui-tone-err-fg);
+  color: var(--ui-text-3);
+  font-weight: 500;
 }
 
 .signal[data-net] .signalText {

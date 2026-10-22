@@ -101,6 +101,15 @@ test('window_open_long: notify-only after 10 min, any reaction after 20 min, onl
   assert.equal(windowOpenLong(pause, state, fresh(), at(19, 15), true).detection.active, false);
   assert.equal(windowOpenLong(pause, state, fresh(), at(19, 20), true).detection.active, true);
   assert.equal(windowOpenLong(pause, state, fresh(), at(19, 30), false).detection.active, false);
+  // the alert names the open window and says how many more are open
+  const contacts = [
+    { sensorId: 's1', entityId: 'binary_sensor.living_window', kind: 'window', open: false, available: true },
+    { sensorId: 's2', entityId: 'binary_sensor.living_balcony', kind: 'door', open: true, available: true },
+    { sensorId: 's3', entityId: 'binary_sensor.living_side', kind: 'window', open: true, available: true },
+  ];
+  const named = windowOpenLong(pause, { ...state, contacts }, fresh(), at(19, 20), true).detection.facts;
+  assert.equal(named.entityId, 'binary_sensor.living_balcony');
+  assert.equal(named.openCount, 2);
 });
 
 /* ── reactions through the room ─────────────────────────────────────────────────────────────────── */

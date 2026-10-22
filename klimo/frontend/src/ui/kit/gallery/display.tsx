@@ -3,6 +3,8 @@ import { useUiText } from '../../UiTextContext';
 import { AutoGrid, Row, Stack } from '../../shell/Layout';
 import { IconButton } from '../../basic/IconButton';
 import { ToneBadge } from '../../basic/Badges';
+import { InfoHint } from '../../basic/InfoHint';
+import { Section } from '../containers/Section';
 import { CapabilityChip, CodeBlock, EntityId, KeyValueList, LegendSwatch, NumberedList, RelativeTime, Text } from '../display/text';
 import { BigReadout, ConsequencePreview, ExplainCallout, StatTile } from '../display/tiles';
 import { NotificationBell, SeasonPill } from '../display/chrome';
@@ -119,6 +121,38 @@ export function GalleryDisplay() {
           <CapabilityChip on label={ut('external sensor')} />
           <CapabilityChip on={false} label={ut('child lock')} />
         </Row>
+      </Item>
+
+      <Item name="InfoHint">
+        <Row gap="lg" wrap align="center">
+          <Text variant="body">
+            {ut('Relay timer')}{' '}
+            <InfoHint
+              subject={ut('Relay timer')}
+              content={{
+                title: ut('Hardware fail-safe: the relay’s own countdown.'),
+                text: [
+                  ut('While the boiler should run, the countdown is renewed every 5 min; if the controller stops, the relay switches off within 15 min.'),
+                  { lead: ut('If empty:'), text: ut('the relay stays in its last state.') },
+                ],
+              }}
+            />
+          </Text>
+          <InfoHint position="bottom" content={ut('A single short sentence is enough for a simple field.')} />
+        </Row>
+        <KeyValueList
+          rows={[
+            {
+              key: ut('Power'),
+              value: 'sensor.boiler_plug_power',
+              mono: true,
+              hint: { title: ut('The measured power of the source.'), bullets: [ut('counts in the energy budget instead of the nominal power'), ut('W and kW are both understood')] },
+            },
+          ]}
+        />
+        <Section variant="well" level={3} title={ut('Control from Home Assistant')} hint={ut('A section header can explain the whole block.')}>
+          <Text>{ut('Hover or focus the «i» with a mouse; tap it on a touch screen. Escape or a tap outside closes it.')}</Text>
+        </Section>
       </Item>
 
       <Item name="Text">

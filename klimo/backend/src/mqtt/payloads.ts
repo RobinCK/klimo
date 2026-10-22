@@ -6,11 +6,13 @@ import type {
   CardTextKey,
   Celsius,
   CommandReply,
+  ControlSetBy,
   DurationOption,
   EngineConfig,
   EngineHealth,
   EpochMs,
   EventKind,
+  HouseControlMode,
   HouseMode,
   HouseProfileState,
   HouseState,
@@ -26,6 +28,9 @@ import type {
   RoomCardAttrs,
   RoomClimateStatePayload,
   RoomConfig,
+  RoomControl,
+  RoomControlMode,
+  RoomControlOption,
   RoomIssue,
   RoomState,
   RoomSummary,
@@ -39,6 +44,7 @@ import type {
   ThermostatModel,
   Tone,
 } from '../shared/model';
+import { houseControlOf, roomControlOf } from '../engine/core/targets';
 import { climateModes, roomCapabilities, type ClimateMode } from './discovery';
 
 /* ── budgets ─────────────────────────────────────────────────────────────────────────────────── */
@@ -134,6 +140,15 @@ export class ViewIndex {
 
   tx(key: CardTextKey, vars: ReasonParams = {}): string {
     return cardText(this.view.texts, key, vars);
+  }
+
+  /** The room's control mode (the summary's, else straight from the overrides). */
+  control(roomId: Id): RoomControl {
+    return this.summaryById.get(roomId)?.control ?? roomControlOf(this.view.cfg.overrides, roomId, this.view.now);
+  }
+
+  houseControl(): HouseControlMode {
+    return this.view.house.control?.mode ?? houseControlOf(this.view.cfg.overrides, this.view.now).mode;
   }
 
   profileName(id: Id | null | undefined): string | null {
@@ -266,6 +281,9 @@ export interface HouseStateDoc {
   alerts: number;
   power_kw: number | null;
   bivalent_point: Celsius;
+  /** switch.klimo_schedule: ON = the house follows its schedule, OFF = house manual control. */
+  schedule: OnOff;
+  schedule_attrs: { mode: HouseControlMode; since: EpochMs | null; profile_id: Id };
 }
 
 /**
@@ -324,20 +342,32 @@ export function houseStateDoc(ix: ViewIndex): HouseStateDoc {
     alerts: view.alerts,
     power_kw: r2(plant.energy.usedKw),
     bivalent_point: cfg.heat.bivalence.pointC,
+    schedule: onOff(ix.houseControl() === 'schedule'),
+    schedule_attrs: { mode: ix.houseControl(), since: view.house.control?.since ?? null, profile_id: profile.activeProfileId },
   };
 }
 
 /* ── room climate state (every room entity reads it) ──────────────────────────────────────────── */
 
-/** HA climate mode: off when the room is off, a concrete mode under a manual target, auto otherwise. */
-export function reportedMode(state: RoomState, modes: ClimateMode[]): ClimateMode {
+/**
+ * HA climate mode: off when the room is off, the concrete mode it holds under manual control, auto while
+ * it follows the schedule — a temporary change included (it ends by itself, so the thermostat still reads
+ * «auto» and picking auto cancels it).
+ */
+export function reportedMode(state: RoomState, modes: ClimateMode[], control: RoomControlMode = 'schedule'): ClimateMode {
   const t = state.target;
-  let mode: ClimateMode = 'auto';
-  if (t.display === 'off' || t.layer === 'room_off') mode = 'off';
-  else if (t.display === 'range' || (t.display === 'manual' && t.mode === 'dual')) mode = 'heat_cool';
-  else if (t.display === 'manual' || t.display === 'boost') mode = t.mode === 'cool' ? 'cool' : t.mode === 'heat' ? 'heat' : 'auto';
-  // a mode the entity does not offer right now would be rejected by HA: report the schedule instead
-  return modes.includes(mode) ? mode : mode === 'off' ? 'off' : 'auto';
+  if (control === 'off' || t.display === 'off' || t.layer === 'room_off') return 'off';
+  if (control !== 'manual') return 'auto';
+  const held: ClimateMode = t.mode === 'dual' ? 'heat_cool' : t.mode === 'cool' ? 'cool' : 'heat';
+  if (modes.includes(held)) return held;
+  // a mode the entity does not offer right now would be rejected by HA: report one it offers, still manual
+  return modes.find((m) => m === 'heat' || m === 'cool' || m === 'heat_cool') ?? 'auto';
+}
+
+const CONTROL_OPTION: Record<RoomControlMode, RoomControlOption> = { schedule: 'Schedule', temporary: 'Schedule', manual: 'Manual', off: 'Off' };
+
+export function controlOption(mode: RoomControlMode): RoomControlOption {
+  return CONTROL_OPTION[mode];
 }
 
 export function roomStatePayload(ix: ViewIndex, room: RoomConfig, state: RoomState): RoomClimateStatePayload {
@@ -345,8 +375,10 @@ export function roomStatePayload(ix: ViewIndex, room: RoomConfig, state: RoomSta
   const modes = climateModes(roomCapabilities(view.cfg, room), view.season.season, view.season.houseMode);
   const t = state.target;
   const dual = t.mode === 'dual';
+  const control = ix.control(room.id);
+  const setBy: ControlSetBy | null = control.setBy;
   const payload: RoomClimateStatePayload = {
-    mode: reportedMode(state, modes),
+    mode: reportedMode(state, modes, control.mode),
     action: state.hvacAction,
     cur: r1(state.tempC),
     hum: r0(state.humidity.valuePct),
@@ -370,6 +402,8 @@ export function roomStatePayload(ix: ViewIndex, room: RoomConfig, state: RoomSta
       next_profile_id: t.next?.profileId ?? null,
       serving_source_id: state.demand.servingSourceIds[0] ?? null,
     },
+    control: controlOption(control.mode),
+    control_attrs: { mode: control.mode, since: control.since, until: control.until, set_by: setBy },
   };
   return payload;
 }
@@ -611,6 +645,7 @@ export function roomCardAttrs(ix: ViewIndex, room: RoomConfig): RoomCardAttrs | 
     why,
     th: stableThermostat(th),
     sync: state.sync,
+    ctl: ix.control(room.id).mode,
   };
   return fitCard(card);
 }
@@ -877,6 +912,7 @@ export function hubAttrs(ix: ViewIndex): HubAttrs {
             : ix.tx('card.house.profile', { profile: null, layer: profile.layer }),
       },
       tiles: houseTiles(ix),
+      ctl: ix.houseControl(),
     },
     profiles: profiles.map((p) => ({ id: p.id, n: p.name, c: p.color, k: p.ink, i: p.icon, h: p.heatC, cl: p.coolC, frost: p.frostOnly })),
     durations: stableDurations(view.durations),

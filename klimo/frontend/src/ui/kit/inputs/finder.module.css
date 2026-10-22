@@ -190,3 +190,8 @@
     max-width: 40%;
   }
 }
+
+.row[data-blocked] {
+  cursor: default;
+  opacity: 0.6;
+}

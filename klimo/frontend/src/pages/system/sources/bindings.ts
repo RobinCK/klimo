@@ -44,6 +44,7 @@ export function roleLabel(role: string): string {
       return t('Enable');
     case 'actual_flow':
       return t('Actual flow');
+    case 'mode':
     case 'mode_select':
       return t('Heat pump mode');
     case 'on_heat':
@@ -78,6 +79,7 @@ export function rolePreset(role: string): { role: EntityRolePreset | null; domai
     case 'flow':
     case 'watchdog':
       return { role: 'number' };
+    case 'mode':
     case 'mode_select':
       return { role: 'select' };
     case 'error':
@@ -130,7 +132,10 @@ export function setRole(
       entityId == null
         ? adapter.type === 'climate'
           ? ({ kind: 'hvac_action' } as const)
-          : ({ kind: 'readback' } as const)
+          : adapter.type === 'script' || adapter.type === 'custom'
+            ? // scripts have nothing to read back: without a signal a start counts at once
+              ({ kind: 'none' } as const)
+            : ({ kind: 'readback' } as const)
         : c.kind === 'power_above'
           ? { ...c, entityId }
           : entityId.startsWith('sensor.')
@@ -172,8 +177,9 @@ export function setRole(
     case 'flow': {
       if (role === 'enable') return { adapter: { ...a, enable: entityId }, energy };
       if (role === 'flow') return { adapter: { ...a, flowSetpoint: entityId }, energy };
-      if (role === 'actual_flow') return { adapter: { ...a, actualFlow: entityId }, energy };
-      if (role === 'mode_select')
+      // the live rows of a running source name these 'supply' and 'mode'
+      if (role === 'actual_flow' || role === 'supply') return { adapter: { ...a, actualFlow: entityId }, energy };
+      if (role === 'mode_select' || role === 'mode')
         return {
           adapter: { ...a, modeSelect: entityId ? { entityId, heat: a.modeSelect?.heat ?? 'heat', cool: a.modeSelect?.cool ?? 'cool' } : null },
           energy,

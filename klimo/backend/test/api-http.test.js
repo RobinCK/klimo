@@ -435,3 +435,15 @@ test('templates render only while Home Assistant is connected', async () => {
     assert.equal(res.body.code, 'ha_unavailable');
   });
 });
+
+test('settings carry the outdoor readout; the house section refreshes it on its own', async () => {
+  await withApi({}, async (api) => {
+    const all = await api.request('GET', '/api/settings');
+    assert.equal(all.status, 200);
+    assert.deepEqual(all.body.outdoor, { nowC: null, avg10C: null, avgNC: null, source: 'none', method: 'median', sensors: [] });
+    const one = await api.request('GET', '/api/settings/outdoor');
+    assert.equal(one.status, 200);
+    assert.deepEqual(one.body, all.body.outdoor);
+    assert.equal(api.calls.count('inputs.outdoorReadout'), 2);
+  });
+});

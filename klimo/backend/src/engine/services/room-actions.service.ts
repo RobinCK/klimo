@@ -2,12 +2,13 @@ import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { ApiException, conflict, notFound, validationError } from '../../common/http';
 import { newToken, uuid } from '../../common/ids';
 import { ENGINE_DEFAULTS } from '../../shared/defaults';
-import { LOCK_DURATIONS, overrideGroupOf, ROOM_TARGET_DURATIONS } from '../../shared/model';
+import { isHeldOverride, LOCK_DURATIONS, overrideGroupOf, ROOM_CONTROL_CHOICES, ROOM_TARGET_DURATIONS } from '../../shared/model';
 import type {
   Actor,
   BoostRequest,
   Celsius,
   ClockPort,
+  ControlOrigin,
   DurationOption,
   EngineConfig,
   EpochMs,
@@ -24,6 +25,10 @@ import type {
   OverrideValue,
   RoomClimateStatePayload,
   RoomConfig,
+  RoomControl,
+  RoomControlMode,
+  RoomControlRequest,
+  RoomControlResult,
   RoomOffRequest,
   RoomProfileRequest,
   RoomState,
@@ -34,6 +39,7 @@ import type {
   TargetPreview,
 } from '../../shared/model';
 import { CLOCK, CONFIG_STORE, OVERRIDE_STORE } from '../../tokens';
+import { heldUnder, roomControlOf } from '../core/targets';
 import { toLocal } from '../core/time';
 import { clamp, roundStep } from '../core/util';
 import {
@@ -54,6 +60,7 @@ const MIN_MS = 60_000;
 const DAY_MS = 86_400_000;
 
 type TargetValue = { mode: Mode | 'dual'; heatC: Celsius | null; coolC: Celsius | null };
+type JournalValues = { valueC?: Celsius | null; lo?: Celsius | null; hi?: Celsius | null; profileId?: Id };
 
 export const revertExpired = () => new ApiException(HttpStatus.CONFLICT, 'revert_expired');
 
@@ -70,6 +77,7 @@ function range(path: string, v: number, min: number, max: number): void {
 @Injectable()
 export class RoomActionsService implements IRoomActions {
   private readonly recent = new RecentResults<TargetCommandResult>();
+  private readonly recentControl = new RecentResults<RoomControlResult>();
 
   constructor(
     @Inject(CONFIG_STORE) private readonly config: IConfigStore,
@@ -83,7 +91,11 @@ export class RoomActionsService implements IRoomActions {
   /* ── targets ─────────────────────────────────────────────────────────────────────────────── */
 
   async setTarget(roomId: Id, req: SetTargetRequest, actor: Actor): Promise<TargetCommandResult> {
-    return this.applyTarget(this.support.room(roomId), req, actor);
+    const room = this.support.room(roomId);
+    // a head or an AC turned by hand in a room under manual control changes the manual value, it does not
+    // hand the room back to the schedule (nor write the profile the room is not following)
+    if (actor.via === 'trv' && this.control(room.id).mode === 'manual') return this.applyTarget(room, { ...req, duration: 'manual' }, actor);
+    return this.applyTarget(room, req, actor);
   }
 
   preview(roomId: Id, req: SetTargetRequest): TargetPreview {
@@ -129,10 +141,104 @@ export class RoomActionsService implements IRoomActions {
   }
 
   async resume(roomId: Id, actor: Actor): Promise<RoomState> {
+    return this.resumeRoom(this.support.room(roomId), actor, null);
+  }
+
+  /* ── control mode ────────────────────────────────────────────────────────────────────────── */
+
+  control(roomId: Id): RoomControl {
     const room = this.support.room(roomId);
+    return roomControlOf(this.overrides.forSubject('room', room.id), room.id, this.clock.now());
+  }
+
+  /**
+   * Schedule / manual / off. Manual without a value holds what the room aims at now; with heatC and/or
+   * coolC it holds those. Off keeps frost protection. Window reactions act in every mode.
+   */
+  async setControl(roomId: Id, req: RoomControlRequest, actor: Actor, origin: ControlOrigin | null = null): Promise<RoomControlResult> {
+    const room = this.support.room(roomId);
+    const now = this.clock.now();
+    const key = req.reqId ? `${room.id}|${req.reqId}` : null;
+    const hit = key ? this.recentControl.get(key, now) : undefined;
+    if (hit) return hit;
+    if (!(ROOM_CONTROL_CHOICES as readonly string[]).includes(req.mode)) {
+      throw validationError([{ path: 'mode', code: 'enum', params: { values: ROOM_CONTROL_CHOICES.join('|') } }]);
+    }
+    if (req.mode !== 'manual' && (req.heatC !== undefined || req.coolC !== undefined)) {
+      throw validationError([{ path: req.heatC !== undefined ? 'heatC' : 'coolC', code: 'not_allowed', params: { mode: req.mode } }]);
+    }
+    let state: RoomState;
+    if (req.mode === 'schedule') state = await this.resumeRoom(room, actor, origin);
+    else if (req.mode === 'off') state = await this.holdOff(room, actor, origin);
+    else state = await this.holdManual(room, req, actor, origin);
+    const result: RoomControlResult = { roomId: room.id, control: this.control(room.id), state, reqId: req.reqId ?? null };
+    if (key) this.recentControl.set(key, result, now);
+    return result;
+  }
+
+  /** «Повернути розклад»: manual, temporary, boost, off and room-profile changes go; window and frost are not changes. */
+  private async resumeRoom(room: RoomConfig, actor: Actor, origin: ControlOrigin | null): Promise<RoomState> {
+    const before = this.control(room.id).mode;
     const removed = await this.overrides.removeGroup('room', room.id, 'target');
-    if (removed) await this.cleared(room, removed, actor);
+    if (removed) {
+      if (before === 'manual' || before === 'off') await this.journalControl(room, 'schedule', before, {}, actor, origin);
+      else await this.cleared(room, removed, actor);
+    }
     return this.after(room, 'room.resume');
+  }
+
+  private async holdOff(room: RoomConfig, actor: Actor, origin: ControlOrigin | null): Promise<RoomState> {
+    const before = this.control(room.id).mode;
+    if (before === 'off') return this.after(room, 'room.control');
+    await this.putOverride(room, { kind: 'room_off' }, 'none', null, actor, null);
+    await this.journalChange(room, before, 'room_off', 'none', {}, null, actor, origin);
+    return this.after(room, 'room.off');
+  }
+
+  private async holdManual(room: RoomConfig, req: RoomControlRequest, actor: Actor, origin: ControlOrigin | null): Promise<RoomState> {
+    const cfg = this.config.engineConfig();
+    const now = this.clock.now();
+    const before = this.control(room.id).mode;
+    const given = req.heatC !== undefined || req.coolC !== undefined;
+    if (!given && before === 'manual') return this.after(room, 'room.control');
+    const engine = this.access.requireEngine();
+    const season = engine.season().season;
+    const state = this.stateOf(cfg, room, now);
+    let v: TargetValue;
+    if (req.heatC !== undefined && req.coolC !== undefined) v = this.resolveTarget(cfg, room, state, { lo: req.heatC, hi: req.coolC, duration: 'manual' }, season, 'dual');
+    else if (req.heatC !== undefined) v = this.resolveTarget(cfg, room, state, { value: req.heatC, which: 't', duration: 'manual' }, season, 'heat');
+    else if (req.coolC !== undefined) v = this.resolveTarget(cfg, room, state, { value: req.coolC, which: 't', duration: 'manual' }, season, 'cool');
+    else v = this.currentHold(cfg, room, state, season, now);
+    await this.putOverride(room, { kind: 'room_target', mode: v.mode, heatC: v.heatC, coolC: v.coolC }, 'manual', null, actor, req.reqId ?? null);
+    await this.journalChange(room, before, 'room_target', 'manual', this.journalValues(v), null, actor, origin);
+    return this.after(room, 'room.control');
+  }
+
+  /**
+   * What «hold the current target» holds: the room's own value when it has one (a boost holds where it
+   * boosted to), otherwise the effective target before a window or airing pause bent it, and for a room
+   * that is off or idle by season the profile's value for the season's mode.
+   */
+  private currentHold(cfg: EngineConfig, room: RoomConfig, state: RoomState, season: Season, now: EpochMs): TargetValue {
+    const active = targetOverrideOf(cfg.overrides, room.id, now)?.value;
+    const lim = (value: Celsius, mode: Mode): TargetValue => this.resolveTarget(cfg, room, state, { value, which: 't', duration: 'manual' }, season, mode);
+    if (active?.kind === 'room_target') {
+      if (active.mode === 'dual') return this.resolveTarget(cfg, room, state, { lo: active.heatC ?? undefined, hi: active.coolC ?? undefined, duration: 'manual' }, season, 'dual');
+      const value = active.mode === 'heat' ? active.heatC : active.coolC;
+      if (value !== null) return lim(value, active.mode);
+    }
+    if (active?.kind === 'room_boost') return lim(active.targetC, active.mode);
+    const t = state.target;
+    const bent = t.display === 'window' || t.display === 'airing' || t.adjustments.some((a) => a.code === 'window_lower' || a.code === 'window_eco');
+    const base = profileValues(cfg, t.profileId ?? this.baseProfileId(cfg, room, now), room.id) ?? profileValues(cfg, this.baseProfileId(cfg, room, now), room.id);
+    const heat = bent ? (t.heatC === null ? null : base?.heatC ?? null) : t.heatC;
+    const cool = bent ? (t.coolC === null ? null : base?.coolC ?? null) : t.coolC;
+    if (heat !== null && cool !== null) return this.resolveTarget(cfg, room, state, { lo: heat, hi: cool, duration: 'manual' }, season, 'dual');
+    if (heat !== null) return lim(heat, 'heat');
+    if (cool !== null) return lim(cool, 'cool');
+    const mode = activeModeOf(state, season) ?? seasonMode(season);
+    const value = (mode === 'heat' ? base?.heatC : base?.coolC) ?? this.profileDefault(cfg, mode);
+    return lim(value, mode);
   }
 
   /* ── quick actions ───────────────────────────────────────────────────────────────────────── */
@@ -206,8 +312,9 @@ export class RoomActionsService implements IRoomActions {
   async off(roomId: Id, req: RoomOffRequest, actor: Actor): Promise<RoomState> {
     const room = this.support.room(roomId);
     const until = this.lockUntil(room.id, req.duration, req.until);
+    const before = this.control(room.id).mode;
     await this.putOverride(room, { kind: 'room_off' }, req.duration, until, actor, null);
-    await this.journalOverride(room, 'room_off', {}, until, actor);
+    await this.journalChange(room, before, 'room_off', req.duration, {}, until, actor, null);
     return this.after(room, 'room.off');
   }
 
@@ -230,8 +337,9 @@ export class RoomActionsService implements IRoomActions {
       return this.after(room, 'room.profile');
     }
     const until = this.lockUntil(room.id, req.duration, req.until);
+    const before = this.control(room.id).mode;
     await this.putOverride(room, { kind: 'room_profile', profileId: req.profileId }, req.duration, until, actor, null);
-    await this.journalOverride(room, 'room_profile', { profileId: req.profileId }, until, actor);
+    await this.journalChange(room, before, 'room_profile', req.duration, { profileId: req.profileId }, until, actor, null);
     return this.after(room, 'room.profile');
   }
 
@@ -245,7 +353,7 @@ export class RoomActionsService implements IRoomActions {
     const cfg = this.config.engineConfig();
     const now = this.clock.now();
     return ROOM_TARGET_DURATIONS.map((id) => {
-      if (id === 'until' || id === 'forever' || !core) return { id, until: null };
+      if (id === 'until' || id === 'forever' || id === 'manual' || !core) return { id, until: null };
       try {
         return { id, until: core.durationUntil(cfg, room.id, id, now, this.clock.tz()) };
       } catch {
@@ -256,60 +364,75 @@ export class RoomActionsService implements IRoomActions {
 
   /* ── HA climate entity (MQTT) ────────────────────────────────────────────────────────────── */
 
+  /**
+   * The HA thermostat: auto = follow the schedule, heat / cool / heat_cool = manual control at the
+   * thermostat's (or the current) target, off = room off. A temperature or preset set while the room is
+   * under manual control stays manual; otherwise it is a temporary change (settings.haTargetChangeDuration).
+   */
   async applyClimateCommand(
     roomId: Id,
     cmd: { mode?: RoomClimateStatePayload['mode']; temp?: Celsius; low?: Celsius; high?: Celsius; preset?: string },
     actor: Actor,
+    origin: ControlOrigin | null = null,
   ): Promise<RoomState> {
     const room = this.support.room(roomId);
-    const settings = this.config.engineConfig().settings;
-    // an explicit end time cannot come from a thermostat entity; such a setting falls back to the slot
-    const duration: RoomTargetDuration = settings.haTargetChangeDuration === 'until' ? 'slot' : settings.haTargetChangeDuration;
+    const manual = this.control(room.id).mode === 'manual';
+    const duration: RoomTargetDuration = manual ? 'manual' : this.haDuration();
 
     if (cmd.mode !== undefined) {
       switch (cmd.mode) {
         case 'auto':
-          return this.resume(room.id, actor);
+          return this.resumeRoom(room, actor, origin);
         case 'off':
-          return this.off(room.id, { duration: 'none' }, actor);
+          return this.holdOff(room, actor, origin);
         case 'heat':
         case 'cool':
         case 'heat_cool': {
           const cfg = this.config.engineConfig();
           const now = this.clock.now();
+          const wanted: Mode | 'dual' = cmd.mode === 'heat_cool' ? 'dual' : cmd.mode;
+          const own = targetOverrideOf(cfg.overrides, room.id, now);
+          // picking the mode the room is already held in changes nothing
+          if (manual && own?.value.kind === 'room_target' && own.value.mode === wanted) return this.after(room, 'room.control');
           const state = this.stateOf(cfg, room, now);
           const base = profileValues(cfg, this.baseProfileId(cfg, room, now), room.id);
-          if (cmd.mode === 'heat_cool') {
+          if (wanted === 'dual') {
             const lo = state.target.heatC ?? base?.heatC;
             const hi = state.target.coolC ?? base?.coolC;
-            return (await this.applyTarget(room, { lo, hi, duration }, actor, 'dual')).state;
+            return (await this.applyTarget(room, { lo, hi, duration: 'manual' }, actor, 'dual', origin)).state;
           }
-          const mode: Mode = cmd.mode;
-          const value = (mode === 'heat' ? state.target.heatC : state.target.coolC) ?? (mode === 'heat' ? base?.heatC : base?.coolC) ?? this.profileDefault(cfg, mode);
-          return (await this.applyTarget(room, { value, which: 't', duration }, actor, mode)).state;
+          const value = (wanted === 'heat' ? state.target.heatC : state.target.coolC) ?? (wanted === 'heat' ? base?.heatC : base?.coolC) ?? this.profileDefault(cfg, wanted);
+          return (await this.applyTarget(room, { value, which: 't', duration: 'manual' }, actor, wanted, origin)).state;
         }
         default:
           throw validationError([{ path: 'mode', code: 'enum', params: { values: 'off|auto|heat|cool|heat_cool' } }]);
       }
     }
-    if (cmd.temp !== undefined) return (await this.applyTarget(room, { value: cmd.temp, which: 't', duration }, actor)).state;
+    if (cmd.temp !== undefined) return (await this.applyTarget(room, { value: cmd.temp, which: 't', duration }, actor, undefined, origin)).state;
     if (cmd.low !== undefined || cmd.high !== undefined) {
       const which = cmd.low !== undefined ? 'lo' : 'hi';
-      return (await this.applyTarget(room, { lo: cmd.low, hi: cmd.high, which, duration }, actor, 'dual')).state;
+      return (await this.applyTarget(room, { lo: cmd.low, hi: cmd.high, which, duration }, actor, 'dual', origin)).state;
     }
     if (cmd.preset !== undefined) {
       const cfg = this.config.engineConfig();
       const wanted = cmd.preset.trim().toLowerCase();
       const profile = cfg.profiles.find((p) => p.id === cmd.preset || p.name.trim().toLowerCase() === wanted);
       if (!profile) throw validationError([{ path: 'preset', code: 'not_found' }]);
-      return this.setRoomProfile(room.id, { profileId: profile.id, duration: 'slot' }, actor);
+      return this.setRoomProfile(room.id, { profileId: profile.id, duration: manual ? 'none' : 'slot' }, actor);
     }
     throw validationError([{ path: '', code: 'required', params: { of: 'mode|temp|low|high|preset' } }]);
   }
 
+  /** How long a target set from Home Assistant lasts outside manual control. An explicit end time cannot
+   *  come from a thermostat entity or an event; such a setting falls back to the slot. */
+  haDuration(): RoomTargetDuration {
+    const d = this.config.engineConfig().settings.haTargetChangeDuration;
+    return d === 'until' ? 'slot' : d;
+  }
+
   /* ── internals ───────────────────────────────────────────────────────────────────────────── */
 
-  private async applyTarget(room: RoomConfig, req: SetTargetRequest, actor: Actor, forceMode?: Mode | 'dual'): Promise<TargetCommandResult> {
+  private async applyTarget(room: RoomConfig, req: SetTargetRequest, actor: Actor, forceMode?: Mode | 'dual', origin: ControlOrigin | null = null): Promise<TargetCommandResult> {
     const now = this.clock.now();
     const key = req.reqId ? `${room.id}|${req.reqId}` : null;
     const hit = key ? this.recent.get(key, now) : undefined;
@@ -322,7 +445,8 @@ export class RoomActionsService implements IRoomActions {
     const state = this.stateOf(cfg, room, now);
     const v = this.resolveTarget(cfg, room, state, req, engine.season().season, forceMode);
     const reqId = req.reqId ?? uuid();
-    const result = req.duration === 'forever' ? await this.writeIntoProfile(cfg, room, v, reqId, actor, now) : await this.writeTarget(cfg, room, v, req, reqId, actor, now);
+    const result =
+      req.duration === 'forever' ? await this.writeIntoProfile(cfg, room, v, reqId, actor, now) : await this.writeTarget(cfg, room, v, req, reqId, actor, now, origin);
     if (key) this.recent.set(key, result, now);
     return result;
   }
@@ -356,16 +480,20 @@ export class RoomActionsService implements IRoomActions {
     return mode === 'heat' ? { mode, heatC: value, coolC: null } : { mode, heatC: null, coolC: value };
   }
 
-  private async writeTarget(cfg: EngineConfig, room: RoomConfig, v: TargetValue, req: SetTargetRequest, reqId: string, actor: Actor, now: EpochMs): Promise<TargetCommandResult> {
+  private async writeTarget(
+    cfg: EngineConfig,
+    room: RoomConfig,
+    v: TargetValue,
+    req: SetTargetRequest,
+    reqId: string,
+    actor: Actor,
+    now: EpochMs,
+    origin: ControlOrigin | null,
+  ): Promise<TargetCommandResult> {
     const until = this.untilFor(cfg, room.id, req.duration, now, req.until);
+    const before = this.control(room.id).mode;
     const stored = await this.putOverride(room, { kind: 'room_target', mode: v.mode, heatC: v.heatC, coolC: v.coolC }, req.duration, until, actor, reqId);
-    await this.journalOverride(
-      room,
-      'room_target',
-      v.mode === 'dual' ? { lo: v.heatC, hi: v.coolC } : { valueC: v.mode === 'heat' ? v.heatC : v.coolC },
-      until,
-      actor,
-    );
+    await this.journalChange(room, before, 'room_target', req.duration, this.journalValues(v), until, actor, origin);
     const state = await this.after(room, 'room.target');
     return { override: stored, profileWritten: null, until, revertToken: stored.revertToken, revertUntil: stored.revertUntil, reqId, state };
   }
@@ -442,6 +570,9 @@ export class RoomActionsService implements IRoomActions {
     const active = targetOverrideOf(this.overrides.forSubject('room', room.id), room.id, this.clock.now());
     if (active?.kind === kind) {
       await this.overrides.remove(active.id);
+      // cancelling a boost (or a temporary off) on a room under manual control returns to that control
+      const held = heldUnder(active);
+      if (held) await this.overrides.put({ ...held, previous: null, revertToken: null, revertUntil: null });
       await this.cleared(room, active, actor);
     }
     return this.after(room, `room.${kind}_cleared`);
@@ -451,7 +582,50 @@ export class RoomActionsService implements IRoomActions {
     await this.support.record({ code: 'room.override_cleared', category: 'rooms', tone: 'idle', params: { kind: o.kind, by: actorName(actor) }, roomId: room.id });
   }
 
-  private async journalOverride(room: RoomConfig, kind: Override['kind'], values: { valueC?: Celsius | null; lo?: Celsius | null; hi?: Celsius | null; profileId?: Id }, until: EpochMs | null, actor: Actor): Promise<void> {
+  private journalValues(v: TargetValue): JournalValues {
+    return v.mode === 'dual' ? { lo: v.heatC, hi: v.coolC } : { valueC: v.mode === 'heat' ? v.heatC : v.coolC };
+  }
+
+  /**
+   * A change that switches the room into manual control or off is journaled as such (who, through which
+   * HA entity); anything else — a temporary change, a new value while already manual — as an override.
+   */
+  private async journalChange(
+    room: RoomConfig,
+    before: RoomControlMode,
+    kind: Override['kind'],
+    duration: OverrideDuration,
+    values: JournalValues,
+    until: EpochMs | null,
+    actor: Actor,
+    origin: ControlOrigin | null,
+  ): Promise<void> {
+    const after: RoomControlMode = isHeldOverride({ duration, until }) ? (kind === 'room_off' ? 'off' : 'manual') : 'temporary';
+    if (after !== 'temporary' && after !== before) await this.journalControl(room, after, before, values, actor, origin);
+    else await this.journalOverride(room, kind, values, until, actor);
+  }
+
+  private async journalControl(room: RoomConfig, mode: RoomControlMode, from: RoomControlMode, values: JournalValues, actor: Actor, origin: ControlOrigin | null): Promise<void> {
+    await this.support.record({
+      code: 'room.control',
+      category: 'rooms',
+      tone: mode === 'off' ? 'off' : 'event',
+      params: {
+        mode,
+        from,
+        valueC: values.valueC ?? null,
+        lo: values.lo ?? null,
+        hi: values.hi ?? null,
+        profileId: values.profileId ?? null,
+        by: actorName(actor),
+        via: actor.via,
+        entityId: origin?.entityId ?? null,
+      },
+      roomId: room.id,
+    });
+  }
+
+  private async journalOverride(room: RoomConfig, kind: Override['kind'], values: JournalValues, until: EpochMs | null, actor: Actor): Promise<void> {
     await this.support.record({
       code: 'room.override',
       category: 'rooms',

@@ -56,7 +56,7 @@ function sensorText(f: Facts): string {
   const left = num(f, 'left');
   if (left == null) return t('It sends no data.');
   if (left > 0) return t('The temperature is counted from the {count} other sensors.', { count: left });
-  if (f.fallback === 'trv') return t('No other sensors — the radiator valves’ own readings are used.');
+  if (f.tempFrom === 'trv') return t('No other sensors — the radiator valves’ own readings are used.');
   const safe = num(f, 'safeC');
   return safe != null ? t('The room has no data — the radiator valves hold a safe {t}.', { t: fmtTemp(safe) }) : t('The room has no data — heating in it is off.');
 }

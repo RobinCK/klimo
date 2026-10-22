@@ -79,20 +79,26 @@ class FakeHa {
     this.states = new Map();
     this.regs = { areas: [], devices: [], entities: [] };
     this.calls = [];
+    this.stateCbs = [];
   }
   /** Sets a state; `opts.reportedAgoMs` / `changedAgoMs` age it relative to the clock. */
   set(entityId, state, attributes = {}, opts = {}) {
     const now = this.clock.now();
     const changed = now - (opts.changedAgoMs ?? opts.reportedAgoMs ?? 0);
     const reported = now - (opts.reportedAgoMs ?? 0);
-    this.states.set(entityId, { entity_id: entityId, state: String(state), attributes, last_changed: iso(changed), last_updated: iso(reported), last_reported: iso(reported), context: { id: 'c', user_id: null, parent_id: null } });
+    const prev = this.states.get(entityId) ?? null;
+    const next = { entity_id: entityId, state: String(state), attributes, last_changed: iso(changed), last_updated: iso(reported), last_reported: iso(reported), context: { id: 'c', user_id: null, parent_id: null } };
+    this.states.set(entityId, next);
     if (opts.deviceId && !this.regs.entities.some((e) => e.entity_id === entityId)) {
       this.regs.entities.push({ entity_id: entityId, device_id: opts.deviceId, area_id: null, platform: 'mqtt', unique_id: opts.uniqueId ?? entityId, disabled_by: null, hidden_by: null, original_name: null, name: null, entity_category: null });
     }
+    for (const cb of this.stateCbs) cb(entityId, next, prev);
   }
   remove(entityId) {
+    const prev = this.states.get(entityId) ?? null;
     this.states.delete(entityId);
     this.regs.entities = this.regs.entities.filter((e) => e.entity_id !== entityId);
+    if (prev) for (const cb of this.stateCbs) cb(entityId, null, prev);
   }
   getState(id) {
     return this.states.get(id);
@@ -111,7 +117,9 @@ class FakeHa {
     return null;
   }
   onConnection() {}
-  onStateChanged() {}
+  onStateChanged(cb) {
+    this.stateCbs.push(cb);
+  }
   onEvent() {}
   onRegistriesUpdated() {}
 }
@@ -202,7 +210,9 @@ class FakeEngine {
   ledger() {
     return this.ledgerData;
   }
-  requestRun() {}
+  requestRun(reason) {
+    (this.requested ??= []).push(reason);
+  }
   async runNow(reason) {
     this.runs.push(reason);
     return { rooms: this.rooms(), plant: this.plant(), season: this.season(), houseProfile: this.houseProfile(), memory: this.memoryData, desired: [], decisions: [], detections: [], spans: [], expiredOverrideIds: [], edges: [], nextWakeAt: null };
@@ -313,7 +323,7 @@ async function openServices(opts = {}) {
   const preview = new SystemPreviewService(config, overrides, clock, ha, access);
   const history = { series: async (q) => (t.series ? t.series(q) : []), statistics: async () => [], roomDay: async () => null, sparks: async () => ({}), outdoor: async () => null };
   const inputs = { z2mBridges: () => t.bridges ?? {} };
-  const devices = new DeviceHealthService(config, clock, ha, search, history, inputs, journal, access);
+  const devices = new DeviceHealthService(config, clock, ha, search, history, inputs, journal, access, events, bus);
 
   return {
     t,

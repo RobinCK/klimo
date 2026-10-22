@@ -182,6 +182,7 @@ const VIA: Record<ActorVia, Label> = {
   telegram: ['Telegram', 'Telegram'],
   import: ['import', 'імпорт'],
   system: ['Klimo', 'Klimo'],
+  event: ['Home Assistant event', 'подія Home Assistant'],
 };
 
 const CONFIG_ENTITY: Record<ConfigEntityName, Label> = {

@@ -75,7 +75,7 @@ import {
 } from '../tokens';
 import { CommandBus } from './command-bus';
 import { evaluate } from './core/evaluate';
-import { houseProfileEdges } from './core/targets';
+import { heldUnder, houseProfileEdges } from './core/targets';
 import { trvReleaseDesired } from './core/trv';
 import { interestSet, templateNodes } from './interest-set';
 import { ReconcilerService, type ActuatorInfo, type ConflictEvent, type LedgerChange, type ManualChange, type ReconcileOutcome } from './reconciler.service';
@@ -866,10 +866,25 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
       return;
     }
     for (const o of expired) {
-      if (o.scope === 'room') await this.record({ code: 'room.override_expired', category: 'rooms', tone: 'idle', params: { kind: o.kind }, roomId: o.subjectId }, now);
-      else if (o.scope === 'house') await this.record({ code: 'house_profile.expired', category: 'system', tone: 'idle', params: {} }, now);
+      if (o.scope === 'room') {
+        const back = o.group === 'target' ? await this.restoreHeld(o) : null;
+        await this.record({ code: 'room.override_expired', category: 'rooms', tone: 'idle', params: { kind: o.kind, back }, roomId: o.subjectId }, now);
+      } else if (o.scope === 'house') await this.record({ code: 'house_profile.expired', category: 'system', tone: 'idle', params: {} }, now);
       // a source lock's end is journalled by the plant on the tick it runs out
     }
+  }
+
+  /** A temporary change on a room in manual control (or off) ends in that mode, not in the schedule. */
+  private async restoreHeld(expired: Override): Promise<'manual' | 'off' | null> {
+    const held = heldUnder(expired);
+    if (!held || this.overrides.forSubject('room', expired.subjectId).some((x) => x.group === 'target')) return null;
+    try {
+      await this.overrides.put({ ...held, previous: null, revertToken: null, revertUntil: null });
+    } catch (e) {
+      this.once.warn('expire', `the manual control under an expired change could not be restored: ${errorText(e)}`);
+      return null;
+    }
+    return held.kind === 'room_off' ? 'off' : 'manual';
   }
 
   private async record(d: Decision, now: EpochMs): Promise<void> {

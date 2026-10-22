@@ -25,6 +25,52 @@ function overrideTpl(v: Vars, lang: 0 | 1): string {
   return `${base}[ · {by}]`;
 }
 
+const CONTROL_TAIL = '[ · {by}][ · {entityId}]';
+
+function controlTpl(v: Vars, lang: 0 | 1): string {
+  const base =
+    v.mode === 'manual'
+      ? ['{room}: manual control[ at {valueC}][ at {lo}–{hi}][ «{profileId}»]', '{room}: ручне керування[ — {valueC}][ — {lo}–{hi}][ «{profileId}»]']
+      : v.mode === 'off'
+        ? ['{room}: off until the schedule is resumed', '{room}: вимкнено до повернення розкладу']
+        : ['{room}: back to schedule', '{room}: знову за розкладом'];
+  return base[lang] + CONTROL_TAIL;
+}
+
+function houseControlTpl(v: Vars, lang: 0 | 1): string {
+  const base =
+    v.mode === 'manual'
+      ? ['House under manual control: the schedule is paused on «{profileId}»', 'Будинок на ручному керуванні: розклад призупинено на «{profileId}»']
+      : [
+          'House back to schedule[ · rooms resumed: {rooms:int}][ · rooms left off: {off:int}]',
+          'Будинок знову за розкладом[ · повернуто кімнат: {rooms:int}][ · лишаються вимкненими: {off:int}]',
+        ];
+  return base[lang] + CONTROL_TAIL;
+}
+
+const REJECTED: Record<string, readonly [string, string]> = {
+  unknown_command: ['unknown command', 'невідома команда'],
+  room_required: ['the command needs a room', 'команді потрібна кімната'],
+  room_not_found: ['no such room', 'такої кімнати немає'],
+  target_required: ['the command needs a target temperature', 'команді потрібна цільова температура'],
+  invalid: ['invalid data', 'неправильні дані'],
+  failed: ['not applied', 'не виконано'],
+};
+
+function rejectedTpl(v: Vars, lang: 0 | 1): string {
+  const reason = REJECTED[String(v.reason)] ?? REJECTED.invalid;
+  return [
+    `Home Assistant command[ «{command:raw}»][ for «{room:raw}»] rejected: ${reason[0]}[ ({detail:raw})]`,
+    `Команду Home Assistant[ «{command:raw}»][ для «{room:raw}»] відхилено: ${reason[1]}[ ({detail:raw})]`,
+  ][lang];
+}
+
+function expiredTpl(v: Vars, lang: 0 | 1): string {
+  if (v.back === 'manual') return ['{room}: the temporary change ended — back to manual control', '{room}: тимчасова зміна закінчилась — знову ручне керування'][lang];
+  if (v.back === 'off') return ['{room}: the temporary change ended — the room is off again', '{room}: тимчасова зміна закінчилась — кімната знову вимкнена'][lang];
+  return ['{room}: the manual change ended', '{room}: ручна зміна закінчилась'][lang];
+}
+
 function testTpl(v: Vars, lang: 0 | 1): string {
   const result =
     v.result === 'ok'
@@ -98,7 +144,8 @@ export const JOURNAL: Record<JournalCode, Row> = {
   ],
   'room.override': [(v) => overrideTpl(v, 0), (v) => overrideTpl(v, 1)],
   'room.override_cleared': ['{room}: back to schedule[ · {by}]', '{room}: знову за розкладом[ · {by}]'],
-  'room.override_expired': ['{room}: the manual change ended', '{room}: ручна зміна закінчилась'],
+  'room.override_expired': [(v) => expiredTpl(v, 0), (v) => expiredTpl(v, 1)],
+  'room.control': [(v) => controlTpl(v, 0), (v) => controlTpl(v, 1)],
   'room.frost_on': ['{room}: frost protection on at {t}', '{room}: захист від морозу увімкнено при {t}'],
   'room.frost_off': ['{room}: frost protection off at {t}', '{room}: захист від морозу вимкнено при {t}'],
   'room.overheat_on': ['{room}: overheating {t} — heating closed', '{room}: перегрів {t} — опалення закрито'],
@@ -150,6 +197,8 @@ export const JOURNAL: Record<JournalCode, Row> = {
   'house_profile.changed': ['House profile «{profileId}»[ until {until}][ · {by}]', 'Профіль будинку «{profileId}»[ до {until}][ · {by}]'],
   'house_profile.cleared': ['House profile back to schedule[ · {by}]', 'Профіль будинку знову за розкладом[ · {by}]'],
   'house_profile.expired': ['The house profile change ended', 'Зміна профілю будинку закінчилась'],
+  'house.control': [(v) => houseControlTpl(v, 0), (v) => houseControlTpl(v, 1)],
+  'ha.command_rejected': [(v) => rejectedTpl(v, 0), (v) => rejectedTpl(v, 1)],
   'trigger.on': ['Trigger «{triggerId}» fired', 'Тригер «{triggerId}» спрацював'],
   'trigger.off': ['Trigger «{triggerId}» is off', 'Тригер «{triggerId}» вимкнувся'],
   'rule.on': ['Rule «{ruleId}» is active', 'Діє правило «{ruleId}»'],

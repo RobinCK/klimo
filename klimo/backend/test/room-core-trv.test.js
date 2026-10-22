@@ -193,7 +193,8 @@ test('ledger states feed TRV sync, room sync and issues', () => {
   assert.equal(partial.trvs[0].commandedSetpointC, 20.5);
   const retry = h.tick(cfg, inputs, memory, { ledger: { 'climate.trv1': rec('retrying', 2) } }).state;
   assert.equal(retry.sync.phase, 'retry');
-  assert.deepEqual(retry.issues.find((i) => i.code === 'trv_retry').params, { attempt: 2, of: 3 });
+  // the chip names the head that has not confirmed
+  assert.deepEqual(retry.issues.find((i) => i.code === 'trv_retry').params, { attempt: 2, of: 3, deviceId: 'd_trv1', entityId: 'climate.trv1' });
   const failed = h.tick(cfg, inputs, memory, { ledger: { 'climate.trv1': rec('failed', 3) } }).state;
   assert.equal(failed.sync.phase, 'failed');
   assert.deepEqual(failed.issues[0].code, 'trv_failed');

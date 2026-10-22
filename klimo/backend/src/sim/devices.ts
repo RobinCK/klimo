@@ -69,6 +69,8 @@ export interface EntitySpec {
   role: EntityRole;
   state: string;
   attributes: Record<string, unknown>;
+  /** Disabled in the entity registry (no state), as integrations leave their noisier diagnostics. */
+  disabled?: boolean;
 }
 
 export interface ZigbeeSpec {
@@ -79,6 +81,8 @@ export interface ZigbeeSpec {
   /** Battery at the scenario start (it drains slowly before and after). */
   batteryPct: number | null;
   drainPerDay: number;
+  /** Link quality only in Zigbee2MQTT's own messages ('mqtt'), or nowhere ('none'); unset = also an HA entity. */
+  link?: 'mqtt' | 'none';
 }
 
 export interface DeviceSpec {
@@ -431,6 +435,8 @@ function buildDevices(): DeviceSpec[] {
     },
     thermo({ base: 'garage', label: 'Датчик у гаражі', room: null, model: 'SONOFF SNZB-02', instance: 1, lqi: 76, battery: 64 }),
     zigbeeRelay('garage_plug', 'Розетка в гаражі', 'garazh', 'garage_plug', 'Zigbee-розетка 16 А', 2, 101, 0, true),
+    // a thermostat paired but never put into an area: only its Zigbee2MQTT name finds it
+    { ...trv({ base: 'zig_thermostat_office', label: 'zig_thermostat_office', room: 'study', instance: 2, lqi: 94, battery: 88, tuya: true }), area: null, binding: { kind: 'spare' } },
     // a second outdoor thermometer, on the south-west wall: the afternoon sun warms it
     { ...thermo({ base: 'south_wall', label: 'Південна стіна', room: null, model: 'SONOFF SNZB-02D', instance: 2, lqi: 83, battery: 78 }), area: null, binding: { kind: 'sunny_wall' } },
   ];
@@ -467,7 +473,28 @@ function phone(base: string, name: string, tracker: string, personId: string, mo
   };
 }
 
-export const DEVICES: readonly DeviceSpec[] = buildDevices();
+/**
+ * Zigbee2MQTT ≥ 2.0 adds the link quality entity to HA disabled, and most people leave it so. These
+ * devices do: Klimo learns their link quality from Zigbee2MQTT's MQTT messages, or — with the attribute
+ * filtered out in Zigbee2MQTT — not at all.
+ */
+const LINK_MODES: Readonly<Record<string, 'mqtt' | 'none'>> = {
+  dev_living_window_left: 'mqtt',
+  dev_terrace_door: 'mqtt',
+  dev_bedroom_window: 'mqtt',
+  dev_living_tv: 'mqtt',
+  dev_kitchen_shelf: 'mqtt',
+  dev_kids_window: 'none',
+  dev_hall: 'none',
+};
+
+function withLinkMode(d: DeviceSpec): DeviceSpec {
+  const link = LINK_MODES[d.id];
+  if (!link || !d.zigbee) return d;
+  return { ...d, zigbee: { ...d.zigbee, link }, entities: d.entities.map((e) => (e.role === 'linkquality' ? { ...e, disabled: true } : e)) };
+}
+
+export const DEVICES: readonly DeviceSpec[] = buildDevices().map(withLinkMode);
 
 const byEntity = new Map<string, { device: DeviceSpec; entity: EntitySpec }>();
 for (const d of DEVICES) for (const e of d.entities) byEntity.set(e.entityId, { device: d, entity: e });
@@ -538,7 +565,7 @@ export function demoRegistries(): HaRegistries {
         area_id: null,
         platform: d.zigbee || d.binding.kind === 'bridge' ? 'mqtt' : d.integration ?? 'sim',
         unique_id: uniqueId(d, e),
-        disabled_by: null,
+        disabled_by: e.disabled ? 'integration' : null,
         hidden_by: null,
         original_name: e.name,
         name: null,

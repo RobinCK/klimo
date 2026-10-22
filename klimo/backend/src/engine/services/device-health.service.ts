@@ -562,16 +562,16 @@ export class DeviceHealthService implements IDeviceHealth, OnModuleInit, OnModul
     const kinds = new Map<string, string[]>();
     for (const d of next.values()) if (d.deviceKey) kinds.set(d.deviceKey, [...(kinds.get(d.deviceKey) ?? []), d.kind]);
     const silent = new Set([...offline.values()].map((o) => o.dev.key));
-    const now = new Map<string, string>();
+    const sigs = new Map<string, string>();
     for (const dev of this.devices()) {
       const bridge = dev.transport.type === 'z2m' ? String(bridges[dev.transport.instanceId] ?? '') : '';
-      now.set(dev.key, [lives.get(dev.key)?.available ? 1 : 0, silent.has(dev.key) ? 1 : 0, (kinds.get(dev.key) ?? []).sort().join(','), bridge].join('|'));
+      sigs.set(dev.key, [lives.get(dev.key)?.available ? 1 : 0, silent.has(dev.key) ? 1 : 0, (kinds.get(dev.key) ?? []).sort().join(','), bridge].join('|'));
     }
     const before = this.announced;
-    this.announced = now;
+    this.announced = sigs;
     if (!before || !this.events) return;
-    const changed = [...now].filter(([key, sig]) => before.get(key) !== sig).map(([key]) => key);
-    for (const key of before.keys()) if (!now.has(key)) changed.push(key);
+    const changed = [...sigs].filter(([key, sig]) => before.get(key) !== sig).map(([key]) => key);
+    for (const key of before.keys()) if (!sigs.has(key)) changed.push(key);
     if (changed.length) this.events.send({ type: 'devices', payload: { keys: changed } });
   }
 

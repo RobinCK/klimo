@@ -153,6 +153,15 @@
   font-size: var(--ui-fs-caption);
 }
 
+/* no checkbox: the meta line starts under the name */
+.sensor[data-plain] .sensorMeta {
+  padding-left: 0;
+}
+
+.sensor[data-plain] .sensorLabel {
+  cursor: default;
+}
+
 .note {
   color: var(--note-color, var(--ui-tone-warn-fg));
 }

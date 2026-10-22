@@ -3,14 +3,14 @@
  * system behaves — how long a change from Home Assistant lasts, who may change the
  * configuration, and the defaults a new room starts with. Every field saves by itself.
  */
-import { useMemo } from 'react';
-import type { GeneralSettings, Lang, RoomDefaults, RoomTargetDuration, SettingsBundle, WindowReaction } from '@api/model';
-import { ROOM_TARGET_DURATIONS, WINDOW_REACTIONS } from '@api/model';
+import { useEffect, useMemo } from 'react';
+import type { GeneralSettings, Lang, OutdoorAggregation, OutdoorReadout, OutdoorSensorReading, RoomDefaults, RoomTargetDuration, SettingsBundle, WindowReaction } from '@api/model';
+import { OUTDOOR_AGGREGATIONS, ROOM_TARGET_DURATIONS, WINDOW_REACTIONS } from '@api/model';
 import { api } from '@api/endpoints';
-import { useAutosave, useEntitySearch, useResource } from '@data';
+import { useAutosave, useEntitySearch, useLayout, useNow, useResource } from '@data';
 import { applyPanelLanguage, languagePref, setLanguagePref, useColorScheme, type LangPref, type SchemePref } from '@app';
-import { AutosaveStatus, CheckboxRow, EntityPicker, KeyValueList, Section, SegmentedControl, Select, Stack, TextField, ValuePill } from '@ui';
-import { LANG_NAMES, fmtDur, fmtTemp, roomDurationLabel, t, windowReactionLabel } from '@i18n';
+import { AutosaveStatus, CheckboxRow, EntityPicker, FallbackNote, KeyValueList, Section, SegmentedControl, Select, SensorRow, Stack, TextField, ValuePill } from '@ui';
+import { LANG_NAMES, aggregationLabel, fmtAgo, fmtDur, fmtTemp, outdoorAggregationHint, roomDurationLabel, t, windowReactionLabel } from '@i18n';
 
 type Save = (bundle: SettingsBundle) => void;
 
@@ -30,37 +30,112 @@ function useGeneral<K extends keyof GeneralSettings>(bundle: SettingsBundle, key
   return useAutosave(value, async (next) => onSaved(await api.settings.patchGeneral(next)), { debounceMs: 600 });
 }
 
-function OutdoorValue({ entityId }: { entityId: string | null }) {
-  const res = useResource(entityId ? `ha-entity:${entityId}` : null, () => api.ha.entity(entityId as string));
-  const e = res.data?.entity;
-  if (!entityId || !e) return null;
-  const n = e.state != null ? Number(e.state) : NaN;
-  const text = !e.available ? t('unavailable now') : Number.isFinite(n) ? t('now {t}', { t: fmtTemp(n) }) : (e.state ?? '—');
-  return <ValuePill text={text} ariaLabel={t('Current value')} />;
+/** The outdoor temperature as Klimo combines it now; refreshed while Settings is open. */
+function useOutdoorReadout(bundle: SettingsBundle): OutdoorReadout | null {
+  const res = useResource('settings-outdoor', api.settings.outdoor, { reloadOn: ['settings'] });
+  const reload = res.reload;
+  useEffect(() => {
+    const id = window.setInterval(() => void reload(), 30_000);
+    return () => window.clearInterval(id);
+  }, [reload]);
+  return res.data ?? bundle.outdoor;
+}
+
+function outdoorNowText(r: OutdoorReadout | null): string {
+  if (!r || r.nowC == null) return t('unknown');
+  if (r.source === 'hold') return t('{t} — the last value, held for now', { t: fmtTemp(r.nowC) });
+  if (r.source === 'weather') return t('{t} from the weather entity', { t: fmtTemp(r.nowC) });
+  return t('now {t}', { t: fmtTemp(r.nowC) });
+}
+
+function readingMeta(r: OutdoorSensorReading | undefined, now: number): string {
+  // an unavailable sensor's last report is the moment it went offline: its note says enough
+  if (!r || r.status === 'unavailable') return '';
+  if (r.status === 'ok') return r.lastReportedAt != null ? t('reported {ago}', { ago: fmtAgo(r.lastReportedAt, now) }) : '';
+  return r.lastReportedAt != null ? t('no data for {dur}', { dur: fmtDur((now - r.lastReportedAt) / 60000) }) : t('no data');
+}
+
+function readingNote(r: OutdoorSensorReading | undefined): { note?: string; tone?: 'warn' | 'err' } {
+  if (r?.status === 'unavailable') return { note: t('offline — the others are counted'), tone: 'err' };
+  if (r?.status === 'stale') return { note: t('no fresh data — the others are counted'), tone: 'warn' };
+  return {};
+}
+
+/**
+ * Several outdoor thermometers, like a room's sensors: each with its reading and whether it counts
+ * now, how they combine, and the one value everything outdoors-related reads.
+ */
+function OutdoorSensors({ outdoor, readout, canEdit, onChange }: { outdoor: GeneralSettings['outdoor']; readout: OutdoorReadout | null; canEdit: boolean; onChange: (p: Partial<GeneralSettings['outdoor']>) => void }) {
+  const phone = useLayout() === 'phone';
+  const now = useNow(30_000);
+  const search = useEntitySearch('outdoor');
+  const ids = outdoor.sensorEntityIds;
+  const readings = new Map((readout?.sensors ?? []).map((r) => [r.entityId, r]));
+  return (
+    <Stack gap="md">
+      {ids.length ? (
+        <Stack gap="xs">
+          {ids.map((id) => {
+            const r = readings.get(id);
+            const note = readingNote(r);
+            const name = r?.name ?? id;
+            return (
+              <SensorRow
+                key={id}
+                name={name}
+                entityId={phone || name === id ? undefined : id}
+                valueText={fmtTemp(r?.valueC ?? null)}
+                excluded={r?.status !== 'ok'}
+                meta={readingMeta(r, now)}
+                note={note.note}
+                noteTone={note.tone}
+                onRemove={canEdit ? () => onChange({ sensorEntityIds: ids.filter((x) => x !== id) }) : undefined}
+              />
+            );
+          })}
+        </Stack>
+      ) : (
+        <FallbackNote icon="thermometer" text={t('No outdoor sensor yet — the weather entity’s temperature is used.')} />
+      )}
+      {canEdit ? (
+        <EntityPicker
+          value={null}
+          onChange={(id) => {
+            if (id && !ids.includes(id)) onChange({ sensorEntityIds: [...ids, id] });
+          }}
+          search={search}
+          placeholder={t('Add an outdoor temperature sensor')}
+          ariaLabel={t('Add an outdoor temperature sensor')}
+        />
+      ) : null}
+      {ids.length > 1 ? (
+        <SegmentedControl<OutdoorAggregation>
+          ariaLabel={t('How the outdoor sensors combine')}
+          value={outdoor.aggregation}
+          options={OUTDOOR_AGGREGATIONS.map((m) => ({ value: m, label: aggregationLabel(m), disabled: !canEdit }))}
+          onChange={(aggregation) => onChange({ aggregation })}
+          hint={outdoorAggregationHint(outdoor.aggregation)}
+        />
+      ) : null}
+    </Stack>
+  );
 }
 
 export function HouseSection({ bundle, onSaved, canEdit }: { bundle: SettingsBundle; onSaved: Save; canEdit: boolean }) {
   const auto = useGeneral(bundle, ['houseName', 'outdoor'] as const, onSaved);
   const v = auto.value;
-  const outdoorSearch = useEntitySearch('outdoor');
+  const readout = useOutdoorReadout(bundle);
   const weatherSearch = useEntitySearch('weather');
   const setOutdoor = (p: Partial<GeneralSettings['outdoor']>) => auto.set((prev) => ({ ...prev, outdoor: { ...prev.outdoor, ...p } }));
   return (
     <Section title={t('House')} icon="home" action={<AutosaveStatus state={auto.state} retry={auto.retry} />}>
       <Stack gap="md">
         <TextField label={t('House name')} value={v.houseName} onChange={(houseName) => auto.set((prev) => ({ ...prev, houseName }))} maxLength={40} disabled={!canEdit} />
-        <Section variant="plain" level={3} title={t('Outdoor temperature sensor')} subtitle={t('Weather curves, the season and frost triggers read it.')}>
-          <EntityPicker
-            value={v.outdoor.sensorEntityId}
-            onChange={(sensorEntityId) => setOutdoor({ sensorEntityId })}
-            search={outdoorSearch}
-            placeholder={t('Choose a temperature sensor')}
-            ariaLabel={t('Outdoor temperature sensor')}
-            clearable
-          />
+        <Section variant="plain" level={3} title={t('Outdoor temperature sensors')} subtitle={t('Together they make one outdoor temperature: weather curves, the season and frost triggers read it.')}>
+          <OutdoorSensors outdoor={v.outdoor} readout={readout} canEdit={canEdit} onChange={setOutdoor} />
           <KeyValueList
             rows={[
-              { key: t('Outdoor temperature'), value: <OutdoorValue entityId={v.outdoor.sensorEntityId} /> },
+              { key: t('Outdoor temperature'), value: <ValuePill text={outdoorNowText(readout)} ariaLabel={t('Outdoor temperature')} /> },
               {
                 key: t('Stale without updates for'),
                 value: (
@@ -96,7 +171,7 @@ export function HouseSection({ bundle, onSaved, canEdit }: { bundle: SettingsBun
             ]}
           />
         </Section>
-        <Section variant="plain" level={3} title={t('Weather entity')} subtitle={t('The backup temperature when the sensor is silent, and the forecast.')}>
+        <Section variant="plain" level={3} title={t('Weather entity')} subtitle={t('The backup temperature when every outdoor sensor is silent, and the forecast.')}>
           <EntityPicker
             value={v.outdoor.weatherEntityId}
             onChange={(weatherEntityId) => setOutdoor({ weatherEntityId })}

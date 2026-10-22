@@ -314,6 +314,7 @@ export class FakeHaService implements HaPort, TemplateHost, OnModuleDestroy {
         lastLqi: d.zigbee?.lqi ?? 0,
       });
       for (const e of d.entities) {
+        if (e.disabled) continue;
         this.states.set(e.entityId, { entity_id: e.entityId, state: e.state, attributes: { ...e.attributes, friendly_name: simFriendlyName(d, e) }, last_changed: iso(at), last_updated: iso(at), last_reported: iso(at), context: ctx });
       }
     }
@@ -475,7 +476,10 @@ export class FakeHaService implements HaPort, TemplateHost, OnModuleDestroy {
     const rt = this.runtime.get(deviceId);
     const z = rt?.spec.zigbee;
     if (!rt || !z || !this.online || rt.unavailable || rt.stale || this.bridgeOffline.has(z.instance)) return;
-    const msg: Doc = { ...values, linkquality: rt.lastLqi, last_seen: iso(at) };
+    const msg: Doc = { ...values };
+    if (z.link !== 'none') msg.linkquality = rt.lastLqi;
+    // «last_seen» is a Zigbee2MQTT-wide option: the first instance has it on, the second leaves it off
+    if (z.instance === 1) msg.last_seen = iso(at);
     const battery = this.batteryPct(deviceId, at);
     if (battery !== null) msg.battery = battery;
     // retained, as Zigbee2MQTT does with `retain: true`: a listener that subscribes later still learns the link state

@@ -20,7 +20,7 @@ import type {
   OutdoorSensorReading,
 } from '../shared/model';
 import { BUS, CLOCK, CONFIG_STORE, HA_PORT } from '../tokens';
-import { combineBuckets, readOutdoorSensors } from './outdoor';
+import { combineBuckets, outdoorValue, readOutdoorSensors } from './outdoor';
 import { bucketize, combine, type Point, timeWeightedMean } from './series';
 import { isAvailableState, lastChangedAt, parseNumber, systemTempUnit, tempUnit, type TempUnit, toCelsius } from './units';
 
@@ -232,7 +232,7 @@ export class HaInputsService implements IHaInputs, OnApplicationBootstrap, OnMod
       nowC = this.lastGood.value;
       source = 'hold';
     } else {
-      const w = s.weatherEntityId ? this.weatherNow(s.weatherEntityId) : null;
+      const w = s.weatherEntityId ? outdoorValue(this.ha.getState(s.weatherEntityId), this.haUnit()) : null;
       nowC = w;
       source = w === null ? 'none' : 'weather';
     }
@@ -244,13 +244,6 @@ export class HaInputsService implements IHaInputs, OnApplicationBootstrap, OnMod
       avgNC: this.avgN,
       source,
     };
-  }
-
-  private weatherNow(entityId: EntityId): number | null {
-    const st = this.ha.getState(entityId);
-    if (!st || !isAvailableState(st.state)) return null;
-    const t = parseNumber(st.attributes.temperature);
-    return t === null ? null : toCelsius(t, tempUnit(st.attributes.temperature_unit) ?? this.haUnit());
   }
 
   /**

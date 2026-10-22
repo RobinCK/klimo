@@ -69,6 +69,7 @@ export const durationUntil: DurationUntilFn = (cfg, roomId, duration, now, tz, e
       return explicitUntil ?? null;
     case 'none':
     case 'forever':
+    case 'manual':
       return null;
   }
 };

@@ -1,4 +1,5 @@
-import { HOUSE_DURATIONS, HOUSE_MODES, LOCK_DURATIONS, ROOM_TARGET_DURATIONS } from '../shared/model';
+import { HOUSE_CONTROL_MODES, HOUSE_DURATIONS, HOUSE_MODES, LOCK_DURATIONS, ROOM_CONTROL_CHOICES, ROOM_CONTROL_OPTIONS, ROOM_TARGET_DURATIONS } from '../shared/model';
+import type { RoomControlChoice } from '../shared/model';
 import type { KlimoCommand } from '../shared/model';
 import { check, id, int, nullable, num, obj, oneOf, opt, str, union, type Schema } from '../common/validate';
 import type { ApiErrorIssue } from '../shared/model';
@@ -21,11 +22,13 @@ export const COMMAND_ACTIONS = [
   'room.window_ignore',
   'room.off',
   'room.on',
+  'room.set_control',
   'house.preview_profile',
   'house.set_profile',
   'house.clear_profile',
   'house.undo',
   'house.set_mode',
+  'house.set_control',
   'incident.ack',
   'incident.dismiss',
   'incident.unsnooze',
@@ -64,11 +67,13 @@ const CommandSchema = union('action', {
   'room.window_ignore': obj({ ...room, minutes: opt(int(1, 24 * 60)) }),
   'room.off': obj({ ...room, duration: opt(oneOf(LOCK_DURATIONS)) }),
   'room.on': obj(room),
+  'room.set_control': obj({ ...room, mode: oneOf(ROOM_CONTROL_CHOICES), heatC: opt(temp()), coolC: opt(temp()) }),
   'house.preview_profile': obj({ ...common, profileId: id(), duration: oneOf(HOUSE_DURATIONS), until: opt(epoch()) }),
   'house.set_profile': obj({ ...common, profileId: id(), duration: oneOf(HOUSE_DURATIONS), until: opt(epoch()) }),
   'house.clear_profile': obj(common),
   'house.undo': obj({ ...common, revertToken: token() }),
   'house.set_mode': obj({ ...common, mode: oneOf(HOUSE_MODES) }),
+  'house.set_control': obj({ ...common, mode: oneOf(HOUSE_CONTROL_MODES) }),
   'incident.ack': obj(incident),
   'incident.dismiss': obj(incident),
   'incident.unsnooze': obj(incident),
@@ -106,4 +111,12 @@ export const parseClimateMode = (payload: string) => plain(payload, oneOf(CLIMAT
 export const parseHouseMode = (payload: string) => plain(payload, oneOf(HOUSE_MODES));
 export const parseName = (payload: string) => plain(payload, str(64, { min: 1, trim: true }));
 export const parseOnOff = (payload: string) => plain(payload, oneOf(['ON', 'OFF'] as const));
+
+/** select.klimo_<slug>_control: its options in any letter case. */
+export function parseControlOption(payload: string): { ok: true; value: RoomControlChoice } | { ok: false; issues: ApiErrorIssue[] } {
+  const wanted = payload.trim().toLowerCase();
+  const hit = ROOM_CONTROL_OPTIONS.findIndex((o) => o.toLowerCase() === wanted);
+  if (hit < 0) return { ok: false, issues: [{ path: '', code: 'enum', params: { values: ROOM_CONTROL_OPTIONS.join('|') } }] };
+  return { ok: true, value: ROOM_CONTROL_CHOICES[hit] };
+}
 export const parseBivalentPoint = (payload: string) => plain(payload, int(-20, 5, { coerce: true }));

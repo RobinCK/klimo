@@ -51,6 +51,13 @@
   max-height: none;
 }
 
+/* a phone wizard is fixed to the screen; in the frame it stays in its box */
+.frame.frame > * {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+}
+
 .meter {
   display: inline-flex;
   align-items: center;

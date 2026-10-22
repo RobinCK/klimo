@@ -23,6 +23,7 @@ import {
   fanModes,
   hvacModes,
   isHumiditySensor,
+  isOutdoorSensor,
   isPowerSensor,
   isTemperatureSensor,
   isValvePosition,
@@ -56,6 +57,8 @@ const ROLE_ALSO = 8;
 const PLANT_LAST = 20;
 /** Another room's device can move here, but the free ones come first. */
 const OTHER_ROOM = 5;
+/** Outdoor sensor picker: thermometers whose name or area says outdoors come before the rest. */
+const OUTDOOR_FIRST = 20;
 /** Devices «Не використовуються в Klimo» lists only what is clearly a climate device. */
 const UNASSIGNED_CONFIDENCE = 0.5;
 
@@ -125,6 +128,7 @@ export class EntitySearchService implements IEntitySearch {
       if (isAvailableState(f.state?.state)) score += SCORE.available;
       if (nearArea && r.areaId === nearArea) score += SCORE.nearRoom;
       if (q.nearAreaId && r.areaId === q.nearAreaId) score += NEAR_AREA;
+      if (q.role === 'outdoor' && isOutdoorSensor(f)) score += OUTDOOR_FIRST;
       if (wizard && q.wizard && q.wizard !== 'any') score += wizard.suggested[0] === q.wizard ? ROLE_FIRST : wizard.suggested.includes(q.wizard) ? ROLE_ALSO : 0;
       if (wizard && referenced.has(r.entityId)) {
         const uses = this.config.usages({ type: 'entity', id: r.entityId });

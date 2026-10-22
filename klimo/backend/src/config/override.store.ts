@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Db } from '../db/database';
 import { OverrideRow } from '../db/entities';
 import { deepClone } from '../shared/defaults';
-import { overrideGroupOf } from '../shared/model';
+import { isHeldOverride, overrideGroupOf } from '../shared/model';
 import type { ClockPort, EpochMs, Id, IOverrideStore, Override, OverrideGroup } from '../shared/model';
 import { CLOCK } from '../tokens';
 
@@ -86,9 +86,13 @@ export class OverrideStore implements IOverrideStore {
     const o: Override = { ...deepClone(input), group: overrideGroupOf(input.kind) };
     const replaced = [...this.rows.values()].filter((x) => x.scope === o.scope && x.subjectId === o.subjectId && x.group === o.group && x.id !== o.id);
     if (replaced.length && !o.previous?.override) {
-      // keep one level of history: undo restores the override this one replaced, not the whole chain
+      // keep one level of history: undo restores the override this one replaced, not the whole chain —
+      // except a held change (manual control, room off) under it, which the room goes back to when the
+      // temporary change ends
       const prev = replaced.sort((a, b) => b.createdAt - a.createdAt)[0];
-      o.previous = { override: { ...deepClone(prev), previous: null }, profileRow: o.previous?.profileRow ?? null };
+      const under = prev.previous?.override ?? null;
+      const keep = !isHeldOverride(prev) && under && isHeldOverride(under) ? { override: { ...deepClone(under), previous: null }, profileRow: null } : null;
+      o.previous = { override: { ...deepClone(prev), previous: keep }, profileRow: o.previous?.profileRow ?? null };
     }
     const existed = this.rows.has(o.id);
     await this.db.tx(async (em) => {

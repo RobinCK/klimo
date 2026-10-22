@@ -274,7 +274,7 @@ async function openNotify(opts = {}) {
   };
 
   const texts = new TextsService(config, clock, ha, moduleRef);
-  const incidents = new IncidentService(db, config, clock, bus, events, ha, journal, moduleRef);
+  const incidents = new IncidentService(db, config, clock, bus, events, ha, journal, moduleRef, texts);
   await incidents.load();
   const health = new ChannelHealth(incidents, config, clock);
   const mobile = new HaMobileChannel(ha, supervisor);

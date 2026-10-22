@@ -41,6 +41,7 @@ import {
 import { adapterLabel, fmtDur, fmtDurSec, sourceKindLabel, sourceTemplateCan, sourceTemplateHint, sourceTemplateHow, t } from '@i18n';
 import { SOURCE_ICON, type SystemData } from '../shared';
 import { applySiblings, draftRows, emptyAdapter, mainEntity, rolePreset, roleLabel, setRole } from './bindings';
+import { bindingHint, type HintSource } from './hints';
 import { PickEntityDialog } from './SourceDialogs';
 
 const ADAPTERS: readonly AdapterType[] = ['relay', 'climate', 'flow', 'script'];
@@ -155,6 +156,7 @@ export function AddSource({ d, phone, onClose, onCreated }: { d: SystemData; pho
 
   const rows = draftRows(draft.adapter, draft.capabilities, draft.energy.powerEntityId);
   const live = new Map((checked ?? []).map((r) => [r.role, r]));
+  const hintSource: HintSource = { kind: draft.kind, adapter: draft.adapter, energy: draft.energy, guards: tpl.defaults.guards };
   const bindingRows: EntityBindingRow[] = rows.map((b) => {
     const c = live.get(b.role);
     const status = !b.entityId ? (b.required ? 'empty' : 'info') : c?.status === 'ok' || !c ? 'ok' : c.status === 'unavailable' ? 'warn' : 'err';
@@ -174,6 +176,7 @@ export function AddSource({ d, phone, onClose, onCreated }: { d: SystemData; pho
             ? t('unavailable')
             : t('check'),
       onPick: () => setPicking(b.role),
+      hint: bindingHint(b.role, hintSource),
     };
   });
 

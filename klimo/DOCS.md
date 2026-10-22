@@ -286,6 +286,12 @@ running and pauses the timers.
 
 ## Season
 
+- The outdoor temperature comes from **Settings → House → Outdoor temperature sensors**: one
+  thermometer or several, combined like a room's — median, average, the coldest, the warmest or the
+  first in the list. The coldest suits a sensor the afternoon sun can reach. A sensor that is
+  unavailable or silent for 30 min is left out; with none left, the last value is held for 30 min,
+  then the weather entity's temperature is used. The 10-minute and 3-day averages are taken over the
+  combined value, hour by hour.
 - In **Auto** the season follows the 3-day average outdoor temperature: heating below 15°, cooling
   above 22°, between seasons in the middle; 1° hysteresis to leave a season, the change has to hold for
   6 hours and a season stays at least a day.
@@ -389,7 +395,7 @@ expired.
 ### Entity watch
 
 Every entity Klimo uses is watched automatically — a source's command entity unavailable for its limit,
-a relay for 1 min, a Zigbee2MQTT bridge offline for 1 min, the outdoor sensor silent for 30 min, room
+a relay for 1 min, a Zigbee2MQTT bridge offline for 1 min, each outdoor sensor silent for 30 min, room
 sensors for 1 h 30 min, window contacts unavailable for 2 h, pumps and valves for 10 min. Add any other
 entity with its own rule (unavailable, silent, offline, not confirmed, or a custom condition).
 
@@ -401,6 +407,17 @@ signal (6-hour median LQI), last report and the entities. **Notify me when**: ba
 connection for longer than 1 h 30 min (mains devices 10 min, integrations 3 min), a valve did not confirm
 after 3 attempts, signal steadily below LQI 60. Zigbee2MQTT instances (several are supported) can resend
 all targets, and do so automatically after a restart.
+
+**Last seen and signal.** The last report is the freshest sign of life of the device: the newest report
+of any of its entities in Home Assistant, or Zigbee2MQTT's own last seen. A sensor that repeats the same
+value changes no state that Home Assistant passes on, so with MQTT available Klimo also listens to the
+Zigbee2MQTT topics: each device message brings its link quality, battery and last seen, and
+`bridge/devices` names the devices. Zigbee2MQTT adds its link-quality and last-seen entities to Home
+Assistant disabled, so this is usually where the signal comes from. Turn on **last seen** in Zigbee2MQTT
+(Settings → Advanced, `advanced.last_seen: ISO_8601`) for exact times, including messages kept by the
+broker while Klimo restarts. Without MQTT, or when Zigbee2MQTT does not send the link quality, the signal
+shows a quiet «—»: unknown, not weak — red is only for a known weak link. A device that is back shows as
+back within seconds and its incident closes at once; going offline still waits for the limits above.
 
 ## Decision journal
 
@@ -493,7 +510,7 @@ recorder:
 | Failure | Behaviour |
 |---|---|
 | A room sensor | Left out; the room is counted from the others; valve readings as the last fallback. |
-| The outdoor sensor | Held 30 min, then the weather entity. The heat pump is never stopped for missing data; the season stays where it is. |
+| An outdoor sensor | Left out; the other outdoor sensors carry on. With none left: held 30 min, then the weather entity. The heat pump is never stopped for missing data; the season stays where it is. |
 | A source | Fault → the next source on the same tick → critical notification → retry after 15 min. |
 | A valve | 3 attempts, a warning, then a background retry every 15 min. |
 | Home Assistant ≤ 2 min | Carry on with the last states. |

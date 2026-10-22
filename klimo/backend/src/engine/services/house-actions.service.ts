@@ -3,15 +3,19 @@ import { notFound, validationError } from '../../common/http';
 import { newToken, uuid } from '../../common/ids';
 import { errorText } from '../../common/logger';
 import { deepClone } from '../../shared/defaults';
-import { HOUSE_DURATIONS, HOUSE_MODES, round1 } from '../../shared/model';
+import { HOUSE_CONTROL_MODES, HOUSE_DURATIONS, HOUSE_MODES, round1 } from '../../shared/model';
 import type {
   ActivationRule,
   Actor,
   ClockPort,
+  ControlOrigin,
   DurationOption,
   EngineConfig,
   EpochMs,
   EvaluateResult,
+  HouseControl,
+  HouseControlRequest,
+  HouseControlResult,
   HouseDuration,
   HouseMode,
   HouseModePreview,
@@ -29,6 +33,7 @@ import type {
   SeasonState,
 } from '../../shared/model';
 import { CLOCK, CONFIG_STORE, OVERRIDE_STORE } from '../../tokens';
+import { heldUnder, houseControlOf, roomControlOf } from '../core/targets';
 import { emptyHouseProfileState, emptySeasonState, isActiveAt, isRunningState, profileOf, profileValues, seasonMode } from './mappers';
 import { revertExpired } from './room-actions.service';
 import { ActionSupport, actorName, EngineAccess, RecentResults, UNDO_MS, UndoLedger } from './support';
@@ -48,6 +53,7 @@ const HOUSE = 'house';
 export class HouseActionsService implements IHouseActions {
   private readonly log = new Logger('HouseActions');
   private readonly recent = new RecentResults<HouseProfileDto>();
+  private readonly recentControl = new RecentResults<HouseControlResult>();
 
   constructor(
     @Inject(CONFIG_STORE) private readonly config: IConfigStore,
@@ -239,6 +245,92 @@ export class HouseActionsService implements IHouseActions {
     }
     await this.access.runNow(reason);
     return { ...this.profile(), revertToken: token, revertUntil };
+  }
+
+  /* ── house control ───────────────────────────────────────────────────────────────────────── */
+
+  control(): HouseControl {
+    return houseControlOf(this.overrides.active(), this.clock.now());
+  }
+
+  /**
+   * manual: the house schedule pauses on the profile active now (rooms keep their own modes).
+   * schedule: «Повернути розклад» for the whole house — the house override and every room's manual or
+   * temporary change go; a room switched off stays off until it is resumed on its own.
+   */
+  async setControl(req: HouseControlRequest, actor: Actor, origin: ControlOrigin | null = null): Promise<HouseControlResult> {
+    const now = this.clock.now();
+    const hit = req.reqId ? this.recentControl.get(req.reqId, now) : undefined;
+    if (hit) return hit;
+    if (!(HOUSE_CONTROL_MODES as readonly string[]).includes(req.mode)) {
+      throw validationError([{ path: 'mode', code: 'enum', params: { values: HOUSE_CONTROL_MODES.join('|') } }]);
+    }
+    const before = this.control().mode;
+    const via = { by: actorName(actor), via: actor.via, entityId: origin?.entityId ?? null };
+    let resumed: Id[] = [];
+    let off: Id[] = [];
+    if (req.mode === 'manual') {
+      if (before !== 'manual') {
+        const cfg = this.config.engineConfig();
+        const profileId = (this.access.engine()?.houseProfile() ?? emptyHouseProfileState(cfg)).activeProfileId;
+        await this.overrides.put(this.houseOverrideOf(profileId, 'none', null, now, actor, req.reqId ?? null));
+        await this.support.record({ code: 'house.control', category: 'system', tone: 'event', params: { mode: 'manual', from: before, profileId, rooms: null, off: null, ...via } });
+      }
+    } else {
+      const removed = await this.overrides.removeGroup('house', HOUSE, 'house_profile');
+      ({ resumed, off } = await this.resumeRooms(actor, origin, now));
+      if (removed || resumed.length) {
+        await this.support.record({
+          code: 'house.control',
+          category: 'system',
+          tone: 'idle',
+          params: { mode: 'schedule', from: before, profileId: null, rooms: resumed.length || null, off: off.length || null, ...via },
+        });
+      }
+    }
+    await this.access.runNow('house.control');
+    const result: HouseControlResult = {
+      control: this.control(),
+      profile: this.access.engine()?.houseProfile() ?? emptyHouseProfileState(this.config.engineConfig()),
+      resumedRoomIds: resumed,
+      offRoomIds: off,
+      reqId: req.reqId ?? null,
+    };
+    if (req.reqId) this.recentControl.set(req.reqId, result, now);
+    return result;
+  }
+
+  /** Every room's own change goes, except a room switched off: that one stays off (a temporary change
+   *  on top of it ends in off too). */
+  private async resumeRooms(actor: Actor, origin: ControlOrigin | null, now: EpochMs): Promise<{ resumed: Id[]; off: Id[] }> {
+    const resumed: Id[] = [];
+    const off: Id[] = [];
+    for (const room of this.config.engineConfig().rooms) {
+      const own = this.overrides.forSubject('room', room.id);
+      const control = roomControlOf(own, room.id, now);
+      if (control.mode === 'schedule') continue;
+      if (control.mode === 'off') {
+        off.push(room.id);
+        continue;
+      }
+      const active = own.find((o) => o.group === 'target' && isActiveAt(o, now)) ?? null;
+      const held = active ? heldUnder(active) : null;
+      await this.overrides.removeGroup('room', room.id, 'target');
+      if (held?.kind === 'room_off') {
+        await this.overrides.put({ ...held, previous: null, revertToken: null, revertUntil: null });
+        off.push(room.id);
+        continue;
+      }
+      resumed.push(room.id);
+      await this.support.record({
+        code: control.mode === 'manual' ? 'room.control' : 'room.override_cleared',
+        category: 'rooms',
+        tone: 'idle',
+        params: { mode: 'schedule', from: control.mode, kind: active?.kind ?? null, by: actorName(actor), via: actor.via, entityId: origin?.entityId ?? null },
+        roomId: room.id,
+      });
+    }
+    return { resumed, off };
   }
 
   /* ── house mode ──────────────────────────────────────────────────────────────────────────── */

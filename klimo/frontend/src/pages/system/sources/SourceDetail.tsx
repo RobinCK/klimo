@@ -35,6 +35,7 @@ import { conditionText } from '../conditions';
 import { isRunning, SOURCE_ICON, sourceChip, type SystemData } from '../shared';
 import { applySiblings, mainEntity, modeMapText, rolePreset, roleLabel, setpointText, setRole, withOptionalRows, emptyAdapter } from './bindings';
 import { ConditionDrawer, DeleteDialog, DuplicateDialog, EditDialog, EnergyDialog, GuardsDialog, LockDialog, PickEntityDialog } from './SourceDialogs';
+import { bindingHint, controlHint, hvacProofHint, modesHint, setpointHint, type HintSource } from './hints';
 
 type DialogKind = 'lock' | 'edit' | 'duplicate' | 'delete' | 'energy' | 'guards';
 
@@ -108,6 +109,7 @@ export function SourceDetail({ d, dto, phone }: { d: SystemData; dto: SourceDto;
   const adapterType = draftAdapter ?? cfg.adapter.type;
   const adapter = draftAdapter && draftAdapter !== cfg.adapter.type ? emptyAdapter(draftAdapter) : cfg.adapter;
   const rows = draftAdapter && draftAdapter !== cfg.adapter.type ? [] : withOptionalRows(state.bindings, cfg.adapter);
+  const hintSource: HintSource = { kind: cfg.kind, adapter, energy: cfg.energy, guards: cfg.guards };
   const pick = async (role: string, entityId: string | null) => {
     setPicking(null);
     let next = setRole(adapter, cfg.energy, role, entityId);
@@ -144,6 +146,7 @@ export function SourceDetail({ d, dto, phone }: { d: SystemData; dto: SourceDto;
             : 'err') as EntityBindingRow['status'],
       statusLabel: b.status === 'unset' && !b.required ? undefined : STATUS_LABEL(b.status),
       onPick: editable ? () => setPicking(b.role) : undefined,
+      hint: bindingHint(b.role, hintSource),
     })),
   ];
   if (draftAdapter && draftAdapter !== cfg.adapter.type) {
@@ -161,15 +164,16 @@ export function SourceDetail({ d, dto, phone }: { d: SystemData; dto: SourceDto;
         status: 'empty',
         statusLabel: t('choose'),
         onPick: () => setPicking(r),
+        hint: bindingHint(r, hintSource),
       });
     }
   }
   const modes = modeMapText(adapter);
-  if (modes) bindingRows.push({ role: t('Modes'), value: modes, mono: false, status: 'info' });
+  if (modes) bindingRows.push({ role: t('Modes'), value: modes, mono: false, status: 'info', hint: modesHint() });
   const setpoint = setpointText(adapter);
-  if (setpoint) bindingRows.push({ role: t('What it is given'), value: setpoint, mono: false, status: 'info' });
+  if (setpoint) bindingRows.push({ role: t('What it is given'), value: setpoint, mono: false, status: 'info', hint: setpointHint(adapter) });
   if (adapter.confirm.kind === 'hvac_action')
-    bindingRows.push({ role: t('Proof it runs'), value: t('the thermostat reports heating or cooling'), mono: false, status: 'info' });
+    bindingRows.push({ role: t('Proof it runs'), value: t('the thermostat reports heating or cooling'), mono: false, status: 'info', hint: hvacProofHint() });
   if (adapter.confirm.kind === 'readback' && !rows.some((r) => r.role === 'confirm' && r.entityId)) {
     bindingRows.push({
       role: t('Proof it runs'),
@@ -177,6 +181,8 @@ export function SourceDetail({ d, dto, phone }: { d: SystemData; dto: SourceDto;
       mono: false,
       status: 'warn',
       statusLabel: t('weak proof'),
+      // a new way of control has no binding row of its own to explain it yet
+      hint: rows.some((r) => r.role === 'confirm') ? undefined : bindingHint('confirm', hintSource),
     });
   }
 
@@ -358,6 +364,7 @@ export function SourceDetail({ d, dto, phone }: { d: SystemData; dto: SourceDto;
           level={3}
           title={t('Control from Home Assistant')}
           subtitle={t('how {product} switches this source and how it knows it really runs', { product: brand.productName })}
+          hint={controlHint()}
         >
           <Stack gap="md">
             <SegmentedControl<AdapterType>

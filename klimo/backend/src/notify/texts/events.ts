@@ -76,7 +76,7 @@ function sensorAction(v: Vars, lang: 0 | 1): Action {
       ['temperature from {left|other sensor|other sensors}', 'температуру рахую з {left|іншого датчика|інших датчиків|інших датчиків}'][lang],
     ];
   }
-  if (v.fallback === 'trv') {
+  if (v.tempFrom === 'trv') {
     return [['No other sensors — the temperature comes from the radiator valves.', 'Інших датчиків немає — беру температуру з головок.'][lang], ['temperature from the radiator valves', 'беру температуру з головок'][lang]];
   }
   if (has(v, 'safeC')) {
@@ -183,7 +183,7 @@ function trvLine(v: Vars, lang: 0 | 1): string {
   return retrying(v) ? head + [' — retry {attempt} of {of}', ' — повтор {attempt} з {of}'][lang] : head + [' — retrying in the background', ' — повторюю у фоні'][lang];
 }
 
-/** The open window by name; with several open, the one open longest «and N more». */
+/** The open window by name; with several open, the first of them «and N more». */
 function windowTitle(v: Vars, lang: 0 | 1): string {
   if (!has(v, 'device')) return ['{room}: window open {duration}', '{room}: вікно відкрите {duration}'][lang];
   const more = n(v, 'openCount') - 1;
@@ -550,6 +550,7 @@ export const SYSTEM_TEXTS = {
   escalation: ['No response: {title}', 'Без відповіді: {title}'],
   escalationNote: ['Nobody pressed «Got it» for {minutes}.', 'Ніхто не натиснув «Бачу» за {minutes}.'],
   groupDefault: ['{kind:event}: {n|message|messages}', '{kind:event}: {n|повідомлення|повідомлення|повідомлень}'],
+  entityRef: ['Entity {entity:raw}.', 'Сутність {entity:raw}.'],
   digestTitle: ['While you were asleep', 'Поки ви спали'],
   digestOpen: ['Still open — {n|problem|problems}:', 'Ще відкрито — {n|проблема|проблеми|проблем}:'],
   digestEvents: ['Events:', 'Події:'],

@@ -1,8 +1,8 @@
-import type { CircuitDto, HouseState, PlantState, SourceDto, TodayDto } from '@api/model';
+import type { CircuitDto, HouseState, OutdoorReadout, PlantState, SourceDto, TodayDto } from '@api/model';
 import { AutoGrid, Button, LoopTile, ProfileSwatch, RelativeTime, Row, RuntimeBar24h, Stack, StatTile, ToneBadge } from '@ui';
 import { paths } from '@app';
 import type { NameDirectory } from '@data';
-import { fmtDur, fmtTemp, renderReason, startOfLocalDay, t, type CodeContext } from '@i18n';
+import { aggregationLabel, fmtDur, fmtTemp, renderReason, startOfLocalDay, t, type CodeContext } from '@i18n';
 import { energyLine, isRunning, profileOrigin, seasonBadge, sourcesTile } from './house';
 import type { ProfileSwitch } from './useProfileSwitch';
 
@@ -14,6 +14,8 @@ interface Props {
   circuits: readonly CircuitDto[] | undefined;
   sw: ProfileSwitch;
   ctx: NameDirectory;
+  /** The outdoor sensors behind the value (null until the overview has loaded). */
+  outdoor?: OutdoorReadout | null;
 }
 
 function SourcesTile({ house, plant, today, sources, ctx }: Props) {
@@ -100,21 +102,25 @@ function LoopsTile({ plant, circuits, ctx }: Props) {
   );
 }
 
-function OutdoorTile({ house }: Props) {
+/** «мінімум з 2 датчиків», or how many of them are silent; nothing for a single sensor. */
+function outdoorSensorsLine(r: OutdoorReadout | null | undefined): string | null {
+  if (!r || r.sensors.length < 2) return null;
+  const silent = r.sensors.filter((x) => x.status !== 'ok').length;
+  if (silent) return t('{n} of {count} sensors silent', { n: silent, count: r.sensors.length });
+  return t('{method} of {count} sensors', { method: aggregationLabel(r.method).toLowerCase(), count: r.sensors.length });
+}
+
+function OutdoorTile({ house, outdoor }: Props) {
   const s = house.season;
   const badge = seasonBadge(house);
+  const avg = s.avgC != null ? t('{count}-day average {t}', { count: s.rule.avgDays, t: fmtTemp(s.avgC) }) : s.outdoorSource === 'none' ? t('no outdoor sensor') : null;
+  const sub = [avg, outdoorSensorsLine(outdoor)].filter(Boolean).join(' · ');
   return (
     <StatTile
       title={t('Outdoor')}
       icon="thermometer"
       value={fmtTemp(s.outdoorC)}
-      sub={
-        s.avgC != null
-          ? t('{count}-day average {t}', { count: s.rule.avgDays, t: fmtTemp(s.avgC) })
-          : s.outdoorSource === 'none'
-            ? t('no outdoor sensor')
-            : undefined
-      }
+      sub={sub || undefined}
       to={paths.system()}
       footer={<ToneBadge tone={badge.tone}>{badge.text}</ToneBadge>}
     />

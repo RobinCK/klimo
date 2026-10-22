@@ -47,6 +47,7 @@ import type {
   TriggerRule,
   TriggerState,
 } from '../../shared/model';
+import { roomControlOf } from '../core/targets';
 import { dowOfDate } from '../core/time';
 
 /* =====================================================================================================
@@ -381,7 +382,7 @@ export function emptyRoomState(cfg: EngineConfig, room: RoomConfig, now: EpochMs
 }
 
 /** Card-sized summary of a room (Overview grid, rooms list, room tabs). */
-export function toRoomSummary(cfg: EngineConfig, room: RoomConfig, state: RoomState, overrides: readonly Override[], season: Season | null): RoomSummary {
+export function toRoomSummary(cfg: EngineConfig, room: RoomConfig, state: RoomState, overrides: readonly Override[], season: Season | null, now: EpochMs = state.updatedAt): RoomSummary {
   const t = state.target;
   const cooling = t.mode === 'cool' || state.demand.mode === 'cool' || (t.mode !== 'heat' && season === 'cooling');
   const tol = t.mode === 'cool' ? room.tolerance.cool : room.tolerance.heat;
@@ -436,6 +437,7 @@ export function toRoomSummary(cfg: EngineConfig, room: RoomConfig, state: RoomSt
       deltaC,
       since: t.display === 'window' ? state.window.openSince : null,
     },
+    control: roomControlOf(overrides, room.id, now),
     issue: state.issues[0] ?? null,
     issuesCount: state.issues.length,
     canHeat: caps.heat,
@@ -509,6 +511,7 @@ export function toThermostat(cfg: EngineConfig, room: RoomConfig, state: RoomSta
 
 const HA_ENTITY_ROLES: readonly [suffix: string, role: RoomDetailDto['haEntities'][number]['role']][] = [
   ['climate', 'climate'],
+  ['control', 'control'],
   ['temperature', 'temperature'],
   ['humidity', 'humidity'],
   ['target', 'target'],
@@ -536,6 +539,7 @@ export function haEntitiesOf(cfg: EngineConfig, room: RoomConfig, registries: Ha
   const s = room.slug;
   const out: RoomDetailDto['haEntities'] = [
     { entityId: `climate.klimo_${s}`, role: 'climate' },
+    { entityId: `select.klimo_${s}_control`, role: 'control' },
     { entityId: `sensor.klimo_${s}_temperature`, role: 'temperature' },
     { entityId: `sensor.klimo_${s}_target`, role: 'target' },
   ];

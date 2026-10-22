@@ -728,7 +728,11 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
     const link = (d: DeviceSpec) => {
       const battery = entityOfRole(d, 'battery');
       const lqi = entityOfRole(d, 'linkquality');
-      if (lqi) this.ha.report(lqi.entityId, String(this.ha.lqi(d.id)), null, at);
+      if (lqi) {
+        // a fresh link quality goes into the device's next Zigbee2MQTT message even when HA has no entity for it
+        const value = this.ha.lqi(d.id);
+        if (!lqi.disabled) this.ha.report(lqi.entityId, String(value), null, at);
+      }
       const pct = this.ha.batteryPct(d.id, at);
       if (battery && pct !== null) this.ha.report(battery.entityId, String(pct), null, at);
     };

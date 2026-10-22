@@ -177,27 +177,27 @@ test('the sensor-offline and heat-pump messages read word for word', () => {
     openedAt: WED_1910 - 10 * 60_000,
   };
   const s = m.renderIncident(sensor, ctx);
-  assert.equal(s.title, 'Кухня: датчик не на зв’язку');
-  assert.equal(s.body, 'На полиці, 1 год 40 хв без даних (останнє значення о 17:30). Рахую з 2 інших — 20.9°, опалення працює як слід.');
-  assert.equal(m.renderResolved(sensor, ctx), 'Кухня: датчик знову на зв’язку');
+  assert.equal(s.title, 'Кухня · На полиці: не на зв’язку');
+  assert.equal(s.body, 'Немає даних 1 год 40 хв (останнє — 17:30). Температуру рахую з 2 інших датчиків — зараз 20.9°.');
+  assert.equal(m.renderResolved(sensor, ctx), 'Кухня · На полиці: знову на зв’язку');
 
   const hp = { kind: 'source_unavailable', roomId: null, sourceId: 's_hp', entityId: 'climate.heat_pump', deviceKey: null, facts: { minutes: 3, fallbackId: 's_boiler' }, progress: null, openedAt: WED_1910 };
   const h = m.renderIncident(hp, ctx);
   assert.equal(h.title, 'Тепловий насос не відповідає');
-  assert.equal(h.body, 'climate.heat_pump недоступний 3 хв. Опалення перейшло на Газовий котел — у кімнатах тепло.');
+  assert.equal(h.body, 'Сутність climate.heat_pump недоступна 3 хв (з 19:07). Опалення перейшло на Газовий котел — у кімнатах тепло.');
 
   // without a reserve the text says what happens next instead
   const alone = m.renderIncident({ ...hp, facts: { minutes: 3 } }, ctx);
-  assert.equal(alone.body, 'climate.heat_pump недоступний 3 хв. Резерву немає — Klimo повторить спробу.');
+  assert.equal(alone.body, 'Сутність climate.heat_pump недоступна 3 хв (з 19:07). Резерву немає — Klimo повторить спробу.');
 });
 
 test('a missing fact drops its optional part instead of leaving a gap', () => {
   const ctx = ctxOf('uk');
   const sensor = { kind: 'sensor_offline', roomId: 'r_kitchen', sourceId: null, entityId: 'sensor.kitchen_shelf_temperature', deviceKey: null, facts: { left: 2 }, progress: null, openedAt: WED_1910 - 95 * 60_000 };
-  assert.equal(m.renderIncident(sensor, ctx).body, 'На полиці, 1 год 35 хв без даних. Рахую з 2 інших, опалення працює як слід.');
+  assert.equal(m.renderIncident(sensor, ctx).body, 'Немає даних 1 год 35 хв. Температуру рахую з 2 інших датчиків.');
   const trv = { kind: 'trv_not_confirmed', roomId: 'r_bath', sourceId: null, entityId: 'climate.bathroom_towel_trv', deviceKey: null, facts: {}, progress: { attempt: 2, of: 3 }, openedAt: WED_1910 };
-  assert.equal(m.renderIncident(trv, ctx).body, 'Рушникосушка, повтор 2 з 3. Якщо й остання спроба не пройде — повідомлю.');
-  assert.equal(m.renderIncident(trv, ctx).title, 'Ванна: головка не підтвердила');
+  assert.equal(m.renderIncident(trv, ctx).body, 'Ціль ще не підтверджено, повтор 2 з 3. Якщо й остання спроба не пройде — повідомлю.');
+  assert.equal(m.renderIncident(trv, ctx).title, 'Ванна · Рушникосушка: без підтвердження');
 });
 
 test('Lovelace card texts keep the card’s own {t} and {d}', () => {

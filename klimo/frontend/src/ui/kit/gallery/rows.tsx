@@ -212,8 +212,16 @@ function Tables() {
           rows={[
             { role: ut('On / mode'), value: 'climate.heat_pump', mono: true, live: 'heat', status: 'ok', statusLabel: ut('online'), onPick: () => undefined },
             { role: ut('Flow temperature'), value: 'sensor.hp_flow_temperature', mono: true, live: '38.2°', status: 'ok', statusLabel: ut('online') },
-            { role: ut('Power'), value: ut('optional'), mono: false, status: 'info' },
-            { role: ut('Fault'), value: ut('choose an entity'), mono: false, status: 'empty', statusLabel: ut('choose'), onPick: () => undefined },
+            { role: ut('Power'), value: ut('optional'), mono: false, status: 'info', hint: ut('The measured power of the source.') },
+            {
+              role: ut('Fault'),
+              value: ut('choose an entity'),
+              mono: false,
+              status: 'empty',
+              statusLabel: ut('choose'),
+              onPick: () => undefined,
+              hint: { title: ut('The error code the device reports.'), text: [{ lead: ut('If empty:'), text: ut('device errors are not detected.') }] },
+            },
           ]}
         />
       </Item>

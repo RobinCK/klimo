@@ -120,6 +120,8 @@ export type LiveEvents = {
   'source.test': SourceTestResult;
   'notify.sent': SentMessage;
   sync: SyncSlice;
+  /** Keys of devices whose availability or problems changed. */
+  devices: string[];
   reconnect: number;
 };
 export type LiveEventName = keyof LiveEvents;
@@ -464,6 +466,9 @@ export class LiveStore {
       }
       case 'sim':
         this.set({ sim: { ...msg.payload, receivedAt: Date.now() } });
+        return;
+      case 'devices':
+        this.emit('devices', msg.payload.keys);
         return;
     }
   }

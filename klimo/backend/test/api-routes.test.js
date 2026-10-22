@@ -8,6 +8,7 @@ const ROUTES = `
 GET    /api/meta                                             U
 GET    /api/branding                                         U
 GET    /api/settings                                         U
+GET    /api/settings/outdoor                                 U
 PATCH  /api/settings/general                                 A
 PATCH  /api/settings/safety                                  A
 GET    /api/settings/device-health                           U

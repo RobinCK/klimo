@@ -73,7 +73,8 @@ export function InfoHint({ content, subject, label, position = 'top' }: InfoHint
   };
   useEffect(() => clearTimer, []);
 
-  // Escape closes the hint first, not the dialog or drawer around it
+  // Escape closes the hint first, not the dialog or drawer around it (Mantine's overlays skip a
+  // keydown whose target carries data-mantine-stop-propagation)
   useEffect(() => {
     if (!open) return;
     const onKey = (e: globalThis.KeyboardEvent) => {
@@ -114,6 +115,7 @@ export function InfoHint({ content, subject, label, position = 'top' }: InfoHint
           aria-describedby={descId}
           aria-expanded={open}
           data-open={open ? '' : undefined}
+          data-mantine-stop-propagation={open ? 'true' : undefined}
           onClick={() => {
             if (pinned) close();
             else setPinned(true);
@@ -147,6 +149,7 @@ export function InfoHint({ content, subject, label, position = 'top' }: InfoHint
         className={s.dropdown}
         tabIndex={-1}
         aria-hidden
+        data-mantine-stop-propagation="true"
         onMouseEnter={() => hoverTo(true)}
         onMouseLeave={() => hoverTo(false)}
       >

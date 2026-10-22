@@ -260,7 +260,8 @@ export class TextsService implements ITexts {
     if (!entityId && !d.deviceKey) return {};
     const c = this.nameCache();
     const bound = entityId ? c.bound.get(entityId) : undefined;
-    const key = d.deviceKey ?? bound?.deviceKey ?? (entityId ? `entity:${entityId}` : null);
+    const own = bound && !bound.deviceKey.startsWith('entity:') ? bound.deviceKey : null;
+    const key = d.deviceKey ?? own ?? (entityId ? (this.registryDevice(entityId) ?? `entity:${entityId}`) : null);
     const given = typeof f.name === 'string' && f.name.trim() ? f.name.trim() : null;
     const name =
       (key ? c.labels.get(key) : undefined) ??
@@ -282,7 +283,7 @@ export class TextsService implements ITexts {
     }
     if (d.kind === 'sensor_offline' && roomId && role === 'temperature' && f.left === 0) {
       const fallback = this.roomFallback(roomId);
-      if (fallback) out.fallback = fallback;
+      if (fallback) out.tempFrom = fallback;
       if (fallback !== 'trv' && bound?.roomHasTrv && c.safeC !== null) out.safeC = c.safeC;
     }
     if (f.outdoor === true || role === 'outdoor') {
@@ -315,6 +316,15 @@ export class TextsService implements ITexts {
     try {
       const f = this.engine()?.room(roomId)?.aggregation.fallback;
       return f === 'trv' || f === 'no_data' ? f : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** The HA device an entity belongs to (the Devices page groups by it). */
+  private registryDevice(entityId: string): string | null {
+    try {
+      return this.ha.registries().entities.find((e) => e.entity_id === entityId)?.device_id ?? null;
     } catch {
       return null;
     }

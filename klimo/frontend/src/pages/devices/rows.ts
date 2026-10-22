@@ -208,11 +208,21 @@ export interface SignalView {
   bars: 0 | 1 | 2 | 3 | 4 | null;
   weak: boolean;
   label: string;
+  /** Why there is no number (tooltip). */
+  hint?: string;
 }
 
 export function signalView(d: DeviceHealth, health: DeviceHealthSettings | undefined): SignalView {
   if (d.transport.type === 'ha') return { bars: null, weak: false, label: d.transport.network ?? d.transport.integration ?? '—' };
-  if (isOffline(d) || d.lqi == null) return { bars: 0, weak: false, label: '—' };
+  // unknown is not weak: a quiet dash that says where the number would come from
+  if (isOffline(d)) return { bars: 0, weak: false, label: '—', hint: t('No connection, so no link quality right now.') };
+  if (d.lqi == null) {
+    const hint =
+      d.transport.type === 'z2m'
+        ? t('Link quality unknown: its entity is disabled in Home Assistant and Zigbee2MQTT has not reported it over MQTT.')
+        : t('Link quality unknown: its entity is disabled in Home Assistant.');
+    return { bars: 0, weak: false, label: '—', hint };
+  }
   const lqi = Math.round(d.lqi);
   return { bars: signalBars(lqi), weak: lqi < (health?.weakSignal.lqiBelow ?? 60), label: t('LQI {lqi}', { lqi }) };
 }

@@ -31,6 +31,8 @@ export interface EntityFinderProps {
   valueText?: (e: HaEntityDto) => string | null;
   /** A quiet note on a result («already added», «in Bedroom — will be moved»). */
   note?: (e: HaEntityDto) => string | null;
+  /** Why a result cannot be added (it stays in the list, dimmed, with the reason). */
+  blocked?: (e: HaEntityDto) => string | null;
   autoFocus?: boolean;
   /** Shown under the field while the list is closed. */
   help?: string;
@@ -48,7 +50,7 @@ const keep = (ev: MouseEvent) => ev.preventDefault();
  * floating layer to lose on a phone) with what each one is, and a click or Enter adds it. Arrow keys
  * walk through every choice of every result; Escape closes the list, a second Escape clears the text.
  */
-export function EntityFinder({ search, choices, onPick, placeholder, ariaLabel, valueText, note, autoFocus, help }: EntityFinderProps) {
+export function EntityFinder({ search, choices, onPick, placeholder, ariaLabel, valueText, note, blocked, autoFocus, help }: EntityFinderProps) {
   const ut = useUiText();
   const id = useId();
   const listId = `${id}-list`;
@@ -61,7 +63,12 @@ export function EntityFinder({ search, choices, onPick, placeholder, ariaLabel, 
   const input = useRef<HTMLInputElement>(null);
   const { results, state } = useEntityResults(search, query, open);
 
-  const rows = results.map((e) => ({ e, cs: choices(e) })).filter((r) => r.cs.length > 0);
+  const rows = results
+    .map((e) => {
+      const why = blocked?.(e) ?? null;
+      return { e, why, cs: why ? [] : choices(e) };
+    })
+    .filter((r) => r.cs.length > 0 || r.why);
   const options: Option[] = rows.flatMap((r) => r.cs.map((c) => ({ e: r.e, c })));
   const index = new Map(options.map((o, i) => [`${o.e.entityId}|${o.c.value}`, i]));
 
@@ -133,7 +140,7 @@ export function EntityFinder({ search, choices, onPick, placeholder, ariaLabel, 
     );
   };
 
-  const text = (e: HaEntityDto) => {
+  const text = (e: HaEntityDto, why?: string | null) => {
     const meta = [
       e.areaName,
       e.deviceName && e.deviceName !== e.name ? e.deviceName : null,
@@ -141,7 +148,7 @@ export function EntityFinder({ search, choices, onPick, placeholder, ariaLabel, 
     ]
       .filter(Boolean)
       .join(' · ');
-    const extra = note?.(e);
+    const extra = why ?? note?.(e);
     return (
       <span className={s.text}>
         <span className={s.name}>{e.name}</span>
@@ -209,8 +216,13 @@ export function EntityFinder({ search, choices, onPick, placeholder, ariaLabel, 
       </span>
       {open ? (
         <div id={listId} role="listbox" aria-label={ariaLabel ?? placeholder} className={s.list}>
-          {rows.map(({ e, cs }) =>
-            cs.length === 1 ? (
+          {rows.map(({ e, cs, why }) =>
+            why ? (
+              <div key={e.entityId} role="option" aria-selected={false} aria-disabled="true" className={s.row} data-blocked="">
+                {text(e, why)}
+                <span className={s.side}>{value(e)}</span>
+              </div>
+            ) : cs.length === 1 ? (
               option({ e, c: cs[0] }, true, (
                 <>
                   {text(e)}
@@ -245,7 +257,7 @@ export function EntityFinder({ search, choices, onPick, placeholder, ariaLabel, 
               </div>
             ),
           )}
-          {!options.length ? (
+          {!rows.length ? (
             <div className={s.empty}>{state === 'loading' ? ut('Searching…') : state === 'error' ? ut('Search failed — try again') : ut('Nothing found')}</div>
           ) : null}
         </div>

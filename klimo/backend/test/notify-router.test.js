@@ -168,7 +168,7 @@ test('grouping merges three offline sensors into one message', async () => {
     const log = await h.log();
     assert.equal(log.length, 1);
     assert.equal(log[0].title, '3 датчики не на зв’язку');
-    assert.equal(log[0].body, '• Шафа: не на зв’язку\n• Полиця: не на зв’язку\n• Вікно: не на зв’язку');
+    assert.equal(log[0].body, '• Шафа: немає даних 1 год 35 хв\n• Полиця: немає даних 1 год 35 хв\n• Вікно (sensor.c): немає даних 1 год 35 хв');
     // sensor_offline goes to the phone, personal Telegram and the HA panel by default
     assert.deepEqual(log[0].targets.map((x) => x.targetId).sort(), [t.phone.id, t.me.id, t.panel.id].sort());
     // later on, each of them notified counts as delivered for its own recovery
@@ -205,8 +205,9 @@ test('quiet hours: one digest in the morning with what is still open, solved one
     const tg = digests.find((m) => m.targets.some((x) => x.targetId === t.me.id));
     assert.equal(tg.title, 'Поки ви спали');
     assert.match(tg.body, /Ще відкрито — 2 проблеми:/);
-    assert.match(tg.body, /Полиця: не на зв’язку/);
-    assert.match(tg.body, /Вікно: не на зв’язку/);
+    assert.match(tg.body, /• Полиця: немає даних 1 год 35 хв/);
+    // «Вікно» only says what it is: the entity id tells which one
+    assert.match(tg.body, /• Вікно \(sensor\.c\): немає даних 1 год 35 хв/);
     assert.doesNotMatch(tg.body, /Шафа/);
     assert.match(tg.body, /Події:\n• Спрацював тригер «Блекаут»/);
     const phone = digests.find((m) => m.targets.some((x) => x.targetId === t.phone.id));
@@ -355,7 +356,7 @@ test('the preview uses the real templates and the settings show live channel sta
     await house(h);
     const p = h.notify.preview('source_unavailable');
     assert.equal(p.push.title, 'Тепловий насос не відповідає');
-    assert.equal(p.push.body, 'climate.heat_pump недоступний 3 хв. Опалення перейшло на Газовий котел — у кімнатах тепло.');
+    assert.equal(p.push.body, 'Сутність climate.heat_pump недоступна 3 хв (з 19:07). Опалення перейшло на Газовий котел — у кімнатах тепло.');
     assert.deepEqual(p.push.actions, ['Бачу', 'Відкрити Klimo']);
     const w = h.notify.preview('sensor_offline');
     assert.deepEqual(w.telegram.buttons, [['Ігнорувати до ранку', 'Виключити з розрахунку'], ['Відкрити Klimo']]);

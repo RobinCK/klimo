@@ -126,6 +126,7 @@ export function incidentVars(i: IncidentLike, ctx: TextContext, extra: Vars = {}
     entity,
     sensor: subject,
     device: subject,
+    deviceName: name,
     duration: minutes,
     sinceAt: since ?? (num(f.minutes) !== null ? ctx.now - (num(f.minutes) as number) * MINUTE_MS : null),
     lastAt,
@@ -147,13 +148,18 @@ export function eventTexts(kind: EventKind): EventTexts {
   return EVENTS[kind];
 }
 
+const TITLE_MAX = 60;
+
 export function renderEventTexts(kind: EventKind, vars: Vars, ctx: TextContext): IncidentText {
   const t = EVENTS[kind];
-  return {
-    title: clip(renderRow(t.title, vars, ctx), 60),
-    body: renderRow(t.body, vars, ctx),
-    short: renderRow(t.short, vars, ctx),
-  };
+  let title = renderRow(t.title, vars, ctx);
+  let body = renderRow(t.body, vars, ctx);
+  // an entity id would push the state off a lock screen: the title keeps the name, the body says which entity
+  if (title.length > TITLE_MAX && typeof vars.entity === 'string' && vars.device !== vars.deviceName) {
+    title = renderRow(t.title, { ...vars, device: vars.deviceName, sensor: vars.deviceName }, ctx);
+    if (!body.includes(vars.entity)) body = `${renderRow(SYSTEM_TEXTS.entityRef, { entity: vars.entity }, ctx)} ${body}`;
+  }
+  return { title: clip(title, TITLE_MAX), body, short: renderRow(t.short, vars, ctx) };
 }
 
 export function renderIncident(i: IncidentLike, ctx: TextContext, extra: Vars = {}): IncidentText {

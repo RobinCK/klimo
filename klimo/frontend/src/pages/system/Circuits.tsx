@@ -26,6 +26,7 @@ import {
 } from '@ui';
 import { circuitKindLabel, fmtDur, fmtTemp, fmtTime, pumpGroupModeLabel, t } from '@i18n';
 import type { SystemData } from './shared';
+import { flowSensorHint, mixingHeatHint, mixingValveHint, pumpHint, pumpRuleHint, returnSensorHint, runOnHint } from './circuitHints';
 
 const RULES: readonly PumpRule[] = ['rooms', 'source', 'both'];
 
@@ -135,6 +136,8 @@ function CircuitItem({ d, dto, dewMargin, onEdit }: { d: SystemData; dto: Circui
         extra={extra || undefined}
         chip={pumpChip(dto, d.now)}
         ruleLabel={t('The pump runs when')}
+        pumpHint={pumpHint(first?.minOnSec ?? null)}
+        ruleHint={pumpRuleHint({ rooms: ruleText('rooms'), source: ruleText('source'), both: ruleText('both') })}
         rule={{
           ariaLabel: t('When the pump of {circuit} runs', { circuit: label }),
           value: rule.value,
@@ -153,6 +156,7 @@ function CircuitItem({ d, dto, dewMargin, onEdit }: { d: SystemData; dto: Circui
           onChange: (v) => runOn.set(v),
           ariaDec: t('Shorter run-on for {circuit}', { circuit: label }),
           ariaInc: t('Longer run-on for {circuit}', { circuit: label }),
+          hint: runOnHint(),
         }}
         chips={chips}
         note={circuitNote(dto, rule.value, runOn.value, dewMargin)}
@@ -280,7 +284,7 @@ function CircuitDrawer({ d, dto, onClose }: { d: SystemData; dto: CircuitDto | n
             />
           </Stack>
         </Section>
-        <Section variant="plain" level={3} subtitle={t('Flow sensor')}>
+        <Section variant="plain" level={3} subtitle={t('Flow sensor')} hint={flowSensorHint(d.settings.data?.safety.frostSupplyAlertC ?? null, draft.capabilities.cool)}>
           <EntityPicker
             ariaLabel={t('Flow sensor')}
             placeholder={t('Flow temperature sensor (optional)')}
@@ -290,7 +294,7 @@ function CircuitDrawer({ d, dto, onClose }: { d: SystemData; dto: CircuitDto | n
             onChange={(id) => set({ supply: { ...draft.supply, sensorEntityId: id } })}
           />
         </Section>
-        <Section variant="plain" level={3} subtitle={t('Return sensor')}>
+        <Section variant="plain" level={3} subtitle={t('Return sensor')} hint={returnSensorHint()}>
           <EntityPicker
             ariaLabel={t('Return sensor')}
             placeholder={t('Return temperature sensor (optional)')}
@@ -300,7 +304,7 @@ function CircuitDrawer({ d, dto, onClose }: { d: SystemData; dto: CircuitDto | n
             onChange={(id) => set({ supply: { ...draft.supply, returnEntityId: id } })}
           />
         </Section>
-        <Section variant="plain" level={3} subtitle={t('Mixing valve')}>
+        <Section variant="plain" level={3} subtitle={t('Mixing valve')} hint={mixingValveHint()}>
           <EntityPicker
             ariaLabel={t('Mixing valve')}
             placeholder={t('Mixing valve number entity (optional)')}
@@ -316,6 +320,7 @@ function CircuitDrawer({ d, dto, onClose }: { d: SystemData; dto: CircuitDto | n
           <Stepper
             variant="compact"
             label={t('Valve mixes the heating flow down to')}
+            hint={mixingHeatHint()}
             value={draft.mixingValve.heatC}
             text={fmtTemp(draft.mixingValve.heatC, { decimals: 0 })}
             min={20}
@@ -380,7 +385,7 @@ function PumpsEditor({ d, dto }: { d: SystemData; dto: CircuitDto }) {
   const remove = useMutation((id: Id) => api.pumps.remove(id), { onSuccess: () => void d.circuits.reload(), okToast: t('Pump removed') });
   const exercise = useMutation((id: Id) => api.pumps.exercise(id), { okToast: t('The pump runs for a minute now') });
   return (
-    <Section variant="plain" level={3} title={t('Pumps')}>
+    <Section variant="plain" level={3} title={t('Pumps')} hint={pumpHint(first?.minOnSec ?? null)}>
       <Stack gap="md">
         {dto.pumps.map((p) => (
           <Section key={p.id} variant="well" level={3} title={p.name} subtitle={p.entityId}>

@@ -224,7 +224,8 @@ export function matchesRole(role: EntityRolePreset, f: EntityFacts, siblingRoles
     case 'binary':
       return f.domain === 'binary_sensor';
     case 'outdoor':
-      return isOutdoorSensor(f);
+      // any thermometer may hang outside (a south wall, the garden); the ones that say so rank first
+      return isTemperatureSensor(f);
     case 'person':
       return f.domain === 'person';
     case 'calendar':

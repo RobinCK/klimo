@@ -82,7 +82,7 @@ test('watch detections: thresholds, dedup keys shared with device health, and th
     h.incidents.ingest(ds, h.clock.now());
     await h.router.idle();
     const inc = h.incidents.list({ scope: 'all' }).find((i) => i.kind === 'source_unavailable');
-    assert.equal(h.texts.incident(inc).body, 'climate.heat_pump недоступний 4 хв. Опалення перейшло на Газовий котел — у кімнатах тепло.');
+    assert.equal(h.texts.incident(inc).body, 'Сутність climate.heat_pump недоступна 4 хв (з 19:08). Опалення перейшло на Газовий котел — у кімнатах тепло.');
 
     // fixed: one inactive detection, then silence
     h.ha.set('climate.heat_pump', 'heat');

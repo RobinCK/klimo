@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { AggregationMethod, DiscoveryCandidate, HaEntityDto, ProfileDto, TrvStrategy, WindowReaction, WizardDeviceRole } from '@api/model';
 import { AGGREGATION_METHODS, TRV_STRATEGIES } from '@api/model';
-import { useEntitySearch } from '@data';
+import { useEntitySearch, useLayout } from '@data';
 import {
   AreaSelect,
   AutoGrid,
@@ -90,6 +90,16 @@ const SECTION_SEARCH: Record<SectionKey, WizardDeviceRole> = {
 };
 
 const choice = (role: WizardDeviceRole): EntityFinderChoice => ({ value: role, label: roleLabel(role), icon: ROLE_ICON[role] });
+
+/** The roles a source's own climate or relay cannot take as well (the server refuses them too). */
+const DRIVEN: readonly WizardDeviceRole[] = ['trv', 'ac', 'heater', 'floor_zone'];
+
+/** A result a source already switches: shown, but it cannot become a room's device. */
+function sourceBlock(e: HaEntityDto): string | null {
+  const source = e.usedBy.find((u) => u.type === 'source');
+  if (!source || !(e.wizard?.suggested ?? []).every((r) => DRIVEN.includes(r))) return null;
+  return t('the source «{source}» switches it — it cannot be a room device too', { source: source.label });
+}
 
 /** The role a result takes in a block: the entity's own likeliest one that fits the block. */
 function roleIn(e: HaEntityDto, k: SectionKey): WizardDeviceRole {
@@ -209,6 +219,7 @@ function DeviceSection({ w, k, cands, extras, roomName, rowIssue, focus }: Secti
           <EntityFinder
             search={search}
             choices={(e) => [choice(roleIn(e, k))]}
+            blocked={sourceBlock}
             onPick={(e, role) => {
               w.addDevice(e, role as WizardDeviceRole);
               setAdding(false);
@@ -244,6 +255,8 @@ function DeviceSection({ w, k, cands, extras, roomName, rowIssue, focus }: Secti
 export function StepDevices({ w, ctx }: { w: Wizard; ctx: CodeContext }) {
   const [focusKey, setFocusKey] = useState<SectionKey | null>(null);
   const search = useEntitySearch(null, { wizard: 'any', areaId: w.areaId, limit: 30 });
+  // ready to type on a computer; a phone would throw its keyboard over the list
+  const typeAway = useLayout() !== 'phone';
   const roomName = (id: string) => ctx.room?.(id) ?? id;
   const devices = w.request.devices;
   const found = w.candidates.length;
@@ -253,6 +266,7 @@ export function StepDevices({ w, ctx }: { w: Wizard; ctx: CodeContext }) {
     const issue = i < 0 ? undefined : w.issues.find((x) => x.path === `devices.${i}` || x.path.startsWith(`devices.${i}.`));
     return issue ? wizardIssue(issue, w.request) : undefined;
   };
+  const blocked = (e: HaEntityDto) => sourceBlock(e);
   const added = (e: HaEntityDto) => {
     const roles = devices.filter((d) => d.entityId === e.entityId).map((d) => roleLabel(d.role));
     return roles.length ? t('added as {role}', { role: roles.join(', ') }) : null;
@@ -294,6 +308,8 @@ export function StepDevices({ w, ctx }: { w: Wizard; ctx: CodeContext }) {
         ariaLabel={t('Add a device')}
         valueText={resultValue}
         note={added}
+        blocked={blocked}
+        autoFocus={typeAway && !focusKey}
         help={
           w.areaName
             ? t('Searches all of Home Assistant; what is in «{area}» comes first.', { area: w.areaName })

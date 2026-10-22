@@ -1,10 +1,13 @@
-import { round1 } from '../../shared/model';
+import { isHeldOverride, round1 } from '../../shared/model';
 import type {
+  Actor,
+  ControlSetBy,
   Decision,
   Detection,
   EffectiveTarget,
   EngineConfig,
   EpochMs,
+  HouseControl,
   HouseProfileState,
   Id,
   InputSnapshot,
@@ -15,6 +18,8 @@ import type {
   ResolveHouseProfileFn,
   RoomConfig,
   RoomContext,
+  RoomControl,
+  RoomControlMode,
   RoomMemory,
   SpanEvent,
   TargetAdjustment,
@@ -56,6 +61,61 @@ export function isActiveAt(o: Pick<Override, 'until'>, ts: EpochMs): boolean {
 
 export function houseOverride(cfg: Pick<EngineConfig, 'overrides'>, ts: EpochMs): Override | null {
   return cfg.overrides.find((o) => o.scope === 'house' && o.kind === 'house_profile' && isActiveAt(o, ts)) ?? null;
+}
+
+export function controlSetBy(actor: Actor | null | undefined): ControlSetBy | null {
+  switch (actor?.via) {
+    case 'ui':
+    case 'card':
+    case 'event':
+    case 'automation':
+      return actor.via;
+    case 'ha':
+    case 'voice':
+    case 'mqtt':
+    case 'notification':
+      return 'ha';
+    default:
+      return null;
+  }
+}
+
+/**
+ * The room's target override at `ts`. A temporary change that has just run out hands over to the held
+ * change under it right away (the shell writes that row back after the tick), so a manual room never
+ * follows the schedule for a tick in between.
+ */
+export function roomTargetOverride(overrides: readonly Override[], roomId: Id, ts: EpochMs): Override | null {
+  let back: Override | null = null;
+  for (const o of overrides) {
+    if (o.scope !== 'room' || o.subjectId !== roomId || o.group !== 'target') continue;
+    if (isActiveAt(o, ts)) return o;
+    back = back ?? heldUnder(o);
+  }
+  return back;
+}
+
+/** The room's control mode from its target override (see RoomControlMode). */
+export function roomControlOf(overrides: readonly Override[], roomId: Id, ts: EpochMs): RoomControl {
+  const o = roomTargetOverride(overrides, roomId, ts);
+  if (!o) return { mode: 'schedule', since: null, until: null, setBy: null };
+  const held = isHeldOverride(o);
+  const mode: RoomControlMode = held ? (o.kind === 'room_off' ? 'off' : 'manual') : 'temporary';
+  return { mode, since: o.createdAt, until: held ? null : o.until, setBy: controlSetBy(o.by) };
+}
+
+/** House control: the house profile held with no end pauses the house schedule. */
+export function houseControlOf(overrides: readonly Override[], ts: EpochMs): HouseControl {
+  const o = houseOverride({ overrides: overrides as Override[] }, ts);
+  return o && o.until === null ? { mode: 'manual', since: o.createdAt } : { mode: 'schedule', since: null };
+}
+
+/** The held change a temporary one replaced (kept one level down so a boost on a manual room ends in manual). */
+export function heldUnder(o: Override): Override | null {
+  const prev = o.previous?.override ?? null;
+  if (prev && isHeldOverride(prev)) return prev;
+  const deeper = prev?.previous?.override ?? null;
+  return deeper && isHeldOverride(deeper) ? deeper : null;
 }
 
 /** The room's active override of one group (target / airing / window_ignore). */
@@ -173,9 +233,11 @@ export function houseOpinion(cfg: EngineConfig, inputs: InputSnapshot): {
   if (hs && hs.enabled) nextProfileId = scheduleChanges(cfg, hs, now, now + 7 * DAY_MS, tz)[0]?.profileId ?? null;
   const override = houseOverride(cfg, now);
   const scheduled = { profileId: scheduledProfile?.profileId ?? null, until: scheduledProfile?.until ?? null, nextProfileId };
+  // house manual control (no end) holds against calendar and presence too, whatever the priority order
+  const held = override !== null && override.until === null;
 
   for (const key of cfg.house.priority) {
-    if (key === 'manual' && override && override.value.kind === 'house_profile' && profileById(cfg, override.value.profileId)) {
+    if ((key === 'manual' || held) && override && override.value.kind === 'house_profile' && profileById(cfg, override.value.profileId)) {
       return { winner: { profileId: override.value.profileId, layer: 'house_manual', until: override.until, startedAt: override.createdAt }, scheduled, override };
     }
     if (key === 'calendar') {
@@ -320,7 +382,7 @@ export function scheduledBaseAt(cfg: EngineConfig, roomId: Id | null, ts: EpochM
   const rs = roomId ? roomSchedule(cfg, roomId) : null;
   const hs = houseSchedule(cfg);
   for (const key of cfg.house.priority) {
-    if (key === 'manual' && ho && ho.value.kind === 'house_profile' && profileById(cfg, ho.value.profileId)) {
+    if ((key === 'manual' || ho?.until === null) && ho && ho.value.kind === 'house_profile' && profileById(cfg, ho.value.profileId)) {
       return { profileId: ho.value.profileId, layer: 'house_manual', display: 'schedule', until: ho.until };
     }
     if (key === 'room_schedule' && rs) {
@@ -446,7 +508,7 @@ export function resolveRoomTarget(cfg: EngineConfig, room: RoomConfig, inputs: I
   const frostFloorC = frostFloorOf(cfg, room);
   const adjustments: TargetAdjustment[] = [];
   const base = roomBaseNow(cfg, room, inputs, ctx.house);
-  const targetOverride = roomOverride(cfg, room.id, 'target', now);
+  const targetOverride = roomTargetOverride(cfg.overrides, room.id, now);
 
   const empty = (layer: TargetLayer, display: TargetDisplayKind): RoomTargetResult => ({
     target: {
@@ -474,8 +536,10 @@ export function resolveRoomTarget(cfg: EngineConfig, room: RoomConfig, inputs: I
   });
   if (!room.controlEnabled) return empty('monitor', 'monitor');
 
-  // does the room's own override beat the layer the base profile came from?
-  const manualWins = targetOverride !== null && priorityIndex(cfg, 'manual') <= priorityIndex(cfg, LAYER_KEY[base.layer]);
+  // does the room's own override beat the layer the base profile came from? A held one always does:
+  // manual control means no profile layer moves the room until the schedule is resumed
+  const manualWins =
+    targetOverride !== null && (isHeldOverride(targetOverride) || priorityIndex(cfg, 'manual') <= priorityIndex(cfg, LAYER_KEY[base.layer]));
   let profileId = base.profileId;
   let layer: TargetLayer = base.layer;
   let display: TargetDisplayKind = base.display;

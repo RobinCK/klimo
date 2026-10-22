@@ -245,7 +245,8 @@ valve on a weak signal, a battery running low with an estimate of how long it la
 
 ![Settings](docs/screenshots/settings.png)
 
-The outdoor sensor and weather entity, units (°C or °F, Klimo counts in °C inside), the language of
+The outdoor sensors (one or several, combined like a room's — the coldest suits one the sun reaches)
+and the weather entity, units (°C or °F, Klimo counts in °C inside), the language of
 notifications and cards, the panel language and colour scheme, how long a target set in Home
 Assistant lasts, defaults for new rooms, the MQTT and Home Assistant status, the dashboard cards, and
 backup and restore of the whole configuration as one file.
@@ -389,7 +390,7 @@ Messages are written in the notification language you pick in Settings, whatever
 | **A room sensor** | Left out after 90 min without a report; the room is counted from the others and you get a warning. With no sensor left, the radiator valves' own readings (corrected by a learned offset) take over. |
 | **A source** | No confirmation within its timeout, an error code, or unavailable for a few minutes → fault, and the next source in the chain starts on the same tick. A five-second blip never fails over. The source is retried after 15 min and takes the lead back when it recovers. |
 | **A radiator valve** | Every command is checked against what the valve reports; three attempts, then a warning and a quiet retry every 15 min. |
-| **The outdoor sensor** | The last value is held for 30 min, then the weather entity. The heat pump is never stopped for missing data. |
+| **An outdoor sensor** | Left out; the other outdoor sensors carry on. With none left, the last value is held for 30 min, then the weather entity. The heat pump is never stopped for missing data. |
 | **Home Assistant** | Up to 2 min: carry on with the last states. Longer: decide for the UI but send nothing. After 10 min, Klimo's own Telegram bot reports it. On reconnect everything is compared with reality and resent where needed. |
 | **MQTT** | Control is unaffected; the entities show *unavailable* and the cards say *Klimo is offline*. |
 | **Klimo itself** | A boiler relay with a device-side countdown is re-armed every 5 min; if Klimo stops, the relay drops within 15 min instead of heating forever. After a restart, minimum run and pause, pump run-ons and valve retries continue where they were — a boiler switched off a minute before the restart still gets its whole minimum pause. |

@@ -124,17 +124,21 @@ export function BatteryBar({ pct: value, mains, low, stale, label }: BatteryBarP
 /* ---------------------------------- SignalBars ---------------------------------- */
 
 export interface SignalBarsProps {
-  /** 0..4 (Zigbee link quality buckets); null = not a radio device (no bars). */
+  /** 1..4 (Zigbee link quality buckets); 0 = a radio device whose link quality is unknown (a quiet
+   *  dash, no bars — unknown is not bad); null = not a radio device (no bars). */
   bars: 0 | 1 | 2 | 3 | 4 | null;
+  /** A known weak link: the only case drawn in the alarm colour. */
   weak?: boolean;
   /** «LQI 156», «Wi‑Fi», «—». */
   label: string;
+  /** Tooltip: why the value is what it is (e.g. where the link quality would come from). */
+  title?: string;
 }
 
-export function SignalBars({ bars, weak, label }: SignalBarsProps) {
+export function SignalBars({ bars, weak, label, title }: SignalBarsProps) {
   return (
-    <span className={s.signal} data-weak={weak ? '' : undefined} data-none={bars === 0 ? '' : undefined} data-net={bars == null ? '' : undefined}>
-      {bars != null ? (
+    <span className={s.signal} title={title} data-weak={weak ? '' : undefined} data-none={bars === 0 ? '' : undefined} data-net={bars == null ? '' : undefined}>
+      {bars ? (
         <span className={s.signalBars} aria-hidden="true">
           {[1, 2, 3, 4].map((i) => (
             <span key={i} data-on={i <= bars ? '' : undefined} style={{ height: `${i * 3 + 2}px` }} />

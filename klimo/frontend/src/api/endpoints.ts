@@ -84,6 +84,7 @@ import type {
   NotifyTargetCreateRequest,
   NotifyTargetPatch,
   OutdoorHistoryDto,
+  OutdoorReadout,
   OverviewDto,
   PersonalPrefs,
   PlantState,
@@ -208,6 +209,7 @@ export const api = {
   settings: {
     get: () => http.get<SettingsBundle>('/settings'),
     patchGeneral: (p: GeneralSettingsPatch) => http.patch<SettingsBundle>('/settings/general', p),
+    outdoor: () => http.get<OutdoorReadout | null>('/settings/outdoor'),
     patchSafety: (p: SafetySettingsPatch) => http.patch<SettingsBundle>('/settings/safety', p),
     deviceHealth: () => http.get<DeviceHealthSettings>('/settings/device-health'),
     patchDeviceHealth: (p: DeviceHealthPatch) => http.patch<DeviceHealthSettings>('/settings/device-health', p),

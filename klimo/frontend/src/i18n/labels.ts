@@ -36,6 +36,7 @@ import type {
   JournalCategory,
   LockDuration,
   Mode,
+  OutdoorAggregation,
   OverrideKind,
   PriorityKey,
   ProfileKind,
@@ -161,6 +162,15 @@ export const aggregationHint = table<AggregationMethod>(() => ({
   min: t('The coldest sensor decides — no cold corners.'),
   max: t('The warmest sensor decides — no overheated spots.'),
   primary: t('Only the main sensor counts; the others are shown for reference.'),
+}));
+
+/** How several outdoor sensors make one outdoor temperature (labels as for rooms). */
+export const outdoorAggregationHint = table<OutdoorAggregation>(() => ({
+  median: t('The middle value: one sensor in the sun or by a warm wall does not shift it (with two sensors, their average).'),
+  average: t('The mean of the sensors that report.'),
+  min: t('The coldest sensor counts — right for sensors the sun can reach.'),
+  max: t('The warmest sensor counts.'),
+  primary: t('The first sensor in the list counts; the next one steps in while it is silent.'),
 }));
 
 export const humidityMethodLabel = table<HumidityMethod>(() => ({

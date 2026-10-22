@@ -43,6 +43,7 @@ import type {
 } from '../../shared/model';
 import { outdoorSensorIds } from '../../shared/model';
 import { CLOCK, CONFIG_STORE, HA_PORT, HOUSE_ACTIONS, OVERRIDE_STORE, ROOM_ACTIONS, SPAN_STORE } from '../../tokens';
+import { houseControlOf, roomControlOf } from '../core/targets';
 import { addDays, fromLocal, isLocalDate, toLocal } from '../core/time';
 import {
   bindingRows,
@@ -115,7 +116,7 @@ export class ReadModelsService implements IReadModels {
     const now = this.clock.now();
     const overrides = this.overrides.active();
     const season = this.access.engine()?.season().season ?? null;
-    return cfg.rooms.map((room) => toRoomSummary(cfg, room, this.roomState(cfg, room, now), overrides, season));
+    return cfg.rooms.map((room) => toRoomSummary(cfg, room, this.roomState(cfg, room, now), overrides, season, now));
   }
 
   /* ── rooms ───────────────────────────────────────────────────────────────────────────────── */
@@ -137,8 +138,9 @@ export class ReadModelsService implements IReadModels {
       profileTargets: cfg.profileRooms.filter((r) => r.roomId === room.id),
       schedule: roomScheduleOf(cfg, room.id),
       state,
-      summary: toRoomSummary(cfg, room, state, this.overrides.active(), season),
+      summary: toRoomSummary(cfg, room, state, this.overrides.active(), season, now),
       thermostat: this.thermostatOf(cfg, room, state, now),
+      control: roomControlOf(overrides, room.id, now),
       overrides,
       haEntities: haEntitiesOf(cfg, room, this.registries()),
       servedBy: servedByRows(cfg, room),
@@ -459,6 +461,7 @@ export class ReadModelsService implements IReadModels {
       houseName: cfg.settings.houseName,
       season: emptySeasonState(cfg, now),
       profile: emptyHouseProfileState(cfg),
+      control: houseControlOf(this.overrides.active(), now),
       counts: { total: cfg.rooms.length, capable, active: 0, attention: 0, monitorOnly: cfg.rooms.filter((r) => !r.controlEnabled).length },
       verb: 'none',
       leadSourceId: null,

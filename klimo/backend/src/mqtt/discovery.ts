@@ -1,6 +1,6 @@
 import { BRAND } from '../common/brand';
 import { sourceLabels } from '../config/source-labels';
-import { HOUSE_MODES, ROOM_STATES, SEASONS } from '../shared/model';
+import { HOUSE_MODES, ROOM_CONTROL_OPTIONS, ROOM_STATES, SEASONS } from '../shared/model';
 import type {
   Emitter,
   EngineConfig,
@@ -32,7 +32,7 @@ export const TOPIC = {
   card: (roomId: Id) => `klimo/room/${roomId}/card`,
   roomSet: (roomId: Id, what: RoomSetTopic) => `klimo/room/${roomId}/${what}/set`,
   roomPress: (roomId: Id, what: RoomPressTopic) => `klimo/room/${roomId}/${what}/press`,
-  houseSet: (what: 'profile' | 'season_mode') => `klimo/house/${what}/set`,
+  houseSet: (what: 'profile' | 'season_mode' | 'schedule') => `klimo/house/${what}/set`,
   housePress: (what: 'resume') => `klimo/house/${what}/press`,
   source: (sourceId: Id) => `klimo/source/${sourceId}/state`,
   sourceAllowed: (sourceId: Id) => `klimo/source/${sourceId}/allowed/set`,
@@ -43,7 +43,7 @@ export const TOPIC = {
   numberSet: (name: 'bivalent_point') => `klimo/number/${name}/set`,
 } as const;
 
-export type RoomSetTopic = 'mode' | 'temp' | 'temp_low' | 'temp_high' | 'preset';
+export type RoomSetTopic = 'mode' | 'temp' | 'temp_low' | 'temp_high' | 'preset' | 'control';
 export type RoomPressTopic = 'resume' | 'boost';
 
 /** Everything Klimo listens to (configuration-level topics only while those entities are published). */
@@ -135,6 +135,8 @@ const NAMES = {
   alerts: ['Alerts', 'Сповіщення'],
   power_used: ['Power used', 'Споживання'],
   resume_schedule: ['Resume schedule', 'Повернути розклад'],
+  schedule: ['Follow schedule', 'За розкладом'],
+  control: ['control', 'керування'],
   resync: ['Resend targets', 'Переслати цілі'],
   hub: ['Hub', 'Хаб'],
   reply: ['Reply', 'Відповідь'],
@@ -419,6 +421,23 @@ export function buildDiscovery(input: DiscoveryInput): DiscoveredEntity[] {
       read: fromHouse('power_kw'),
     });
   }
+  // everyday control: never behind the configuration-entities opt-in
+  c.add({
+    component: 'switch',
+    uniqueId: 'klimo_schedule',
+    object: 'klimo_schedule',
+    role: 'schedule',
+    name: label('schedule', lang),
+    config: {
+      icon: 'mdi:calendar-clock',
+      state_topic: house,
+      value_template: json('schedule'),
+      command_topic: TOPIC.houseSet('schedule'),
+      json_attributes_topic: house,
+      json_attributes_template: jsonAttrs('schedule_attrs'),
+    },
+    read: fromHouse('schedule', field('schedule_attrs')),
+  });
   c.add({
     component: 'button',
     uniqueId: 'klimo_resume_schedule',
@@ -748,6 +767,24 @@ function addRoom(c: Catalogue, input: DiscoveryInput, room: RoomConfig): void {
       value_template: json('state'),
     },
     read: fromRoom('state'),
+  });
+  c.add({
+    component: 'select',
+    uniqueId: `klimo_${rid}_control`,
+    object: `klimo_${slug}_control`,
+    role: 'control',
+    roomId: rid,
+    name: named('control'),
+    config: {
+      icon: 'mdi:hand-back-right-outline',
+      options: [...ROOM_CONTROL_OPTIONS],
+      state_topic: state,
+      value_template: json('control'),
+      command_topic: TOPIC.roomSet(rid, 'control'),
+      json_attributes_topic: state,
+      json_attributes_template: jsonAttrs('control_attrs'),
+    },
+    read: fromRoom('control', field('control_attrs')),
   });
   c.add({
     component: 'button',

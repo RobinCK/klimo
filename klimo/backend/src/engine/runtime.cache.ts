@@ -21,6 +21,7 @@ import type {
   SourceTestResult,
 } from '../shared/model';
 import { BUS, EVENTS, INCIDENTS, READ_MODELS } from '../tokens';
+import { houseControlOf } from './core/targets';
 
 /* =====================================================================================================
  * The engine's live state as everybody else reads it: the house headline, rooms, the plant. After each
@@ -64,6 +65,7 @@ export function buildHouseState(cfg: EngineConfig, r: Pick<EvaluateResult, 'room
     houseName: cfg.settings.houseName,
     season: r.season,
     profile: r.houseProfile,
+    control: houseControlOf(cfg.overrides, x.now),
     counts: { total: cfg.rooms.length, capable: capableRooms(cfg), active, attention, monitorOnly: cfg.rooms.filter((x2) => !x2.controlEnabled).length },
     verb,
     leadSourceId: plant.lead.heat ?? plant.lead.cool,

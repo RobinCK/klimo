@@ -78,6 +78,9 @@ function useDevicesData() {
   const z2m = useResource('z2m', api.z2m.list, { reloadOn: ['z2m_instance'] });
   const reloadSoon = useSoon(devices.reload);
   useLiveEvent('incident', reloadSoon);
+  // a device back on the air (or gone) is announced by the server: the row follows within a second
+  const reloadNow = useSoon(devices.reload, 250);
+  useLiveEvent('devices', reloadNow);
   // last-seen times, batteries and link quality change without any event: refresh every minute
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -119,7 +122,7 @@ function Summary({ summary, devices, ctx, phone }: { summary: DevicesSummary; de
         variant="summary"
         title={t('Weakest signal')}
         value={summary.weakest ? t('LQI {lqi}', { lqi: Math.round(summary.weakest.lqi) }) : '—'}
-        sub={weakest ? deviceTitle(weakest, ctx) : t('no Zigbee devices')}
+        sub={weakest ? deviceTitle(weakest, ctx) : devices.some((d) => d.transport.type !== 'ha') ? t('not reported') : t('no Zigbee devices')}
         to={weakest ? paths.device(weakest.key) : undefined}
       />
       <StatTile
@@ -215,7 +218,7 @@ export default function DevicesPage(): JSX.Element {
       model: d.model ?? d.manufacturer ?? '—',
       state: stateChip(d, names, now),
       battery: <BatteryBar pct={b.pct} mains={b.mains} low={b.low} stale={b.stale} label={b.label} />,
-      signal: <SignalBars bars={s.bars} weak={s.weak} label={s.label} />,
+      signal: <SignalBars bars={s.bars} weak={s.weak} label={s.label} title={s.hint} />,
       seen: seenView(d, now),
       via: viaOf(d, names),
       problem: d.problems.length > 0 && !d.ignored,
