@@ -3,11 +3,11 @@
  * how every room is — plus the house profile switch. Phones get their own layout: a summary
  * card, one attention line and compact room rows.
  */
-import { useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { HouseState, PlantState, SourceDto } from '@api/model';
 import { api } from '@api/endpoints';
 import { useCodeContext, useHouse, useIncidents, useLayout, useLiveEvent, useMe, useNow, usePlant, useResource, useRoomSummaries, useRoomsLoaded } from '@data';
-import { AutoGrid, Button, Page, ProfileSwatch, RelativeTime, RowList, Row, Section, Skeleton, SourceRow, Stack, StatTile, StatusBanner } from '@ui';
+import { AutoGrid, Button, Page, ProfileTile, RelativeTime, RowList, Row, Section, Skeleton, SourceRow, Stack, StatusBanner } from '@ui';
 import { LogoMark, Wordmark } from '@brand';
 import { HouseSeasonPill, InboxBell, paths } from '@app';
 import { fmtDateTime, fmtDur, fmtTemp, sourceStateLabel, t } from '@i18n';
@@ -30,6 +30,27 @@ function useEvery(ms: number, reload: () => unknown): void {
   }, [ms, reload]);
 }
 
+/**
+ * Reload at most once per `ms`, the last call winning: a pump and its source often start
+ * together, and each start or stop arrives as its own event.
+ */
+function useCoalesced(ms: number, reload: () => unknown): () => void {
+  const timer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (timer.current != null) window.clearTimeout(timer.current);
+    },
+    [],
+  );
+  return useCallback(() => {
+    if (timer.current != null) return;
+    timer.current = window.setTimeout(() => {
+      timer.current = null;
+      void reload();
+    }, ms);
+  }, [ms, reload]);
+}
+
 function useOverviewData() {
   const house = useHouse();
   const rooms = useRoomSummaries();
@@ -40,6 +61,10 @@ function useOverviewData() {
   const me = useMe();
   const overview = useResource('overview', api.overview, { reloadOn: ['settings', 'room', 'source', 'notify_target'] });
   const today = useResource('today', () => api.today(), { reloadOn: ['profile', 'schedule'] });
+  const date = today.data?.date ?? null;
+  const plan = useResource(date ? `house-plan:${date}` : null, () => api.schedules.resolved('house', { date: date ?? undefined }), {
+    reloadOn: ['schedule', 'profile', 'activation_rule'],
+  });
   const sparks = useResource('room-sparks', api.rooms.sparks);
   const attention = useIncidents('attention');
   const sources = useResource('names:sources', api.sources.list, { reloadOn: ['source'] });
@@ -47,8 +72,9 @@ function useOverviewData() {
   useEvery(FIVE_MIN, sparks.reload);
   useEvery(FIVE_MIN, today.reload);
   // a run span opened or closed: the timeline and the runtime bar change
-  useLiveEvent('span', () => void today.reload());
-  return { house, rooms, roomsLoaded, plant, ctx, now, me, overview, today, sparks, attention, sources, circuits };
+  const spanChanged = useCoalesced(5_000, today.reload);
+  useLiveEvent('span', spanChanged);
+  return { house, rooms, roomsLoaded, plant, ctx, now, me, overview, today, plan, sparks, attention, sources, circuits };
 }
 
 type Data = ReturnType<typeof useOverviewData>;
@@ -63,9 +89,11 @@ function Desktop({ d, sw, house }: { d: Data; sw: ProfileSwitch; house: HouseSta
       <SystemTiles house={house} plant={d.plant} today={d.today.data ?? null} sources={d.sources.data} circuits={d.circuits.data} sw={sw} ctx={d.ctx} />
       <ProfileSwitchPanel sw={sw} house={house} ctx={d.ctx} phone={false} />
       <AttentionSection items={d.attention.data ?? []} loading={!d.attention.settled} ctx={d.ctx} now={d.now} onChanged={() => void d.attention.reload()} />
-      <RoomsSection rooms={d.rooms} sparks={d.sparks.data} cooling={cooling} ctx={d.ctx} now={d.now} canEdit={canEdit} />
+      <RoomsSection rooms={d.rooms} loaded={d.roomsLoaded} sparks={d.sparks.data} cooling={cooling} ctx={d.ctx} now={d.now} canEdit={canEdit} />
       <TodaySection
         today={d.today.data ?? null}
+        house={house}
+        plan={d.plan.data ?? null}
         plant={d.plant}
         profiles={sw.profiles}
         sources={d.sources.data}
@@ -121,32 +149,28 @@ function Phone({ d, sw, house }: { d: Data; sw: ProfileSwitch; house: HouseState
         </Row>
       </Row>
       <Section title={headline(house)} subtitle={line || undefined}>
-        <StatTile
-          variant="well"
-          title={t('House profile')}
-          value={
-            <>
-              {profile ? <ProfileSwatch color={profile.color} size={12} shape="round" /> : null}
-              {profile?.name ?? d.ctx.profile?.(id) ?? id}
-            </>
-          }
-          sub={profileOrigin(house, d.ctx)}
-          footer={
-            <Row gap="sm" wrap>
-              <Button variant="secondary" size="sm" onClick={sw.openPanel}>
-                {t('Change')}
-              </Button>
+        <Section
+          variant="plain"
+          level={3}
+          icon="home"
+          title={profile ? <ProfileTile variant="inline" name={profile.name} color={profile.color} /> : (d.ctx.profile?.(id) ?? id)}
+          subtitle={profileOrigin(house, d.ctx)}
+          action={
+            <Row gap="xs" wrap>
               {sw.overridden ? (
                 <Button variant="link" size="sm" onClick={sw.resume} loading={sw.resuming}>
                   {t('Back to schedule')}
                 </Button>
               ) : null}
+              <Button variant="secondary" size="sm" onClick={sw.openPanel}>
+                {t('Change')}
+              </Button>
             </Row>
           }
         />
       </Section>
       <AttentionLine items={d.attention.data ?? []} ctx={d.ctx} now={d.now} />
-      <RoomsList rooms={d.rooms} ctx={d.ctx} now={d.now} canEdit={canEdit} />
+      <RoomsList rooms={d.rooms} loaded={d.roomsLoaded} ctx={d.ctx} now={d.now} canEdit={canEdit} />
       <TodayRow d={d} house={house} sources={d.sources.data} />
       <ProfileSwitchPanel sw={sw} house={house} ctx={d.ctx} phone />
     </Stack>

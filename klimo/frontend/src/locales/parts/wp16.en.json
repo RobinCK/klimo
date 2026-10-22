@@ -1,0 +1,11 @@
+{
+  "Plan repeated on {count} more days_one": "Plan repeated on {count} more day",
+  "{count} actions_one": "{count} action",
+  "{count} copies follow this source: {list}._one": "{count} copy follows this source: {list}.",
+  "{count} days_one": "{count} day",
+  "{count} linked copies keep their settings and stop following it._one": "{count} linked copy keeps its settings and stops following it.",
+  "{count} months a year_one": "{count} month a year",
+  "{count} need attention_one": "{count} needs attention",
+  "{count} pumps · {mode}_one": "{count} pump · {mode}",
+  "{count} with their own setting_one": "{count} with its own setting"
+}

@@ -1,0 +1,18 @@
+{
+  "Connected · {count} entities in Home Assistant_one": "Connected · {count} entity in Home Assistant",
+  "Show all {count}_one": "Show all {count}",
+  "Until someone presses «I see it» or the problem is gone; at most {count} times._one": "Until someone presses «I see it» or the problem is gone; at most once.",
+  "about {count} days_one": "about {count} day",
+  "about {count} weeks_one": "about {count} week",
+  "delivered, {count} failed_one": "delivered, {count} failed",
+  "did not confirm {count} times_one": "did not confirm once",
+  "native push · {count} devices_one": "native push · {count} device",
+  "{count} attempts_one": "{count} attempt",
+  "{count} devices_one": "{count} device",
+  "{count} open_one": "{count} open",
+  "{count} other entities_one": "{count} other entity",
+  "{count} radiator valves_one": "{count} radiator valve",
+  "{count} relays_one": "{count} relay",
+  "{count} sources_one": "{count} source",
+  "{count} targets did not get it_one": "{count} target did not get it"
+}

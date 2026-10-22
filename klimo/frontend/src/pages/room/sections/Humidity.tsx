@@ -1,10 +1,11 @@
 import type { HumidityMethod } from '@api/model';
 import { api } from '@api/endpoints';
 import { useAutosave, useEntitySearch, useMutation } from '@data';
-import { AutoGrid, Button, ComfortBar, EntityPicker, FallbackNote, KeyValueList, Section, SegmentedControl, Stack, StatTile, ValuePill } from '@ui';
+import { AutoGrid, Button, ComfortBar, EntityId, EntityPicker, FallbackNote, KeyValueList, Section, SegmentedControl, Stack, StatTile } from '@ui';
 import { fmtDelta, fmtNum, fmtPct, fmtTemp, humidityMethodLabel, t } from '@i18n';
 import { AddEntityDialog } from '../AddEntityDialog';
 import { closeDialog, openDialog, useOpenDialog } from '../dialogs';
+import { lockable, SettingPill } from './readonly';
 import type { SectionDef, SectionProps } from './types';
 
 const METHODS: HumidityMethod[] = ['average', 'median', 'max', 'min'];
@@ -47,7 +48,10 @@ function Body(p: SectionProps) {
           {count > 1 ? (
             <SegmentedControl<HumidityMethod>
               value={v.method}
-              options={METHODS.map((m) => ({ value: m, label: humidityMethodLabel(m) }))}
+              options={lockable(
+                METHODS.map((m) => ({ value: m, label: humidityMethodLabel(m) })),
+                p.canEdit,
+              )}
               onChange={(m) => hum.set((x) => ({ ...x, method: m }))}
               ariaLabel={t('How to combine the humidity sensors')}
             />
@@ -61,7 +65,8 @@ function Body(p: SectionProps) {
           {
             key: t('Warn above'),
             value: (
-              <ValuePill
+              <SettingPill
+                readOnly={!p.canEdit}
                 text={fmtPct(v.warnAbovePct)}
                 ariaLabel={t('Warn above')}
                 editor={{ kind: 'number', min: 50, max: 90, step: 1, unit: '%' }}
@@ -73,7 +78,8 @@ function Body(p: SectionProps) {
           {
             key: t('or when the glass is this close to the dew point'),
             value: (
-              <ValuePill
+              <SettingPill
+                readOnly={!p.canEdit}
                 text={fmtDelta(v.dewGlassMarginC)}
                 ariaLabel={t('Margin to the dew point on the glass')}
                 editor={{ kind: 'number', min: 0, max: 10, step: 0.5, unit: '°' }}
@@ -86,10 +92,13 @@ function Body(p: SectionProps) {
       />
       <SegmentedControl<'notify' | 'auto_pause'>
         value={v.airingHint}
-        options={[
-          { value: 'notify', label: t('Suggest airing') },
-          { value: 'auto_pause', label: t('Pause the heat by itself') },
-        ]}
+        options={lockable(
+          [
+            { value: 'notify', label: t('Suggest airing') },
+            { value: 'auto_pause', label: t('Pause the heat by itself') },
+          ],
+          p.canEdit,
+        )}
         onChange={(x) => hum.set((c) => ({ ...c, airingHint: x }))}
         full={p.phone}
         ariaLabel={t('When the room should be aired')}
@@ -108,32 +117,37 @@ function Body(p: SectionProps) {
         }
       >
         <Stack gap="sm">
-          <EntityPicker
-            value={dehum?.entityId ?? null}
-            onChange={(entityId) =>
-              hum.set((c) => ({
-                ...c,
-                dehumidifier: entityId
-                  ? {
-                      entityId,
-                      onAbovePct: c.dehumidifier?.onAbovePct ?? 62,
-                      offBelowPct: c.dehumidifier?.offBelowPct ?? 57,
-                      minOnMin: c.dehumidifier?.minOnMin ?? 10,
-                    }
-                  : null,
-              }))
-            }
-            search={search}
-            placeholder={t('Pick a switch or a plug')}
-            clearable
-          />
+          {p.canEdit ? (
+            <EntityPicker
+              value={dehum?.entityId ?? null}
+              onChange={(entityId) =>
+                hum.set((c) => ({
+                  ...c,
+                  dehumidifier: entityId
+                    ? {
+                        entityId,
+                        onAbovePct: c.dehumidifier?.onAbovePct ?? 62,
+                        offBelowPct: c.dehumidifier?.offBelowPct ?? 57,
+                        minOnMin: c.dehumidifier?.minOnMin ?? 10,
+                      }
+                    : null,
+                }))
+              }
+              search={search}
+              placeholder={t('Pick a switch or a plug')}
+              clearable
+            />
+          ) : dehum ? (
+            <EntityId id={dehum.entityId} />
+          ) : null}
           {dehum ? (
             <KeyValueList
               rows={[
                 {
                   key: t('Switch on above'),
                   value: (
-                    <ValuePill
+                    <SettingPill
+                      readOnly={!p.canEdit}
                       text={fmtPct(dehum.onAbovePct)}
                       ariaLabel={t('Switch on above')}
                       editor={{ kind: 'number', min: 40, max: 90, step: 1, unit: '%' }}

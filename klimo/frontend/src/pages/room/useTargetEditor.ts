@@ -110,7 +110,7 @@ function baseDuration(th: ThermostatModel): EditDuration {
 
 const PREVIEW_ICON: Record<TargetPreview['tone'], IconName> = { heat: 'flame', cool: 'snow', off: 'power', warn: 'alert', hold: 'checkCircle' };
 
-/** The consequence without the server: D.25 rules on the current reading, latch and band. */
+/** The consequence without the server: the same rules as its preview, applied to the current reading, latch and band. */
 export function localConsequence(
   value: EditValue,
   mode: EditMode,
@@ -426,19 +426,22 @@ export function useTargetEditor(room: RoomDetailDto | undefined, state: RoomStat
     const sync =
       slice && slice.phase !== 'idle'
         ? { phase: slice.phase, text: syncText(slice) }
-        : total > 0
-          ? {
-              phase: 'sending' as SyncPhase,
-              text: syncText({
-                phase: 'sending',
-                acked: 0,
-                total: devices.trv || total,
-                attempt: 1,
-                maxAttempts: 3,
-                what: devices.trv ? 'trv' : devices.ac ? 'ac' : 'mixed',
-              }),
-            }
-          : undefined;
+        : state?.window.reactionActive
+          ? // the valves stay closed while the window is open: nothing is sent yet
+            { phase: 'idle' as SyncPhase, text: t('applies when the window is closed') }
+          : total > 0
+            ? {
+                phase: 'sending' as SyncPhase,
+                text: syncText({
+                  phase: 'sending',
+                  acked: 0,
+                  total: devices.trv || total,
+                  attempt: 1,
+                  maxAttempts: 3,
+                  what: devices.trv ? 'trv' : devices.ac ? 'ac' : 'mixed',
+                }),
+              }
+            : undefined;
     return { text, sync, remaining: undoLeft / 1000, canUndo: Boolean(res?.revertToken), undo };
     // valueText is pure; devices is derived from th
   }, [phase, applied, th, state, live, undoLeft, undo, ctx, devices.trv, devices.ac, devices.heater, devices.zone]);

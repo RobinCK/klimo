@@ -3,13 +3,14 @@
  * and every setting in two columns. Phones: the dial page, and the settings as accordions on
  * `#/rooms/<id>/settings`.
  */
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import type { RoomDetailDto, RoomPatch } from '@api/model';
 import { api } from '@api/endpoints';
-import { useCodeContext, useLayout, useMe, useNow, useResource, useRoom, useRoomSummaries } from '@data';
+import { useCodeContext, useLayout, useMe, useNow, useResource, useRoom, useRoomSummaries, useRoomsLoaded } from '@data';
 import { EmptyState, Skeleton, Stack } from '@ui';
 import { paths, useRoute } from '@app';
 import { t, type CodeContext } from '@i18n';
+import { closeDialog } from './dialogs';
 import { PhoneControl } from './PhoneControl';
 import { PhoneSettings } from './PhoneSettings';
 import { RoomDesktop } from './RoomDesktop';
@@ -54,9 +55,13 @@ function Missing() {
 
 export default function RoomPage(): JSX.Element {
   const route = useRoute();
-  const res = useRoom(route.params.id);
-  const phone = useLayout() === 'phone';
   const rooms = useRoomSummaries();
+  const roomsLoaded = useRoomsLoaded();
+  // a stale link (deleted room) is answered from the room list, without asking the server for it
+  const wanted = route.params.id;
+  const unknown = roomsLoaded && wanted != null && !rooms.some((r) => r.id === wanted || r.slug === wanted);
+  const res = useRoom(unknown ? null : wanted);
+  const phone = useLayout() === 'phone';
   const baseCtx = useCodeContext();
   const now = useNow(30_000);
   const me = useMe();
@@ -67,6 +72,8 @@ export default function RoomPage(): JSX.Element {
   const ed = useTargetEditor(room, state, ctx);
   const roomId = room?.config.id;
   const { setData } = res;
+  // a dialog belongs to the room it was opened in: leaving the room (another tab, back) closes it
+  useEffect(() => closeDialog, [roomId]);
 
   const save = useCallback(
     async (patch: RoomPatch) => {
@@ -79,7 +86,7 @@ export default function RoomPage(): JSX.Element {
   );
 
   if (!room || !state) {
-    if (res.error && !res.loading) return <Missing />;
+    if (unknown || (res.error && !res.loading)) return <Missing />;
     return (
       <Stack gap="lg">
         <Skeleton height={44} radius={12} />

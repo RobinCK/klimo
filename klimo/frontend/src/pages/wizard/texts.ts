@@ -26,6 +26,24 @@ export function candidateMeta(c: DiscoveryCandidate, roomName: (id: string) => s
   return parts.join(' · ');
 }
 
+const INTEGRATION: Record<string, string> = {
+  zigbee2mqtt: 'Zigbee2MQTT',
+  zha: 'ZHA',
+  mqtt: 'MQTT',
+  modbus: 'Modbus',
+  zwave_js: 'Z-Wave JS',
+  esphome: 'ESPHome',
+  shelly: 'Shelly',
+  tuya: 'Tuya',
+  xiaomi_miio: 'Xiaomi',
+  sonoff: 'SONOFF',
+};
+
+/** Home Assistant reports integrations by their domain; people know them by the product name. */
+export function integrationName(domain: string): string {
+  return INTEGRATION[domain] ?? domain;
+}
+
 /** The live value on the right of a device row. */
 export function candidateValue(c: Pick<DiscoveryCandidate, 'role' | 'state' | 'valueC'>): string {
   if (c.valueC != null && (c.role === 'trv' || c.role === 'temperature' || c.role === 'temp_humidity' || c.role === 'floor_probe')) return fmtTemp(c.valueC);

@@ -109,7 +109,7 @@ function OutdoorTile({ house }: Props) {
       value={fmtTemp(s.outdoorC)}
       sub={
         s.avgC != null
-          ? t('{days}-day average {t}', { days: s.rule.avgDays, t: fmtTemp(s.avgC) })
+          ? t('{count}-day average {t}', { count: s.rule.avgDays, t: fmtTemp(s.avgC) })
           : s.outdoorSource === 'none'
             ? t('no outdoor sensor')
             : undefined

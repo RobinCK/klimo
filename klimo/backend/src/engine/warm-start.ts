@@ -74,11 +74,13 @@ export function warmStart(cfg: EngineConfig, memory: EngineMemory, observe: Boot
   const pumps = { ...memory.pumps };
   const rooms = { ...memory.rooms };
 
+  // the very first boot has no previous run, so there is no break to report
+  const firstBoot = memory.plant.bootCount <= 1;
   decisions.push({
     code: 'restart.boot',
     category: 'system',
     tone: 'event',
-    params: { gapSec: lastHeartbeat > 0 ? Math.max(0, Math.round((now - lastHeartbeat) / 1000)) : null, bootCount: memory.plant.bootCount },
+    params: { gapSec: !firstBoot && lastHeartbeat > 0 ? Math.max(0, Math.round((now - lastHeartbeat) / 1000)) : null, bootCount: memory.plant.bootCount },
   });
 
   for (const s of cfg.sources) {

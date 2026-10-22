@@ -2,10 +2,11 @@ import { useState } from 'react';
 import type { ContactKind, WindowReaction } from '@api/model';
 import { api } from '@api/endpoints';
 import { useAutosave, useMutation, useResource } from '@data';
-import { AutoGrid, Button, CheckboxRow, ContactRow, FallbackNote, RadioCardList, SegmentedControl, Stack, StatTile, ValuePill } from '@ui';
+import { AutoGrid, Button, CheckboxRow, ContactRow, FallbackNote, RadioCardList, SegmentedControl, Stack, StatTile } from '@ui';
 import { fmtDelta, fmtDur, fmtDurSec, fmtPct, fmtSince, fmtTemp, t, windowReactionLabel } from '@i18n';
 import { AddEntityDialog } from '../AddEntityDialog';
 import { closeDialog, openDialog, useOpenDialog } from '../dialogs';
+import { lockable, SettingPill } from './readonly';
 import type { SectionDef, SectionProps } from './types';
 
 function stateText(kind: ContactKind, open: boolean | null, available: boolean, since: string | null): string {
@@ -92,7 +93,7 @@ function Body(p: SectionProps) {
       <RadioCardList<WindowReaction>
         value={w.reaction}
         compact={false}
-        options={reactions}
+        options={lockable(reactions, p.canEdit)}
         onChange={(v) => win.set((x) => ({ ...x, reaction: v }))}
         ariaLabel={t('When anything is open')}
       />
@@ -101,7 +102,8 @@ function Body(p: SectionProps) {
           variant="well"
           title={t('React if open longer than')}
           value={
-            <ValuePill
+            <SettingPill
+              readOnly={!p.canEdit}
               text={fmtDurSec(w.openDelaySec)}
               ariaLabel={t('React if open longer than')}
               editor={{ kind: 'number', min: 0, max: 300, step: 10, unit: t('s') }}
@@ -114,7 +116,8 @@ function Body(p: SectionProps) {
           variant="well"
           title={t('Resume after closing in')}
           value={
-            <ValuePill
+            <SettingPill
+              readOnly={!p.canEdit}
               text={fmtDurSec(w.resumeDelaySec)}
               ariaLabel={t('Resume after closing in')}
               editor={{ kind: 'number', min: 0, max: 30, step: 1, unit: t('min') }}
@@ -127,7 +130,8 @@ function Body(p: SectionProps) {
           variant="well"
           title={t('Remind if open for')}
           value={
-            <ValuePill
+            <SettingPill
+              readOnly={!p.canEdit}
               text={fmtDur(w.remindAfterMin)}
               ariaLabel={t('Remind if open for')}
               editor={{ kind: 'number', min: 5, max: 120, step: 5, unit: t('min') }}

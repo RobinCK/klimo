@@ -23,6 +23,7 @@ import type {
 import { api } from '@api/endpoints';
 import { isApiError } from '@api/client';
 import { invalidate, liveStore, useResource, useWizardReport } from '@data';
+import { currentRoute } from '@app';
 import { errorText, t } from '@i18n';
 import { toast } from '@ui';
 
@@ -103,42 +104,110 @@ export interface Wizard {
 const DEFAULT_HEAT: Band = { below: 0.2, above: 0.2 };
 const DEFAULT_COOL: Band = { below: 0.3, above: 0.3 };
 
+/** Everything the user entered and the server answered so far. */
+interface Draft {
+  step: WizardStep;
+  name: string;
+  nameTouched: boolean;
+  areaId: string | null;
+  kinds: EmitterChoice[];
+  demand: SourceDemandPolicy;
+  pickedIds: string[];
+  /** The area whose suggested devices were pre-ticked (so a remount does not re-tick them). */
+  preselectedFor: string | null;
+  extras: ExtraDevice[];
+  floor: Wizard['floor'];
+  method: AggregationMethod | null;
+  heatTol: Band | null;
+  coolTol: Band | null;
+  reaction: WindowReaction;
+  strategy: TrvStrategy | null;
+  issues: ApiErrorIssue[];
+  hints: ValidationResult['hints'];
+  reportId: Id | null;
+  created: CreateRoomReport | null;
+}
+
+const EMPTY: Draft = {
+  step: 1,
+  name: '',
+  nameTouched: false,
+  areaId: null,
+  kinds: ['trv'],
+  demand: 'call',
+  pickedIds: [],
+  preselectedFor: null,
+  extras: [],
+  floor: { circuitId: null, newName: '', pumpEntityId: null },
+  method: null,
+  heatTol: null,
+  coolTol: null,
+  reaction: 'pause',
+  strategy: null,
+  issues: [],
+  hints: undefined,
+  reportId: null,
+  created: null,
+};
+
+/**
+ * The draft outlives the component while the route stays on the wizard: turning a phone to
+ * landscape swaps the full-screen wizard for the centred panel, which mounts it anew.
+ */
+let kept: Draft | null = null;
+
+/** Validation of the request body reports paths under `draft.`; the step checks do not. */
+const plainPath = (issue: ApiErrorIssue): ApiErrorIssue => (issue.path.startsWith('draft.') ? { ...issue, path: issue.path.slice(6) } : issue);
+
 export function useWizard(): Wizard {
   const settings = useResource('settings', api.settings.get, { reloadOn: ['settings'] });
   const areasRes = useResource('ha-areas', api.ha.areas);
   const circuitsRes = useResource('names:circuits', api.circuits.list, { reloadOn: ['circuit', 'pump'] });
   const defaults = settings.data?.general.defaults.tolerance;
 
-  const [step, setStep] = useState<WizardStep>(1);
-  const [name, setName] = useState('');
-  const [nameTouched, setNameTouched] = useState(false);
-  const [areaId, setAreaId] = useState<string | null>(null);
-  const [kinds, setKinds] = useState<EmitterChoice[]>(['trv']);
-  const [demand, setDemand] = useState<SourceDemandPolicy>('call');
-  const [pickedIds, setPickedIds] = useState<Set<string>>(new Set());
-  const [extras, setExtras] = useState<ExtraDevice[]>([]);
-  const [floor, setFloorState] = useState<Wizard['floor']>({ circuitId: null, newName: '', pumpEntityId: null });
-  const [method, setMethodState] = useState<AggregationMethod | null>(null);
-  const [heatTol, setHeatTol] = useState<Band | null>(null);
-  const [coolTol, setCoolTol] = useState<Band | null>(null);
-  const [reaction, setReaction] = useState<WindowReaction>('pause');
-  const [strategy, setStrategyState] = useState<TrvStrategy | null>(null);
-  const [issues, setIssues] = useState<ApiErrorIssue[]>([]);
-  const [hints, setHints] = useState<ValidationResult['hints']>(undefined);
+  const [d, setDraft] = useState<Draft>(() => kept ?? EMPTY);
+  const patch = useCallback(
+    (p: Partial<Draft> | ((d: Draft) => Partial<Draft>)) =>
+      setDraft((x) => {
+        const change = typeof p === 'function' ? p(x) : p;
+        return Object.keys(change).length ? { ...x, ...change } : x;
+      }),
+    [],
+  );
   const [busy, setBusy] = useState(false);
-  const [reportId, setReportId] = useState<Id | null>(null);
-  const [created, setCreated] = useState<CreateRoomReport | null>(null);
   const [retrying, setRetrying] = useState<CreateRoomStepKind | null>(null);
+
+  useEffect(() => {
+    kept = d;
+  }, [d]);
+  // leaving the wizard drops the draft; a remount on the same route keeps it
+  useEffect(
+    () => () => {
+      if (currentRoute().name !== 'wizard') kept = null;
+    },
+    [],
+  );
+
+  const { step, name, areaId, kinds, demand, extras, floor, method, heatTol, coolTol, reaction, strategy, issues, hints, reportId } = d;
+  const pickedIds = useMemo(() => new Set(d.pickedIds), [d.pickedIds]);
 
   const discovery = useResource(areaId ? `area-discovery:${areaId}` : null, () => api.ha.discoverArea(areaId as string));
   const candidates = useMemo(() => discovery.data?.candidates ?? [], [discovery.data]);
 
   // the area's devices arrive: pre-check what the server suggests (never what belongs to another room)
   useEffect(() => {
-    if (!discovery.data) return;
-    setPickedIds(new Set(discovery.data.candidates.filter((c) => c.preselected && !c.takenByRoomId).map((c) => c.entityId)));
-    if (discovery.data.candidates.some((c) => c.role === 'ac' && c.preselected)) setKinds((k) => (k.includes('ac') ? k : [...k, 'ac']));
-  }, [discovery.data]);
+    const data = discovery.data;
+    if (!data || data.areaId !== areaId) return;
+    patch((x) => {
+      if (x.preselectedFor === data.areaId) return {};
+      const ac = data.candidates.some((c) => c.role === 'ac' && c.preselected) && !x.kinds.includes('ac');
+      return {
+        preselectedFor: data.areaId,
+        pickedIds: data.candidates.filter((c) => c.preselected && !c.takenByRoomId).map((c) => c.entityId),
+        kinds: ac ? [...x.kinds, 'ac'] : x.kinds,
+      };
+    });
+  }, [discovery.data, areaId, patch]);
 
   const areas = useMemo(
     () =>
@@ -157,12 +226,11 @@ export function useWizard(): Wizard {
 
   const setArea = useCallback(
     (id: string | null) => {
-      setAreaId(id);
       // the room is usually called like its area
       const area = areasRes.data?.find((a) => a.areaId === id);
-      if (area && (!nameTouched || !name.trim())) setName(area.name);
+      patch((x) => ({ areaId: id, name: area && (!x.nameTouched || !x.name.trim()) ? area.name : x.name }));
     },
-    [areasRes.data, nameTouched, name],
+    [areasRes.data, patch],
   );
 
   const roleAllowed = useCallback(
@@ -220,36 +288,33 @@ export function useWizard(): Wizard {
       setBusy(true);
       try {
         const res = await api.rooms.validate({ step: s, draft: request });
-        setIssues(res.issues);
-        if (res.hints) setHints(res.hints);
+        patch((x) => ({ issues: res.issues.map(plainPath), hints: res.hints ?? x.hints }));
         return res.ok;
       } catch (e) {
-        if (isApiError(e) && e.issues.length) setIssues(e.issues);
+        if (isApiError(e) && e.issues.length) patch({ issues: e.issues.map(plainPath) });
         else toast({ tone: 'err', message: errorText(e) });
         return false;
       } finally {
         setBusy(false);
       }
     },
-    [request],
+    [request, patch],
   );
 
   const create = useCallback(async () => {
     setBusy(true);
     try {
       const report = await api.rooms.create(request);
-      setCreated(report);
-      setReportId(report.reportId);
-      setStep(5);
+      patch({ created: report, reportId: report.reportId, step: 5, issues: [] });
       liveStore.refetchRooms();
       invalidate('overview');
     } catch (e) {
-      if (isApiError(e) && e.issues.length) setIssues(e.issues);
+      if (isApiError(e) && e.issues.length) patch({ issues: e.issues.map(plainPath) });
       toast({ tone: 'err', message: t('The room was not created: {reason}', { reason: errorText(e) }) });
     } finally {
       setBusy(false);
     }
-  }, [request]);
+  }, [request, patch]);
 
   const next = useCallback(() => {
     if (busy) return;
@@ -261,25 +326,16 @@ export function useWizard(): Wizard {
     }
     if (step === 5) return;
     void (async () => {
-      if (await validate(step)) {
-        setIssues([]);
-        setStep((step + 1) as WizardStep);
-      }
+      if (await validate(step)) patch({ issues: [], step: (step + 1) as WizardStep });
     })();
-  }, [busy, step, validate, create]);
+  }, [busy, step, validate, create, patch]);
 
-  const back = useCallback(() => {
-    setIssues([]);
-    setStep((s) => (s > 1 && s < 5 ? ((s - 1) as WizardStep) : s));
-  }, []);
+  const back = useCallback(() => patch((x) => ({ issues: [], step: x.step > 1 && x.step < 5 ? ((x.step - 1) as WizardStep) : x.step })), [patch]);
 
-  const goTo = useCallback((s: 1 | 2 | 3 | 4) => {
-    setIssues([]);
-    setStep(s);
-  }, []);
+  const goTo = useCallback((s: 1 | 2 | 3 | 4) => patch({ issues: [], step: s }), [patch]);
 
   const live = useWizardReport(reportId);
-  const report = live ?? created;
+  const report = live ?? d.created;
 
   const retry = useCallback(
     (kind: CreateRoomStepKind) => {
@@ -287,33 +343,14 @@ export function useWizard(): Wizard {
       setRetrying(kind);
       api.rooms
         .retryStep(reportId, kind)
-        .then(setCreated)
+        .then((r) => patch({ created: r }))
         .catch((e: unknown) => toast({ tone: 'err', message: errorText(e) }))
         .finally(() => setRetrying(null));
     },
-    [reportId],
+    [reportId, patch],
   );
 
-  const reset = useCallback(() => {
-    setStep(1);
-    setName('');
-    setNameTouched(false);
-    setAreaId(null);
-    setKinds(['trv']);
-    setDemand('call');
-    setPickedIds(new Set());
-    setExtras([]);
-    setFloorState({ circuitId: null, newName: '', pumpEntityId: null });
-    setMethodState(null);
-    setHeatTol(null);
-    setCoolTol(null);
-    setReaction('pause');
-    setStrategyState(null);
-    setIssues([]);
-    setHints(undefined);
-    setReportId(null);
-    setCreated(null);
-  }, []);
+  const reset = useCallback(() => setDraft(EMPTY), []);
 
   const dirty = step < 5 && (name.trim() !== '' || areaId !== null || extras.length > 0);
 
@@ -321,47 +358,39 @@ export function useWizard(): Wizard {
     step,
     goTo,
     name,
-    setName: (v) => {
-      setName(v);
-      setNameTouched(true);
-    },
+    setName: (v) => patch({ name: v, nameTouched: true }),
     areaId,
     setArea,
     areas,
     kinds,
-    toggleKind: (k) => setKinds((ks) => (ks.includes(k) ? ks.filter((x) => x !== k) : [...ks, k])),
+    toggleKind: (k) => patch((x) => ({ kinds: x.kinds.includes(k) ? x.kinds.filter((y) => y !== k) : [...x.kinds, k] })),
     demand,
-    setDemand,
+    setDemand: (v) => patch({ demand: v }),
     candidates,
     discovering: discovery.loading && !discovery.data,
     integrations: discovery.data?.integrations ?? [],
     areaName: discovery.data?.areaName ?? areasRes.data?.find((a) => a.areaId === areaId)?.name ?? null,
     picked: (c) => pickedIds.has(c.entityId),
     togglePick: (c) =>
-      setPickedIds((s) => {
-        const n = new Set(s);
-        if (n.has(c.entityId)) n.delete(c.entityId);
-        else n.add(c.entityId);
-        return n;
-      }),
+      patch((x) => ({ pickedIds: x.pickedIds.includes(c.entityId) ? x.pickedIds.filter((id) => id !== c.entityId) : [...x.pickedIds, c.entityId] })),
     extras,
-    addExtra: (d) => setExtras((xs) => [...xs.filter((x) => x.entityId !== d.entityId), d]),
-    removeExtra: (id) => setExtras((xs) => xs.filter((x) => x.entityId !== id)),
+    addExtra: (dev) => patch((x) => ({ extras: [...x.extras.filter((e) => e.entityId !== dev.entityId), dev] })),
+    removeExtra: (id) => patch((x) => ({ extras: x.extras.filter((e) => e.entityId !== id) })),
     floor,
-    setFloor: (f) => setFloorState((x) => ({ ...x, ...f })),
+    setFloor: (f) => patch((x) => ({ floor: { ...x.floor, ...f } })),
     floorCircuits,
     method: method ?? methodForCount(tempCount),
-    setMethod: setMethodState,
+    setMethod: (m) => patch({ method: m }),
     methodValues: hints?.methodValues,
     heatTol: request.heatTolerance,
-    setHeatTol,
+    setHeatTol: (b) => patch({ heatTol: b }),
     coolTol: request.coolTolerance ?? coolTol ?? defaults?.cool ?? DEFAULT_COOL,
-    setCoolTol,
+    setCoolTol: (b) => patch({ coolTol: b }),
     needsCool,
     reaction,
-    setReaction,
+    setReaction: (r) => patch({ reaction: r }),
     strategy,
-    setStrategy: setStrategyState,
+    setStrategy: (v) => patch({ strategy: v }),
     autoStrategy: hints?.trvStrategy ?? null,
     unsupported: hints?.unsupportedStrategies ?? [],
     request,

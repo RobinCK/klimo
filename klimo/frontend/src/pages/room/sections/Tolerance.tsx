@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import type { SourceDemandPolicy } from '@api/model';
 import { useAutosave } from '@data';
-import { AutoGrid, RadioCardList, Section, SegmentedControl, Stack, Stepper, ToleranceBar, ValuePill } from '@ui';
+import { AutoGrid, RadioCardList, Section, SegmentedControl, Stack, Stepper, ToleranceBar } from '@ui';
 import { demandPolicyLabel, fmtDelta, fmtDur, fmtTemp, t } from '@i18n';
+import { lockable, SettingPill } from './readonly';
 import type { SectionDef, SectionProps } from './types';
 
 type Mode = 'heat' | 'cool';
@@ -116,7 +117,10 @@ function Body(p: SectionProps) {
         <RadioCardList<SourceDemandPolicy>
           value={demand.value.policy}
           compact={p.phone}
-          options={(['call', 'piggyback', 'never'] as const).map((v) => ({ value: v, title: demandPolicyLabel(v), hint: demandHint(v) }))}
+          options={lockable(
+            (['call', 'piggyback', 'never'] as const).map((v) => ({ value: v, title: demandPolicyLabel(v), hint: demandHint(v) })),
+            p.canEdit,
+          )}
           onChange={(v) => demand.set((x) => ({ ...x, policy: v }))}
           ariaLabel={t('Whether the room may start a source')}
         />
@@ -125,7 +129,8 @@ function Body(p: SectionProps) {
           level={3}
           subtitle={t('The shortest request, so a source is not switched on and off: {dur}.', { dur: fmtDur(demand.value.minRequestMin) })}
           action={
-            <ValuePill
+            <SettingPill
+              readOnly={!p.canEdit}
               text={fmtDur(demand.value.minRequestMin)}
               ariaLabel={t('Shortest request')}
               editor={{ kind: 'number', min: 0, max: 30, step: 1, unit: t('min') }}

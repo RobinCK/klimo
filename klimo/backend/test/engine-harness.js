@@ -416,7 +416,7 @@ function makeMemory(cfg, now) {
     sources: Object.fromEntries(cfg.sources.map((s) => [s.id, d.defaultSourceMemory(s.id, now - 10 * SEC)])),
     pumps: Object.fromEntries(cfg.pumps.map((p) => [p.id, d.defaultPumpMemory(p.id, now - 10 * SEC)])),
     conditions: {},
-    plant: { ...d.defaultPlantMemory(now - 10 * SEC), lastHeartbeatAt: now - 30 * SEC, bootCount: 1 },
+    plant: { ...d.defaultPlantMemory(now - 10 * SEC), lastHeartbeatAt: now - 30 * SEC, bootCount: 2 }, // the store counts a boot as it loads: this is a restart
     season: { season: 'heating', since: now - 10 * 24 * 3600 * SEC, avgC: 5, avgComputedAt: now, pending: null, bootstrap: false },
     ema: {},
   };

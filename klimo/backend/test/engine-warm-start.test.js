@@ -98,3 +98,15 @@ test('what HA shows at boot is read from a fresh capture', () => {
   assert.deepEqual(obs.source(cfg.sources[0]), { on: true, mode: null });
   assert.equal(obs.pump(cfg.pumps[0]), null, 'an unavailable pump cannot tell');
 });
+
+test('the very first boot reports no break; a restart reports the time since the last heartbeat', () => {
+  const cfg = h.makeCfg();
+  const blind = { source: () => null, pump: () => null, contactOpenSince: () => null };
+  const fresh = h.makeMemory(cfg, WED_1910);
+  fresh.plant = { ...h.d.defaultPlantMemory(WED_1910), bootCount: 1 };
+  const first = warmStart(cfg, fresh, blind, WED_1910).decisions.find((x) => x.code === 'restart.boot');
+  assert.equal(first.params.gapSec, null);
+  const again = h.makeMemory(cfg, WED_1910);
+  again.plant = { ...again.plant, lastHeartbeatAt: WED_1910 - 90 * SEC };
+  assert.equal(warmStart(cfg, again, blind, WED_1910).decisions.find((x) => x.code === 'restart.boot').params.gapSec, 90);
+});

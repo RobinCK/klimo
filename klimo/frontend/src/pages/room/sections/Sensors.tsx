@@ -3,10 +3,11 @@ import type { AggregationMethod, RoomSensor, SensorReading } from '@api/model';
 import { AGGREGATION_METHODS } from '@api/model';
 import { api } from '@api/endpoints';
 import { useAutosave, useMutation } from '@data';
-import { Button, CheckboxRow, Dialog, FallbackNote, KeyValueList, RadioValueGrid, SensorRow, Stack, Stepper, TextField, ValuePill } from '@ui';
+import { Button, CheckboxRow, Dialog, FallbackNote, KeyValueList, RadioValueGrid, SensorRow, Stack, Stepper, TextField } from '@ui';
 import { aggregationHint, aggregationLabel, fmtAgo, fmtDelta, fmtDur, fmtNum, fmtTemp, t } from '@i18n';
 import { AddEntityDialog } from '../AddEntityDialog';
 import { closeDialog, openDialog, useOpenDialog } from '../dialogs';
+import { SettingPill } from './readonly';
 import type { SectionDef, SectionProps } from './types';
 
 const STALE_OPTIONS = [15, 30, 60, 90, 120, 180, 240];
@@ -124,7 +125,7 @@ function Body(p: SectionProps) {
               <SensorRow
                 key={s.id}
                 included={s.included}
-                onToggle={(on) => void toggle.run(s.id, on)}
+                onToggle={(on) => p.canEdit && void toggle.run(s.id, on)}
                 name={s.name}
                 entityId={p.phone ? undefined : s.entityId}
                 weightText={showWeight ? t('weight {w}', { w: fmtNum(s.weight, 1) }) : undefined}
@@ -159,7 +160,7 @@ function Body(p: SectionProps) {
         value={method}
         columns={p.phone ? 3 : undefined}
         options={AGGREGATION_METHODS.map((m) => ({ value: m, label: aggregationLabel(m), valueText: fmtTemp(values[m]) }))}
-        onChange={(m) => temp.set((x) => ({ ...x, method: m }))}
+        onChange={(m) => p.canEdit && temp.set((x) => ({ ...x, method: m }))}
         hint={aggregationHint(method)}
         ariaLabel={t('What counts as the current temperature')}
       />
@@ -170,7 +171,8 @@ function Body(p: SectionProps) {
         title={t('Drop outliers')}
         hint={t('A sensor that differs from the others by more than {delta} is not counted for a while.', { delta: fmtDelta(temp.value.outlier.thresholdC) })}
         trailing={
-          <ValuePill
+          <SettingPill
+            readOnly={!p.canEdit}
             text={fmtDelta(temp.value.outlier.thresholdC)}
             ariaLabel={t('Outlier threshold')}
             editor={{ kind: 'number', min: 0.5, max: 3, step: 0.1, unit: '°' }}
@@ -185,7 +187,8 @@ function Body(p: SectionProps) {
           {
             key: t('Unavailable without updates for'),
             value: (
-              <ValuePill
+              <SettingPill
+                readOnly={!p.canEdit}
                 text={fmtDur(temp.value.staleAfterMin)}
                 ariaLabel={t('Unavailable without updates for')}
                 editor={{ kind: 'select', options: STALE_OPTIONS.map((m) => ({ value: String(m), label: fmtDur(m) })) }}
@@ -197,7 +200,8 @@ function Body(p: SectionProps) {
           {
             key: t('Smoothing of jumps'),
             value: (
-              <ValuePill
+              <SettingPill
+                readOnly={!p.canEdit}
                 text={temp.value.smoothingMin ? fmtDur(temp.value.smoothingMin) : t('off')}
                 ariaLabel={t('Smoothing of jumps')}
                 editor={{ kind: 'select', options: SMOOTHING_OPTIONS.map((m) => ({ value: String(m), label: m ? fmtDur(m) : t('off') })) }}
@@ -236,12 +240,7 @@ function subtitle(p: SectionProps): string {
 function summary(p: SectionProps): string {
   const a = p.state.aggregation;
   if (a.activeCount === 0) return t('no sensor counts');
-  const values = temperatureSensors(p)
-    .map((s) => readingOf(p, s.id))
-    .filter((r): r is SensorReading => r != null && r.smoothedC != null)
-    .map((r) => fmtTemp(r.smoothedC))
-    .slice(0, 3);
-  return [`${aggregationLabel(a.method)} · ${t('now {t}', { t: fmtTemp(a.valueC) })}`, ...values].join(' · ');
+  return t('{method} of {count} · now {t}', { method: aggregationLabel(a.method), count: a.activeCount, t: fmtTemp(a.valueC) });
 }
 
 export const sensorsSection: SectionDef = {

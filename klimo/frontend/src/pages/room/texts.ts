@@ -2,11 +2,9 @@
  * Sentences of the room page: where the target comes from, why the room heats or not, what
  * the devices confirmed. Every target is shown with its origin; every number with its unit.
  */
-import type { EffectiveTarget, EpochMs, RoomDetailDto, RoomState, RoomSyncState, ThermostatModel } from '@api/model';
+import type { EffectiveTarget, EpochMs, RoomDetailDto, RoomState, RoomSyncState } from '@api/model';
 import type { IconName, Tone } from '@ui';
 import { aggregationLabel, fmtDelta, fmtDur, fmtSince, fmtTemp, fmtTime, fmtUntil, renderReason, t, type CodeContext } from '@i18n';
-
-export type SourceKind = EffectiveTarget['display'];
 
 const left = (until: EpochMs | null, now: EpochMs) => (until == null ? '' : fmtDur(Math.max(1, (until - now) / 60000)));
 
@@ -232,9 +230,4 @@ export function haRoleText(role: RoomDetailDto['haEntities'][number]['role']): s
 export function lqiWord(lqi: number | null): string {
   if (lqi == null) return '';
   return lqi >= 100 ? t('good') : lqi >= 50 ? t('fair') : t('weak');
-}
-
-/** Whether the dial or stepper may change the target at all. */
-export function editable(th: ThermostatModel, state: RoomState): boolean {
-  return !th.locked && state.tempC != null;
 }

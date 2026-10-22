@@ -4,7 +4,7 @@ import { api } from '@api/endpoints';
 import { useAutosave, useMutation } from '@data';
 import { Button, CheckboxRow, FallbackNote, RadioCardList, Row, Section, SegmentedControl, Stack, TrvCard, type Tone } from '@ui';
 import { brand } from '@brand';
-import { fmtAgo, fmtPct, fmtTemp, fmtUntil, t, trvActivityLabel, trvManualPolicyLabel } from '@i18n';
+import { fmtAgo, fmtDelta, fmtPct, fmtTemp, fmtUntil, t, trvActivityLabel, trvManualPolicyLabel } from '@i18n';
 import { AddEntityDialog } from '../AddEntityDialog';
 import { closeDialog, openDialog, useOpenDialog } from '../dialogs';
 import { deltaToRoom, lqiWord, trvSyncChip } from '../texts';
@@ -91,6 +91,7 @@ function Body(p: SectionProps) {
   const radiator = room.emitters.find((e) => e.kind === 'radiator' || e.kind === 'towel_rail');
   const dialog = useOpenDialog();
   const resync = useMutation(() => api.rooms.resyncTrvs(id), { okToast: t('The targets were sent to the valves again.') });
+  const resend = useMutation((deviceId: string) => api.rooms.devices.resend(id, deviceId), { okToast: t('The target was sent to the valve again.') });
   const add = useMutation(
     (entityId: string, name: string) => api.rooms.devices.add(id, radiator?.id ?? '', { kind: 'trv', entityId, name: name || undefined }),
     {
@@ -113,7 +114,7 @@ function Body(p: SectionProps) {
       hint: p.phone ? undefined : text.hint,
       tech: p.phone ? undefined : TECH[s],
       badge: s === 'external' ? t('recommended') : undefined,
-      disabled: Boolean(lacking),
+      disabled: Boolean(lacking) || !p.canEdit,
       disabledReason: lacking ? t('«{device}» cannot do this', { device: lacking.name }) : undefined,
     };
   });
@@ -137,32 +138,42 @@ function Body(p: SectionProps) {
               if (sync) chips.push(sync);
             }
             const caps = d.capabilities;
+            // a valve that gave up confirming gets its own retry next to it
+            const stuck = s?.sync.status === 'failed' || s?.sync.status === 'backoff';
             return (
-              <TrvCard
-                key={d.id}
-                name={d.name}
-                entityId={p.phone ? undefined : d.entityId}
-                meta={[d.model, transportText(p, d)].filter(Boolean).join(' · ')}
-                chips={chips}
-                compact={p.phone}
-                stats={[
-                  { label: t('Valve sensor'), value: fmtTemp(s?.localTempC ?? null), sub: p.phone ? undefined : deltaToRoom(s?.deltaToRoomC ?? null) },
-                  { label: t('Battery'), value: fmtPct(s?.batteryPct ?? null) },
-                  { label: t('Signal'), value: s?.lqi != null ? `LQI ${s.lqi}` : '—', sub: p.phone ? undefined : lqiWord(s?.lqi ?? null) },
-                  ...(p.phone ? [] : [{ label: t('Last seen'), value: s?.lastSeenAt != null ? fmtAgo(s.lastSeenAt, p.now) : '—' }]),
-                ]}
-                capabilities={
-                  caps
-                    ? [
-                        { label: t('external sensor'), on: caps.externalSensor },
-                        { label: t('offset'), on: caps.calibration },
-                        { label: t('valve limits'), on: caps.valveLimits },
-                        { label: t('child lock'), on: caps.childLock },
-                        { label: t('actual valve opening'), on: caps.valvePosition },
-                      ]
-                    : []
-                }
-              />
+              <Stack key={d.id} gap="xs">
+                <TrvCard
+                  name={d.name}
+                  entityId={p.phone ? undefined : d.entityId}
+                  meta={[d.model, transportText(p, d)].filter(Boolean).join(' · ')}
+                  chips={chips}
+                  compact={p.phone}
+                  stats={[
+                    { label: t('Valve sensor'), value: fmtTemp(s?.localTempC ?? null), sub: p.phone ? undefined : deltaToRoom(s?.deltaToRoomC ?? null) },
+                    { label: t('Battery'), value: fmtPct(s?.batteryPct ?? null) },
+                    { label: t('Signal'), value: s?.lqi != null ? `LQI ${s.lqi}` : '—', sub: p.phone ? undefined : lqiWord(s?.lqi ?? null) },
+                    ...(p.phone ? [] : [{ label: t('Last seen'), value: s?.lastSeenAt != null ? fmtAgo(s.lastSeenAt, p.now) : '—' }]),
+                  ]}
+                  capabilities={
+                    caps
+                      ? [
+                          { label: t('external sensor'), on: caps.externalSensor },
+                          { label: t('offset'), on: caps.calibration },
+                          { label: t('valve limits'), on: caps.valveLimits },
+                          { label: t('child lock'), on: caps.childLock },
+                          { label: t('actual valve opening'), on: caps.valvePosition },
+                        ]
+                      : []
+                  }
+                />
+                {stuck ? (
+                  <Row gap="sm">
+                    <Button variant="secondary" size="sm" icon="sync" onClick={() => void resend.run(d.id)} loading={resend.pending}>
+                      {t('Resend to «{device}»', { device: d.name })}
+                    </Button>
+                  </Row>
+                ) : null}
+              </Stack>
             );
           })}
         </Stack>
@@ -178,14 +189,17 @@ function Body(p: SectionProps) {
           ariaLabel={t('How {product} controls the valves', { product: brand.productName })}
         />
       </Stack>
-      <SegmentedControl<TrvManualPolicy>
-        value={v.manualPolicy}
-        options={(['slot', 'revert', 'save'] as const).map((x) => ({ value: x, label: trvManualPolicyLabel(x), disabled: v.childLock }))}
-        onChange={(x) => trv.set((c) => ({ ...c, manualPolicy: x }))}
-        full={!p.phone}
-        ariaLabel={t('If a valve is turned by hand')}
-        hint={v.childLock ? t('The child lock is on, so nobody can turn the valves by hand.') : policyHint(v.manualPolicy)}
-      />
+      <Stack gap="sm">
+        <Section variant="plain" level={3} title={t('If a valve is turned by hand')} />
+        {/* content-sized options wrap instead of cutting the longer labels short */}
+        <SegmentedControl<TrvManualPolicy>
+          value={v.manualPolicy}
+          options={(['slot', 'revert', 'save'] as const).map((x) => ({ value: x, label: trvManualPolicyLabel(x), disabled: v.childLock || !p.canEdit }))}
+          onChange={(x) => trv.set((c) => ({ ...c, manualPolicy: x }))}
+          ariaLabel={t('If a valve is turned by hand')}
+          hint={v.childLock ? t('The child lock is on, so nobody can turn the valves by hand.') : policyHint(v.manualPolicy)}
+        />
+      </Stack>
       <Stack gap="xs">
         <CheckboxRow
           variant="divided"
@@ -212,7 +226,7 @@ function Body(p: SectionProps) {
           title={t('Save the battery')}
           hint={t('Send the temperature to a valve at most every {min} min and only on a change of {delta} or more.', {
             min: v.batterySaver.minIntervalMin,
-            delta: fmtTemp(v.batterySaver.minDeltaC),
+            delta: fmtDelta(v.batterySaver.minDeltaC),
           })}
           onChange={(on) => trv.set((c) => ({ ...c, batterySaver: { ...c.batterySaver, enabled: on } }))}
         />

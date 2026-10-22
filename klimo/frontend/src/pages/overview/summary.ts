@@ -3,7 +3,7 @@
  * issue it has room for, and the compact phone row. The texts follow the target's origin, so a
  * value is never shown without saying where it comes from.
  */
-import type { EpochMs, IconName, RoomSummary, SparkDto, Tone } from '@api/model';
+import type { EpochMs, IconName, RoomSummary, SparkDto } from '@api/model';
 import type { RoomCardProps } from '@ui';
 import { paths } from '@app';
 import { fmtDur, fmtPct, fmtRate, fmtSince, fmtTemp, fmtUntil, renderIssue, roomStateLabel, t, type CodeContext } from '@i18n';
@@ -149,12 +149,6 @@ export function attentionRank(s: RoomSummary): number {
 
 /** Rooms the «Увага» filter shows. */
 export const needsAttention = (s: RoomSummary) => s.issue != null || s.state === 'window' || s.state === 'error';
-
-/** The tone of the dot/line for a room: an issue wins over the state. */
-export function roomTone(s: RoomSummary): Tone {
-  if (s.issue) return s.issue.tone;
-  return s.tone;
-}
 
 function ariaLabel(s: RoomSummary, source: string): string {
   return t('{room}: {temp}, {state}, {source}', { room: s.name, temp: fmtTemp(s.tempC), state: roomStateLabel(s.state).toLowerCase(), source });

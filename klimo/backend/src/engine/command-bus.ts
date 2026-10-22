@@ -149,9 +149,13 @@ export class CommandBus implements OnModuleDestroy {
   }
 
   private pump(): void {
-    if (this.timer || this.closed) return;
+    if (this.closed) return;
+    // every new command looks at the queue again: it may be free to leave while others wait for their network
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
     const rate = this.rate();
-    const nowMs = Date.now();
+    // the rate is about real seconds on the wire, also when the simulator runs its clock faster
+    const nowMs = performance.now();
     const perMs = Math.max(0.1, rate.globalPerSec) / 1000;
     if (this.tokens === null) this.tokens = rate.burst;
     this.tokens = Math.min(rate.burst, this.tokens + (nowMs - this.refilledAt) * perMs);
@@ -159,7 +163,7 @@ export class CommandBus implements OnModuleDestroy {
     let wait = Infinity;
     while (this.queue.length && this.tokens >= 1) {
       // the most urgent command whose Zigbee network is ready; a waiting Zigbee command never blocks others
-      const i = this.queue.findIndex((it) => !it.cmd.zigbee || nowMs - (this.zigbeeLast.get(it.cmd.zigbee) ?? 0) >= rate.zigbeeSpacingMs);
+      const i = this.queue.findIndex((it) => !it.cmd.zigbee || nowMs - (this.zigbeeLast.get(it.cmd.zigbee) ?? -Infinity) >= rate.zigbeeSpacingMs);
       if (i < 0) {
         for (const it of this.queue) if (it.cmd.zigbee) wait = Math.min(wait, (this.zigbeeLast.get(it.cmd.zigbee) ?? 0) + rate.zigbeeSpacingMs - nowMs);
         break;

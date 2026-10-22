@@ -1,14 +1,61 @@
-import type { CircuitDto, PlantState, ProfileDto, SourceDto, TodayDto, Tone } from '@api/model';
-import { LegendSwatch, MiniTag, Row, ScrollX, Section, Skeleton, Stack, Timeline24h, type TimelineTrack } from '@ui';
-import { Link } from '@ui';
+import type { CircuitDto, EpochMs, HouseState, PlantState, ProfileDto, ResolvedDayDto, SourceDto, TodayDto, Tone } from '@api/model';
+import { LegendSwatch, Link, MiniTag, Row, ScrollX, Section, Skeleton, Stack, Timeline24h, type TimelineSpan, type TimelineTrack } from '@ui';
 import { paths } from '@app';
-import { fmtDur, fmtTemp, fmtTime, t, type CodeContext } from '@i18n';
+import { fmtDur, fmtTemp, fmtTime, t, zonedParts, type CodeContext } from '@i18n';
 
 const TRACK_ORDER: Record<TodayDto['tracks'][number]['kind'], number> = { profile: 0, source: 1, pump: 2, room: 3, rule: 4, trigger: 5 };
 
+/** Epoch of a minute of today's local day; a DST day is 23 or 25 hours long, so the offset is corrected. */
+function atMinute(today: TodayDto, minute: number): EpochMs {
+  if (minute >= 1440) return today.to;
+  const guess = today.from + minute * 60_000;
+  const drift = zonedParts(guess).minuteOfDay - minute;
+  return Math.abs(drift) <= 120 ? guess - drift * 60_000 : guess;
+}
+
+/**
+ * The rest of the day as planned: the profile set by hand until it ends, then the house
+ * schedule. Only the future is filled in — the past shows what really happened.
+ */
+function plannedProfiles(today: TodayDto, house: HouseState, plan: ResolvedDayDto | null): { start: EpochMs; end: EpochMs; profileId: string }[] {
+  const now = today.now;
+  const out: { start: EpochMs; end: EpochMs; profileId: string }[] = [];
+  const p = house.profile;
+  let from = now;
+  if (p.layer === 'house_manual' || p.layer === 'calendar') {
+    const until = p.layer === 'house_manual' ? (p.override?.until ?? null) : p.scheduledUntil;
+    const end = Math.min(until ?? today.to, today.to);
+    if (end > now) out.push({ start: now, end, profileId: p.activeProfileId });
+    from = Math.max(now, end);
+  }
+  for (const seg of plan?.segments ?? []) {
+    const start = Math.max(from, atMinute(today, seg.start));
+    const end = atMinute(today, seg.end);
+    if (end > start) out.push({ start, end, profileId: seg.profileId });
+  }
+  return out;
+}
+
 /** Profile, the sources that ran today (or lead), and the pumps; pump run-on in a muted shade. */
-export function timelineTracks(today: TodayDto, profiles: readonly ProfileDto[] | undefined, leadId: string | null, ctx: CodeContext): TimelineTrack[] {
+export function timelineTracks(
+  today: TodayDto,
+  profiles: readonly ProfileDto[] | undefined,
+  leadId: string | null,
+  ctx: CodeContext,
+  planned: readonly { start: EpochMs; end: EpochMs; profileId: string }[] = [],
+): TimelineTrack[] {
   const prof = new Map((profiles ?? []).map((p) => [p.id, p] as const));
+  const profileSpan = (start: EpochMs, end: EpochMs | null, profileId: string | undefined): TimelineSpan => {
+    const p = profileId ? prof.get(profileId) : undefined;
+    return {
+      start,
+      end,
+      color: p?.color,
+      ink: p?.ink,
+      tone: p ? undefined : ('hold' as Tone),
+      label: p?.name ?? (profileId ? ctx.profile?.(profileId) : undefined),
+    };
+  };
   return [...today.tracks]
     .filter((tr) => tr.kind === 'profile' || tr.kind === 'pump' || tr.spans.length > 0 || (tr.kind === 'source' && tr.subjectId === leadId))
     .filter((tr) => tr.kind !== 'room')
@@ -18,33 +65,42 @@ export function timelineTracks(today: TodayDto, profiles: readonly ProfileDto[] 
         return {
           key: tr.key,
           label: tr.label || t('Profile'),
-          spans: tr.spans.map((s) => {
-            const p = s.profileId ? prof.get(s.profileId) : undefined;
-            return {
-              start: s.from,
-              end: s.to,
-              color: p?.color,
-              ink: p?.ink,
-              tone: p ? undefined : ('hold' as Tone),
-              label: p?.name ?? (s.profileId ? ctx.profile?.(s.profileId) : undefined),
-            };
-          }),
+          spans: [
+            ...tr.spans.map((s) => profileSpan(s.from, s.to == null ? today.now : Math.min(s.to, today.now), s.profileId)),
+            ...planned.map((s) => profileSpan(s.start, s.end, s.profileId)),
+          ],
         };
       }
       const label =
         tr.label ||
         (tr.kind === 'source' ? (ctx.source?.(tr.subjectId) ?? tr.subjectId) : tr.kind === 'pump' ? (ctx.pump?.(tr.subjectId) ?? tr.subjectId) : tr.subjectId);
+      // rules and triggers are events, not hardware: never in the heat or cold colour of the legend
+      const tone = (s: TodayDto['tracks'][number]['spans'][number]): Tone =>
+        tr.kind === 'pump' ? 'hold' : tr.kind === 'rule' || tr.kind === 'trigger' ? 'event' : s.tone;
       return {
         key: tr.key,
         label,
         spans: tr.spans.map((s) => ({
           start: s.from,
           end: s.to,
-          tone: tr.kind === 'pump' ? ('hold' as Tone) : s.tone,
+          tone: tone(s),
           runOnFrom: s.kind === 'run_on' ? s.from : null,
         })),
       };
     });
+}
+
+/** Two air conditioners both called «Кондиціонер» get their room after the name. */
+function distinctLabels(tracks: TimelineTrack[], today: TodayDto, sources: readonly SourceDto[] | undefined, ctx: CodeContext): TimelineTrack[] {
+  const count = new Map<string, number>();
+  for (const tr of tracks) count.set(tr.label, (count.get(tr.label) ?? 0) + 1);
+  return tracks.map((tr) => {
+    if ((count.get(tr.label) ?? 0) < 2) return tr;
+    const src = today.tracks.find((x) => x.key === tr.key);
+    const roomId = src?.kind === 'source' ? sources?.find((x) => x.config.id === src.subjectId)?.config.roomId : null;
+    const room = roomId ? (ctx.room?.(roomId) ?? null) : null;
+    return room ? { ...tr, label: `${tr.label} · ${room}` } : tr;
+  });
 }
 
 function statBadges(today: TodayDto, plant: PlantState | null, sources: readonly SourceDto[] | undefined, leadId: string | null, ctx: CodeContext): string[] {
@@ -72,6 +128,8 @@ function statBadges(today: TodayDto, plant: PlantState | null, sources: readonly
 /** «Сьогодні»: what ran when, on one 24-hour axis. */
 export function TodaySection({
   today,
+  house,
+  plan,
   plant,
   profiles,
   sources,
@@ -80,6 +138,9 @@ export function TodaySection({
   ctx,
 }: {
   today: TodayDto | null;
+  house: HouseState;
+  /** Today's house schedule, for the rest of the day on the profile row. */
+  plan: ResolvedDayDto | null;
   plant: PlantState | null;
   profiles: readonly ProfileDto[] | undefined;
   sources: readonly SourceDto[] | undefined;
@@ -94,7 +155,12 @@ export function TodaySection({
       </Section>
     );
   }
-  const tracks = timelineTracks(today, profiles, leadId, ctx);
+  const tracks = distinctLabels(
+    timelineTracks(today, profiles, leadId, ctx, plan && plan.date === today.date ? plannedProfiles(today, house, plan) : []),
+    today,
+    sources,
+    ctx,
+  );
   const badges = statBadges(today, plant, sources, leadId, ctx);
   const cooling = today.tracks.some((tr) => tr.kind === 'source' && tr.spans.some((s) => s.mode === 'cool'));
   const runOn = (circuits ?? [])

@@ -27,8 +27,8 @@ import {
   ToggleCard,
   type IconName,
 } from '@ui';
-import { aggregationHint, aggregationLabel, fmtDelta, fmtTemp, t, trvStrategyLabel, wizardDeviceRoleLabel, type CodeContext } from '@i18n';
-import { candidateMeta, candidateValue, ROLE_PRESET, stepWords, wizardIssue } from './texts';
+import { aggregationHint, aggregationLabel, fmtDelta, fmtTemp, t, wizardDeviceRoleLabel, type CodeContext } from '@i18n';
+import { candidateMeta, candidateValue, integrationName, ROLE_PRESET, stepWords, wizardIssue } from './texts';
 import { ROLE_NEEDS, type EmitterChoice, type Wizard } from './useWizard';
 
 const KINDS: { value: EmitterChoice; icon: IconName; title: () => string; hint: () => string }[] = [
@@ -213,6 +213,8 @@ export function StepDevices({ w, ctx }: { w: Wizard; ctx: CodeContext }) {
   const roomName = (id: string) => ctx.room?.(id) ?? id;
   const shown = groups().filter((g) => !g.need || w.kinds.includes(g.need));
   const found = w.candidates.length;
+  // found in the area, but for a kind of heating that is not ticked on step 1
+  const elsewhere = w.candidates.filter((c) => !shown.some((g) => g.roles.includes(c.role)));
   const banner = !w.areaId ? (
     <StatusBanner tone="event" text={t('No area chosen — pick the devices by hand below.')} />
   ) : w.discovering ? (
@@ -222,7 +224,11 @@ export function StepDevices({ w, ctx }: { w: Wizard; ctx: CodeContext }) {
       tone="ok"
       text={
         w.integrations.length
-          ? t('Found {count} devices in «{area}» · {integrations}', { count: found, area: w.areaName ?? '', integrations: w.integrations.join(', ') })
+          ? t('Found {count} devices in «{area}» · {integrations}', {
+              count: found,
+              area: w.areaName ?? '',
+              integrations: w.integrations.map(integrationName).join(', '),
+            })
           : t('Found {count} devices in «{area}»', { count: found, area: w.areaName ?? '' })
       }
     />
@@ -261,6 +267,12 @@ export function StepDevices({ w, ctx }: { w: Wizard; ctx: CodeContext }) {
           </Section>
         );
       })}
+      {elsewhere.length ? (
+        <FallbackNote
+          icon="info"
+          text={t('Also found: {names} — they fit what is not chosen on the first step.', { names: elsewhere.map((c) => c.name).join(', ') })}
+        />
+      ) : null}
       <DashedAddButton label={t('+ Find another device')} onClick={() => setAdding(true)} />
       <Issues w={w} />
       <AddDeviceDialog w={w} open={adding} onClose={() => setAdding(false)} />

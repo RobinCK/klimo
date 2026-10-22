@@ -1,4 +1,4 @@
-import { BeforeApplicationShutdown, HttpStatus, Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy, Optional } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy, Optional } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { ApiException, notFound, validationError } from '../common/http';
 import { uuid } from '../common/ids';
@@ -171,7 +171,7 @@ function obeyed(snap: EntitySnap | undefined, entityId: EntityId, v: DesiredValu
 }
 
 @Injectable()
-export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleDestroy, BeforeApplicationShutdown {
+export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleDestroy {
   private readonly log = new Logger('Engine');
   private readonly once = new LogOnce(this.log);
   private readonly incidents: () => IIncidents | null;
@@ -303,11 +303,11 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
     }
   }
 
-  onModuleDestroy(): void {
-    this.stopTimers();
-  }
-
-  async beforeApplicationShutdown(): Promise<void> {
+  /**
+   * Shutdown starts here: modules are torn down in import order and the engine comes before MQTT, while
+   * the HA connection closes only in the very last phase — so the fail-safe still reaches the devices.
+   */
+  async onModuleDestroy(): Promise<void> {
     await this.stop();
   }
 
@@ -351,7 +351,12 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
             if (res.ok) this.markCommanded(d, res.contextIds, now);
           }),
         );
-        await Promise.race([sends, new Promise<void>((resolve) => setTimeout(resolve, STOP_WAIT_MS))]);
+        let timer: NodeJS.Timeout | undefined;
+        const giveUp = new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, STOP_WAIT_MS);
+        });
+        await Promise.race([sends, giveUp]);
+        clearTimeout(timer);
         const handedBack = new Set(desired.filter((d) => d.owner.type === 'trv' && d.owner.roomId).map((d) => d.owner.roomId as Id));
         for (const roomId of handedBack) await this.record({ code: 'trv.handback', category: 'dev', tone: 'event', params: {}, roomId }, now);
         this.log.log(`stopping: ${desired.length} fail-safe command(s) sent`);
@@ -1087,8 +1092,8 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
       const d = this.releases.get(key)?.desired;
       return !d || d.confirm.kind === 'none' || observedMatches(d.value, d.confirm, this.reconciler.observe(d.entityId));
     };
-    const started = Date.now();
-    while (!keys.every(shows) && Date.now() - started < timeoutMs) await new Promise<void>((resolve) => setTimeout(resolve, 250));
+    const started = performance.now();
+    while (!keys.every(shows) && performance.now() - started < timeoutMs) await new Promise<void>((resolve) => setTimeout(resolve, 250));
     return { sent: keys.length, confirmed: keys.filter(shows).length };
   }
 

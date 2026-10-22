@@ -5,6 +5,7 @@ import { AutoGrid, Button, CheckboxRow, EmitterRow, FallbackNote, SegmentedContr
 import { paths } from '@app';
 import { brand } from '@brand';
 import { acControlHint, acControlLabel, emitterRoleLabel, fmtDelta, fmtPct, t } from '@i18n';
+import { lockable } from './readonly';
 import type { SectionDef, SectionProps } from './types';
 
 type RoomEmitter = Emitter & { devices: EmitterDevice[] };
@@ -60,7 +61,10 @@ function Body(p: SectionProps) {
   const cool = emitters.filter((e) => e.roles.cool != null);
   const hasAc = room.roomSources.some((s) => s.adapter.type === 'climate' && (s.capabilities.cool || s.capabilities.heat));
   const srcOf = (e: RoomEmitter) => room.roomSources.find((s) => s.id === e.sourceId);
-  const control: { value: AcControl; label: string }[] = (['target', 'onoff', 'asis'] as const).map((v) => ({ value: v, label: acControlLabel(v) }));
+  const control: { value: AcControl; label: string; disabled?: boolean }[] = lockable(
+    (['target', 'onoff', 'asis'] as const).map((v) => ({ value: v, label: acControlLabel(v) })),
+    p.canEdit,
+  );
 
   return (
     <Stack gap="md">
@@ -106,6 +110,7 @@ function Body(p: SectionProps) {
             {!cool.length ? <FallbackNote icon="info" text={t('Nothing in this room can cool.')} /> : null}
             {hasAc ? (
               <Stack gap="sm">
+                <Section variant="plain" level={3} title={t('How to control the air conditioner')} />
                 <SegmentedControl
                   value={ac.value.control}
                   options={control}

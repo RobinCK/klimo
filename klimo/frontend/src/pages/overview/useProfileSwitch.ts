@@ -214,14 +214,19 @@ export function useProfileSwitch(ctx: CodeContext): ProfileSwitch {
   const untilText = duration === 'none' ? t('with no limit') : until != null ? fmtUntil(until) : '';
   const applyLabel = same || !picked ? t('Switch over') : t('Switch to «{profile}» {until}', { profile: picked.name, until: untilText }).trim();
 
+  // the tiles and the headline follow at once, without waiting for the next engine tick
+  const refreshHouse = useCallback(() => {
+    api.house
+      .state()
+      .then((h) => liveStore.putHouse(h))
+      .catch(() => undefined);
+  }, []);
+
   const applyMut = useMutation((profileId: Id, d: PanelDuration) => api.house.setProfile({ profileId, duration: d, reqId: newReqId() }), {
     onSuccess: (res, profileId) => {
       setOpen(false);
       houseProfile.setData(res);
-      void api.house
-        .state()
-        .then((h) => liveStore.putHouse(h))
-        .catch(() => undefined);
+      refreshHouse();
       const name = profiles.find((p) => p.id === profileId)?.name ?? profileId;
       const scheduled = res.state.layer !== 'house_manual';
       const message = scheduled
@@ -240,6 +245,7 @@ export function useProfileSwitch(ctx: CodeContext): ProfileSwitch {
               .undo({ revertToken: token })
               .then((back) => {
                 houseProfile.setData(back);
+                refreshHouse();
                 toast({ tone: 'ok', message: t('The previous profile is back.') });
               })
               .catch(() => toast({ tone: 'err', message: t('Too late to undo — the change is already final.') }));
@@ -252,10 +258,7 @@ export function useProfileSwitch(ctx: CodeContext): ProfileSwitch {
   const resumeMut = useMutation(() => api.house.clearProfile(), {
     onSuccess: (res) => {
       houseProfile.setData(res);
-      void api.house
-        .state()
-        .then((h) => liveStore.putHouse(h))
-        .catch(() => undefined);
+      refreshHouse();
       toast({
         tone: 'ok',
         message: t('Back to the schedule: «{profile}».', { profile: ctx.profile?.(res.state.activeProfileId) ?? res.state.activeProfileId }),

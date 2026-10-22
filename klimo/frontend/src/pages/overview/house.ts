@@ -40,8 +40,11 @@ export function headline(house: HouseState): string {
   const { counts, season } = house;
   if (counts.total === 0) return t('No rooms yet');
   if (season.houseMode === 'off') return t('The house is switched off');
-  if (house.verb === 'heat' && counts.active > 0) return t('{active} of {count} rooms are heating', { active: counts.active, count: counts.capable });
-  if (house.verb === 'cool' && counts.active > 0) return t('{active} of {count} rooms are cooling', { active: counts.active, count: counts.capable });
+  // the verb agrees with the rooms that work, so the plural form follows `count` = active
+  if (house.verb === 'heat' && counts.active > 0)
+    return counts.capable === 1 ? t('The room is heating') : t('{count} of {total} rooms are heating', { count: counts.active, total: counts.capable });
+  if (house.verb === 'cool' && counts.active > 0)
+    return counts.capable === 1 ? t('The room is cooling') : t('{count} of {total} rooms are cooling', { count: counts.active, total: counts.capable });
   if (season.season === 'heating') return t('No room needs heat right now');
   if (season.season === 'cooling') return t('No room needs cooling right now');
   return t('Between seasons — heating and cooling rest');
@@ -70,15 +73,23 @@ export function subline(house: HouseState, plant: PlantState | null, ctx: CodeCo
   return parts.join(' · ');
 }
 
-/** «Середа, 21 жовтня · 19:10» in the Home Assistant time zone. */
-export function dateLine(now: EpochMs): string {
-  let day: string;
+function fmtParts(now: EpochMs, opts: Intl.DateTimeFormatOptions): string {
   try {
-    day = new Intl.DateTimeFormat(locale(), { weekday: 'long', day: 'numeric', month: 'long', timeZone: timeZone() }).format(new Date(now));
+    return new Intl.DateTimeFormat(locale(), { ...opts, timeZone: timeZone() }).format(new Date(now));
   } catch {
-    day = new Intl.DateTimeFormat(locale(), { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(now));
+    // an unknown time zone name: the browser's own zone is the best guess
+    return new Intl.DateTimeFormat(locale(), opts).format(new Date(now));
   }
-  return `${day.charAt(0).toUpperCase()}${day.slice(1)} · ${fmtTime(now)}`;
+}
+
+/**
+ * «Середа, 21 жовтня · 19:10» in the Home Assistant time zone. The weekday is formatted on its
+ * own: Ukrainian Intl puts it in the accusative («середу») when it is joined with a date.
+ */
+export function dateLine(now: EpochMs): string {
+  const weekday = fmtParts(now, { weekday: 'long' });
+  const date = fmtParts(now, { day: 'numeric', month: 'long' });
+  return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)}, ${date} · ${fmtTime(now)}`;
 }
 
 /** How the house profile is chosen right now («за розкладом до 23:00 → Ніч», «вручну до 21:10»). */
@@ -144,7 +155,8 @@ export function sourcesTile(house: HouseState, plant: PlantState | null, sources
   const telemetry: string[] = [];
   if (isRunning(lead)) {
     telemetry.push(renderReason(lead.detail, ctx).toLowerCase());
-    if (lead.telemetry.supplyC != null && lead.detail.params?.flowC == null) telemetry.push(t('supply {t}', { t: fmtTemp(lead.telemetry.supplyC, { decimals: 0 }) }));
+    if (lead.telemetry.supplyC != null && lead.detail.params?.flowC == null)
+      telemetry.push(t('supply {t}', { t: fmtTemp(lead.telemetry.supplyC, { decimals: 0 }) }));
     if (lead.telemetry.cop != null) telemetry.push(`COP ${lead.telemetry.cop.toFixed(1)}`);
   } else {
     telemetry.push(lead.fault ? sourceStateLabel('fault').toLowerCase() : sourceStateLabel(lead.state).toLowerCase());
@@ -162,6 +174,8 @@ export function sourcesTile(house: HouseState, plant: PlantState | null, sources
             : sourceStateLabel(s.state);
       return t('{source} — {what}', { source: name(s.sourceId), what: what.toLowerCase() });
     })
+    // two air conditioners of the same name doing the same thing read as one phrase
+    .filter((phrase, i, all) => all.indexOf(phrase) === i)
     .join(' · ');
   const kind = byId.get(lead.sourceId)?.kind ?? 'custom';
   return {

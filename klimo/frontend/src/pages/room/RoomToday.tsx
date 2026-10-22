@@ -86,7 +86,13 @@ export function RoomToday({
         <DayChart
           title={compact ? undefined : t('Today')}
           series={d.series.map(([ts, c]) => ({ t: ts, c: shown(c) }))}
-          targets={d.targetSegments.map((s) => ({ from: s.from, to: s.to, heat: heatShown ? shown(s.heatC) : null, cool: coolShown ? shown(s.coolC) : null, future: s.future }))}
+          targets={d.targetSegments.map((s) => ({
+            from: s.from,
+            to: s.to,
+            heat: heatShown ? shown(s.heatC) : null,
+            cool: coolShown ? shown(s.coolC) : null,
+            future: s.future,
+          }))}
           spans={d.demandSpans.map((s) => ({ from: s.from, to: s.to, tone: s.mode }))}
           now={now}
           dayStart={dayStart}

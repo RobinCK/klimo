@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { EpochMs, Id, RoomSummary, SparkDto } from '@api/model';
-import { AutoGrid, Button, EmptyState, FilterPills, Link, RoomCard, Section, Stack } from '@ui';
+import { AutoGrid, Button, EmptyState, FilterPills, Link, RoomCard, Section, Skeleton, Stack } from '@ui';
 import { paths, usePref } from '@app';
 import { t, type CodeContext } from '@i18n';
 import { attentionRank, needsAttention, roomCard, roomRow } from './summary';
@@ -10,6 +10,7 @@ type Filter = 'all' | 'active' | 'attention';
 /** «Кімнати»: filter by what the rooms do, a card per room, and the way to add one. */
 export function RoomsSection({
   rooms,
+  loaded,
   sparks,
   cooling,
   ctx,
@@ -17,6 +18,8 @@ export function RoomsSection({
   canEdit,
 }: {
   rooms: readonly RoomSummary[];
+  /** The room list has arrived (an empty list before that is not «no rooms»). */
+  loaded: boolean;
   sparks: Readonly<Record<Id, SparkDto>> | undefined;
   cooling: boolean;
   ctx: CodeContext;
@@ -49,7 +52,13 @@ export function RoomsSection({
         </>
       }
     >
-      {!rooms.length ? (
+      {!loaded && !rooms.length ? (
+        <AutoGrid min={280} gap="md">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} height={220} radius={16} />
+          ))}
+        </AutoGrid>
+      ) : !rooms.length ? (
         <EmptyState
           icon="home"
           title={t('No rooms yet')}
@@ -74,7 +83,19 @@ export function RoomsSection({
 }
 
 /** Phone: compact rows, problems first, with «+ Додати». */
-export function RoomsList({ rooms, ctx, now, canEdit }: { rooms: readonly RoomSummary[]; ctx: CodeContext; now: EpochMs; canEdit: boolean }) {
+export function RoomsList({
+  rooms,
+  loaded,
+  ctx,
+  now,
+  canEdit,
+}: {
+  rooms: readonly RoomSummary[];
+  loaded: boolean;
+  ctx: CodeContext;
+  now: EpochMs;
+  canEdit: boolean;
+}) {
   const sorted = useMemo(() => [...rooms].sort((a, b) => attentionRank(a) - attentionRank(b) || a.order - b.order), [rooms]);
   return (
     <Section
@@ -88,7 +109,13 @@ export function RoomsList({ rooms, ctx, now, canEdit }: { rooms: readonly RoomSu
         ) : undefined
       }
     >
-      {sorted.length ? (
+      {!loaded && !sorted.length ? (
+        <Stack gap="xs">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} height={64} radius={16} />
+          ))}
+        </Stack>
+      ) : sorted.length ? (
         <Stack gap="xs">
           {sorted.map((r) => (
             <RoomCard key={r.id} {...roomRow(r, ctx, now)} />
