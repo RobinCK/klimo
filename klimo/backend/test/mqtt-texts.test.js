@@ -51,8 +51,8 @@ test('system and house lines read the variables the texts expect', async () => {
   const circuits = Object.fromEntries(hub.circuits.map((c) => [c.id, c]));
   assert.equal(circuits.c_rad.t, 'Насос працює');
   assert.equal(circuits.c_rad.sub, 'просять Вітальня, Дитяча, Ванна');
-  // the floor pump follows the source, with its 10-minute run-on
-  assert.equal(circuits.c_floor.sub, 'поки працює Тепловий насос + 10 хв');
+  // the floor pump follows the source, with its 10-minute run-on; a default name reads as its short word
+  assert.equal(circuits.c_floor.sub, 'поки гріє ТН + 10 хв');
   assert.equal(circuits.c_spare.t, 'Стоїть');
   assert.equal(circuits.c_spare.sub, 'ніхто не просить');
 

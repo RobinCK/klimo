@@ -622,6 +622,7 @@ class FakeEngine {
 /* ── texts ───────────────────────────────────────────────────────────────────────────────────── */
 
 const deg = (v) => (v === null || v === undefined ? '—' : `${Number(v).toFixed(1).replace('-', '−')}°`);
+const SOURCE_STATE_UK = { heating: 'Гріє', cooling: 'Охолоджує', standby: 'Резерв', idle: 'Не потрібне', waiting_trigger: 'Чекає', fault: 'Аварія' };
 const CARD_UK = {
   'card.src.schedule': (v) => `Ціль ${deg(v.t)} · ${v.profile} до {t}`,
   'card.src.profile_updated': (v) => `${v.profile} (оновлено) · до {t}`,
@@ -662,7 +663,8 @@ const CARD_UK = {
   'card.tile.humidity': (v) => `${v.rh}%`,
   'card.tile.outdoor': (v) => `Надворі ${deg(v.t)} · ${v.days} дні: ${deg(v.avg)}`,
   'card.season': () => 'Авто · опалення',
-  'card.source.line': (v) => (v.on ? `з {t} · ${v.supply}° · ${v.power} кВт · COP ${v.cop}` : v.roleText ?? ''),
+  'card.source.line': (v) => SOURCE_STATE_UK[v.state] ?? v.state,
+  'card.source.sub': (v) => (v.state === 'fault' ? `аварія · повтор о {t}` : v.on ? `з {t} · подача ${v.supply}° · ${v.power} кВт · COP ${v.cop}` : v.text ?? ''),
   'card.circuit.line': (v) => (v.state === 'run_on' ? 'Вибіг до {t}' : v.state === 'summer' ? 'Літо' : v.state === 'running' ? 'Насос працює' : 'Стоїть'),
   'card.circuit.sub': (v) => (v.rooms ? `просять ${v.rooms}` : v.source ? `поки працює ${v.source}${v.runOnMin ? ` + ${v.runOnMin} хв` : ''}` : 'ніхто не просить'),
   'card.energy.line': (v) => (v.grid === 'absent' ? `Мережі немає · від батареї ${v.soc}%` : 'Мережа є'),
@@ -724,6 +726,93 @@ class FakeTexts {
   clock() {
     return '23:00';
   }
+}
+
+/**
+ * The view one publish pass would see for the harness house: stand-in texts by default, the real
+ * tables with `real: 'uk' | 'en'`. `mutate(states, cfg, view)` adjusts the evaluation before use.
+ */
+function publishView({ rooms = 12, texts, real = null, mutate } = {}) {
+  const cfg = houseConfig({ rooms, lang: real ?? 'uk' });
+  const states = roomStates(cfg);
+  const thermostats = new Map(states.map((s) => [s.roomId, thermostatOf(cfg, s)]));
+  const house = {
+    now: WED_1910,
+    tz: 'Europe/Kyiv',
+    engine: { health: 'ok', haConnected: true, mqttConnected: true, lastTickAt: WED_1910, simulated: false, unitsOk: true },
+    houseName: 'Дім',
+    season: seasonState(),
+    profile: houseProfileState(),
+    counts: { total: states.length, capable: states.length, active: states.filter((r) => r.state === 'heat').length, attention: states.filter((r) => r.issues.length || r.state === 'window').length, monitorOnly: 0 },
+    verb: 'heat',
+    leadSourceId: 's_hp',
+    humidityAvgPct: 55.4,
+    alertsCount: { critical: 0, warning: 3, total: 3 },
+    deviceIssuesCount: 0,
+    inboxCount: 0,
+  };
+  const view = {
+    now: WED_1910,
+    tz: 'Europe/Kyiv',
+    lang: real ?? 'uk',
+    cfg,
+    texts: texts ?? (real ? realTexts(real, () => WED_1910, cfg) : new FakeTexts()),
+    health: 'ok',
+    online: true,
+    panel: '/a0d7b954_klimo',
+    house,
+    season: seasonState(),
+    plant: plantState(cfg),
+    profile: houseProfileState(),
+    rooms: states,
+    summaries: states.map((s) => summaryOf(cfg, s)),
+    thermostat: (id) => thermostats.get(id) ?? null,
+    sparks: sparkFor(cfg),
+    durations: [
+      { id: 'slot', until: AT_2300 },
+      { id: '1h', until: WED_1910 + HOUR },
+      { id: '2h', until: WED_1910 + 2 * HOUR },
+      { id: 'morning', until: kyiv(2026, 10, 22, 7) },
+      { id: 'until', until: null },
+      { id: 'none', until: null },
+    ],
+    problems: { count: 3, kinds: ['sensor_offline', 'trv_not_confirmed', 'battery_low'] },
+    alerts: 3,
+  };
+  if (mutate) mutate(states, cfg, view);
+  view.summaries = states.map((s) => summaryOf(cfg, s));
+  return view;
+}
+
+/** ITexts over the real text tables, at the harness clock; names resolve against the configuration when given. */
+function realTexts(lang = 'uk', now = () => WED_1910, cfg = null) {
+  const M = require('../dist/notify/messages');
+  const find = (list, id) => (list ?? []).find((x) => x.id === id)?.name ?? null;
+  const names = cfg
+    ? {
+        room: (id) => find(cfg.rooms, id),
+        source: (id) => find(cfg.sources, id),
+        profile: (id) => find(cfg.profiles, id),
+        trigger: (id) => find(cfg.triggers, id),
+        rule: (id) => find(cfg.rules, id),
+        circuit: (id) => find(cfg.circuits, id),
+        pump: (id) => find(cfg.pumps, id),
+        instance: () => null,
+        device: () => null,
+        entity: () => null,
+      }
+    : undefined;
+  const ctx = () => M.textContext(lang, now(), 'Europe/Kyiv', names);
+  return {
+    card: (key, vars) => M.renderCard(key, vars, ctx()),
+    reason: (r) => M.renderReason(r, ctx()),
+    issue: (i) => M.renderIssue(i, ctx()),
+    journal: (e) => M.renderJournal(e, ctx()),
+    incident: (i) => M.renderIncident(i, ctx()),
+    resolved: (i) => M.renderResolved(i, ctx()),
+    duration: (min) => M.duration(min, lang),
+    clock: (ts) => M.clock(ts, ctx()),
+  };
 }
 
 /* ── ports ───────────────────────────────────────────────────────────────────────────────────── */
@@ -1056,6 +1145,8 @@ module.exports = {
   houseProfileState,
   issue,
   sparkFor,
+  publishView,
+  realTexts,
   openMqtt,
   connected,
   ROOM_STATE_STYLE,

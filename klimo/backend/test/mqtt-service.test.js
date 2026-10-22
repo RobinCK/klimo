@@ -256,6 +256,7 @@ test('asHaStates mirrors what HA would show for the card harness', async () => {
     icon: 'mdi:thermostat',
     lo: null,
     hi: null,
+    mode: 'heat',
     source: 'schedule',
     until: h.engine.profileState.scheduledUntil,
   });

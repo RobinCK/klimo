@@ -3820,9 +3820,14 @@ class KlimoSystemCard extends KlimoBase {
       .map((s) => {
         const tone = baseTone(s.tone);
         const box = s.on ? toneVars(tone) : 'background:var(--k-s3);color:var(--k-t3)';
-        const role = s.role && s.role !== 'unused' ? tr(ctx.lang, `role_${s.role}`) : '';
-        const since = s.on && isNum(s.at) ? tr(ctx.lang, 'since', { t: fmtClock(s.at, ctx.lang, ctx.tz) }) : '';
-        const meta = [role, since].filter(Boolean).join(' · ');
+        // Klimo's own line under the name (telemetry, the fault, why it waits); an older add-on without it
+        // gets the role and the start time
+        let meta = fill(s.sub, s.at, ctx.lang, ctx.tz);
+        if (!meta) {
+          const role = s.role && s.role !== 'unused' ? tr(ctx.lang, `role_${s.role}`) : '';
+          const since = s.on && isNum(s.at) ? tr(ctx.lang, 'since', { t: fmtClock(s.at, ctx.lang, ctx.tz) }) : '';
+          meta = [role, since].filter(Boolean).join(' · ');
+        }
         return (
           `<div class="srow${s.on ? ' on' : ''}"><span class="sic" style="${box}">${ic(s.i || 'anyEntity', 16)}</span>` +
           `<span class="sm"><span class="sn ell">${esc(s.n)}</span>${meta ? `<span class="sme ell">${esc(meta)}</span>` : ''}</span>` +

@@ -5,56 +5,7 @@ const H = require('./mqtt-harness');
 
 const { WED_1910, AT_2300, AT_2030, HOUR, MIN } = H;
 
-/** The view one publish pass would see for the harness house. */
-function view({ rooms = 12, texts = new H.FakeTexts(), mutate } = {}) {
-  const cfg = H.houseConfig({ rooms });
-  const states = H.roomStates(cfg);
-  if (mutate) mutate(states, cfg);
-  const thermostats = new Map(states.map((s) => [s.roomId, H.thermostatOf(cfg, s)]));
-  const house = {
-    now: WED_1910,
-    tz: 'Europe/Kyiv',
-    engine: { health: 'ok', haConnected: true, mqttConnected: true, lastTickAt: WED_1910, simulated: false, unitsOk: true },
-    houseName: 'Дім',
-    season: H.seasonState(),
-    profile: H.houseProfileState(),
-    counts: { total: states.length, capable: states.length, active: states.filter((r) => r.state === 'heat').length, attention: states.filter((r) => r.issues.length || r.state === 'window').length, monitorOnly: 0 },
-    verb: 'heat',
-    leadSourceId: 's_hp',
-    humidityAvgPct: 55.4,
-    alertsCount: { critical: 0, warning: 3, total: 3 },
-    deviceIssuesCount: 0,
-    inboxCount: 0,
-  };
-  return {
-    now: WED_1910,
-    tz: 'Europe/Kyiv',
-    lang: 'uk',
-    cfg,
-    texts,
-    health: 'ok',
-    online: true,
-    panel: '/a0d7b954_klimo',
-    house,
-    season: H.seasonState(),
-    plant: H.plantState(cfg),
-    profile: H.houseProfileState(),
-    rooms: states,
-    summaries: states.map((s) => H.summaryOf(cfg, s)),
-    thermostat: (id) => thermostats.get(id) ?? null,
-    sparks: H.sparkFor(cfg),
-    durations: [
-      { id: 'slot', until: AT_2300 },
-      { id: '1h', until: WED_1910 + HOUR },
-      { id: '2h', until: WED_1910 + 2 * HOUR },
-      { id: 'morning', until: H.kyiv(2026, 10, 22, 7) },
-      { id: 'until', until: null },
-      { id: 'none', until: null },
-    ],
-    problems: { count: 3, kinds: ['sensor_offline', 'trv_not_confirmed', 'battery_low'] },
-    alerts: 3,
-  };
-}
+const view = H.publishView;
 
 test('a 12-room hub stays within 8 KB and every room card within 4 KB', () => {
   const v = view();
@@ -90,7 +41,8 @@ test('the hub reads like the house card: headline, profile, tiles, rooms with su
   assert.deepEqual(hub.house.profile, { id: 'home', layer: 'house_schedule', until: AT_2300, next: 'night', t: 'за розкладом до {t} → Ніч' });
   assert.deepEqual(hub.house.tiles.map((t) => t.key), ['source', 'pumps', 'humidity', 'outdoor']);
   assert.equal(hub.house.tiles[0].value, 'Тепловий насос гріє');
-  assert.equal(hub.house.tiles[0].sub, 'з {t} · 38° · 2.1 кВт · COP 3.1');
+  assert.equal(hub.house.tiles[0].sub, 'з {t} · подача 38° · 2.1 кВт · COP 3.1');
+  assert.equal(hub.house.tiles[1].sub, 'радіатори й підлога');
   assert.equal(hub.house.tiles[3].value, 'Надворі 4.2° · 3 дні: 6.8°');
   assert.equal(hub.profiles.length, 6);
   assert.deepEqual(hub.profiles[0], { id: 'home', n: 'Дома', c: '#9B87F5', k: '#140F2E', i: 'home', h: 21, cl: 25, frost: false });
@@ -109,7 +61,14 @@ test('the hub reads like the house card: headline, profile, tiles, rooms with su
     ['s_ac2', 'ac', false, 'standby'],
     ['s_conv', 'convector', false, 'waiting_trigger'],
   ]);
-  assert.equal(hub.sources[1].t, 'вступить нижче −10.0° або при аварії ТН');
+  assert.deepEqual(hub.sources.map((s) => [s.t, s.sub]), [
+    ['Гріє', 'з {t} · подача 38° · 2.1 кВт · COP 3.1'],
+    ['Резерв', 'вступить нижче −10.0° або при аварії ТН'],
+    ['Резерв', 'догрів, якщо бракує 1.5°'],
+    ['Резерв', 'догрів, якщо бракує 1.5°'],
+    // a blocker says more than the role
+    ['Чекає', 'Пояснення source.blocked.trigger'],
+  ]);
   assert.equal(hub.circuits[0].sub, 'просять Вітальня, Дитяча, Ванна');
   assert.equal(hub.energy.t, 'Мережа є');
   assert.equal(hub.triggers.find((t) => t.id === 'night_tariff').at, AT_2300);
@@ -138,7 +97,8 @@ test('room card: target line, device, window, issue, next block and a thermostat
   assert.equal(card.stg.length, 13);
   assert.deepEqual(card.tol, [0.2, 0.2]);
   assert.deepEqual(Object.keys(card.th.untils).sort(), ['forever', 'morning', 'slot']);
-  assert.deepEqual(P.roomCardAttrs(ix, kids).iss, { tone: 'warn', i: 'droplet', t: 'Вологість 67% · ризик конденсату', at: WED_1910 - 30 * MIN, more: 0 });
+  // the engine linked the issue to its incident: the card can snooze or hide it
+  assert.deepEqual(P.roomCardAttrs(ix, kids).iss, { tone: 'warn', i: 'droplet', t: 'Вологість 67% · ризик конденсату', at: WED_1910 - 30 * MIN, more: 0, id: 'i_humidity_high' });
   assert.equal(P.roomCardAttrs(ix, kids).hw, true);
   assert.deepEqual(P.roomCardAttrs(ix, study).src, { k: 'manual', t: 'Вручну 20.5° · до {t}', at: AT_2030 });
   const bathCard = P.roomCardAttrs(ix, bath);
@@ -212,6 +172,7 @@ test('room climate payload: HA mode, targets, demand and window as the entities 
     hi: null,
     preset: 'Дома',
     target: 20,
+    target_mode: 'heat',
     dew: 7.9,
     heat: 'ON',
     cool: 'OFF',

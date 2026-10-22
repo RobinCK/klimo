@@ -216,25 +216,25 @@
         attText: '5 потребують уваги', hum: 51,
         profile: { id: 'p_home', layer: 'house_schedule', until: slot, next: 'p_night', t: 'за розкладом до {t} → Ніч' },
         tiles: [
-          { key: 'source', label: 'Джерело', value: 'Тепловий насос гріє', sub: 'з {t} · подача 38° · COP 3.1', tone: 'heat', at: since, wide: true },
+          { key: 'source', label: 'Джерело', value: 'Тепловий насос гріє', sub: 'з {t} · подача 38° · 2.1 кВт · COP 3.1', tone: 'heat', at: since, wide: true },
           { key: 'pumps', label: 'Насоси', value: 'Працюють', sub: 'радіатори й підлога', tone: 'hold', at: null, wide: false },
           { key: 'humidity', label: 'Вологість', value: '51%', sub: 'середня по дому', tone: 'hold', at: null, wide: false },
           { key: 'outdoor', label: 'Надворі', value: '4.2°', sub: '3 дні: 6.8°', tone: 'hold', at: null, wide: false },
         ],
       },
       sources: [
-        { id: 's_hp', n: 'Тепловий насос', i: 'heatPump', st: 'heating', tone: 'heat', on: true, role: 'lead', t: 'Гріє', at: since },
-        { id: 's_boiler', n: 'Газовий котел', i: 'boiler', st: 'standby', tone: 'hold', on: false, role: 'reserve', t: 'Резерв', at: null },
-        { id: 's_ac', n: 'Кондиціонери', i: 'ac', st: 'idle', tone: 'hold', on: false, role: 'assist', t: 'Не потрібні', at: null },
-        { id: 's_conv', n: 'Конвектор · Кабінет', i: 'convector', st: 'waiting_trigger', tone: 'wait', on: false, role: 'trigger_only', t: 'Чекає', at: null },
+        { id: 's_hp', n: 'Тепловий насос', i: 'heatPump', st: 'heating', tone: 'heat', on: true, role: 'lead', t: 'Гріє', sub: 'з {t} · подача 38° · 2.1 кВт · COP 3.1', at: since },
+        { id: 's_boiler', n: 'Газовий котел', i: 'boiler', st: 'standby', tone: 'hold', on: false, role: 'reserve', t: 'Резерв', sub: 'Резерв нижче −10.0°', at: null },
+        { id: 's_ac', n: 'Кондиціонери', i: 'ac', st: 'idle', tone: 'hold', on: false, role: 'assist', t: 'Не потрібні', sub: 'Допомагає', at: null },
+        { id: 's_conv', n: 'Конвектор · Кабінет', i: 'convector', st: 'waiting_trigger', tone: 'wait', on: false, role: 'trigger_only', t: 'Чекає', sub: 'Працює лише з «Сонце при блекауті»', at: null },
       ],
       circuits: [
         { id: 'c_rad', n: 'Радіатори', tone: 'heat', on: true, t: 'Насос працює', sub: 'просять Вітальня, Дитяча', at: null },
-        { id: 'c_floor', n: 'Тепла підлога', tone: 'heat', on: true, t: 'Насос працює', sub: 'поки працює ТН + 10 хв', at: null },
+        { id: 'c_floor', n: 'Тепла підлога', tone: 'heat', on: true, t: 'Насос працює', sub: 'поки гріє ТН + 10 хв', at: null },
       ],
       energy: { g: 'present', pv: 0, bat: 78, load: 3.4, t: 'Мережа є', tone: 'ok' },
       triggers: [
-        { id: 't_blackout_sun', n: 'Сонце при блекауті', on: false, t: 'жоден не активний', at: null },
+        { id: 't_blackout_sun', n: 'Сонце при блекауті', on: false, t: '', at: null },
         { id: 't_night_tariff', n: 'Нічний тариф', on: false, t: 'нічний тариф з {t}', at: slot },
       ],
       durations: [
@@ -265,10 +265,10 @@
         ],
       },
       sources: [
-        { id: 's_ac', n: 'Кондиціонери', i: 'ac', st: 'cooling', tone: 'cool', on: true, role: 'room_primary', t: 'Охолоджують', at: since },
-        { id: 's_hp', n: 'Тепловий насос', i: 'heatPump', st: 'cooling', tone: 'cool', on: true, role: 'lead', t: 'Охолоджує', at: at(13, 25, false) },
-        { id: 's_boiler', n: 'Газовий котел', i: 'boiler', st: 'waiting_season', tone: 'hold', on: false, role: 'reserve', t: 'Вимкнено', at: null },
-        { id: 's_conv', n: 'Конвектор · Кабінет', i: 'convector', st: 'idle', tone: 'hold', on: false, role: 'trigger_only', t: 'Не потрібен', at: null },
+        { id: 's_ac', n: 'Кондиціонери', i: 'ac', st: 'cooling', tone: 'cool', on: true, role: 'room_primary', t: 'Охолоджують', sub: 'з {t} · 1.7 кВт', at: since },
+        { id: 's_hp', n: 'Тепловий насос', i: 'heatPump', st: 'cooling', tone: 'cool', on: true, role: 'lead', t: 'Охолоджує', sub: 'з {t} · подача 18° · 1.4 кВт', at: at(13, 25, false) },
+        { id: 's_boiler', n: 'Газовий котел', i: 'boiler', st: 'waiting_season', tone: 'hold', on: false, role: 'reserve', t: 'Вимкнене сезоном', sub: 'Не дозволено: охолодження', at: null },
+        { id: 's_conv', n: 'Конвектор · Кабінет', i: 'convector', st: 'idle', tone: 'hold', on: false, role: 'trigger_only', t: 'Не потрібне', sub: 'Лише з «Сонце при блекауті»', at: null },
       ],
       circuits: [
         { id: 'c_floor', n: 'Тепла підлога', tone: 'cool', on: true, t: 'Охолоджує', sub: 'Кухня, Коридор · без Ванни', at: null },

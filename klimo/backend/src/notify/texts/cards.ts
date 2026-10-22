@@ -53,13 +53,15 @@ function shortSource(kind: unknown, name: unknown, form: 'from' | 'subject', lan
 
 /**
  * « від ТН» for a known source, « · Котел Vaillant» for a name of the user's own (no preposition: the
- * name cannot be declined), nothing without a source. English always says "from".
+ * name cannot be declined), nothing without a source. English always says "from". A caller that
+ * passes no `sourceKind` has shortened the name itself and gets it after the preposition.
  */
 function fromSource(v: Vars, lang: 0 | 1, lead = ' '): string {
   if (v.source === null || v.source === undefined || v.source === '') return '';
   const short = shortSource(v.sourceKind, v.source, 'from', lang);
   if (short) return lang === 1 ? `${lead}від ${short}` : `${lead}from ${short}`;
-  return lang === 1 ? '[ · {source}]' : `[${lead}from {source}]`;
+  if (lang === 0) return `[${lead}from {source}]`;
+  return v.sourceKind ? '[ · {source}]' : `[${lead}від {source}]`;
 }
 
 /** The source as a subject: the short word when it has one, else the name as given. */
