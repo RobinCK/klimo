@@ -27,15 +27,17 @@ import { isActiveAt } from './targets';
 const MIN_MS = 60_000;
 
 /** Why a mode is not available to the room right now. */
-export type ModeBlock = 'ok' | 'no_target' | 'house_off' | 'no_emitter' | 'season' | 'humid';
+export type ModeBlock = 'ok' | 'no_target' | 'house_off' | 'no_emitter' | 'season' | 'humid' | 'humidity_unknown';
 
 export interface ModeAvailability {
   heat: boolean;
   cool: boolean;
   heatBlock: ModeBlock;
   coolBlock: ModeBlock;
-  /** The room is excluded from floor cooling because it is humid (D.12.4). */
+  /** The room is excluded from floor cooling because it is humid. */
   humidExcluded: boolean;
+  /** …or because none of its humidity sensors has given a valid reading for a while. */
+  humidityUnknown: boolean;
 }
 
 export function sourceById(cfg: Pick<EngineConfig, 'sources'>, id: string | null): SourceConfig | null {
@@ -82,7 +84,10 @@ export function humidExcluded(cfg: EngineConfig, rh: number | null): boolean {
   return lim !== null && rh !== null && rh > lim;
 }
 
-/** D.7 mode availability: a target, an enabled emitter with a capable path, and the season gate. */
+/**
+ * Mode availability: a target, an enabled emitter with a capable path, and the season gate. A room cooled
+ * only through floors loses cooling while it is too humid or its humidity is unknown.
+ */
 export function modeAvailability(
   cfg: EngineConfig,
   room: RoomConfig,
@@ -90,6 +95,7 @@ export function modeAvailability(
   season: SeasonState,
   rh: number | null,
   now: EpochMs,
+  humidityUnknown = false,
 ): ModeAvailability {
   const emitters = cfg.emittersByRoom[room.id] ?? [];
   const humid = humidExcluded(cfg, rh);
@@ -100,13 +106,16 @@ export function modeAvailability(
     if (!capable.length) return 'no_emitter';
     const seasonal = capable.filter((e) => emitterSeasonAllowed(cfg, e, mode, season));
     if (!seasonal.length) return 'season';
-    if (mode === 'cool' && seasonal.every((e) => e.circuitId !== null) && humid) return 'humid';
+    if (mode === 'cool' && seasonal.every((e) => e.circuitId !== null)) {
+      if (humid) return 'humid';
+      if (humidityUnknown) return 'humidity_unknown';
+    }
     if (value === null) return 'no_target';
     return 'ok';
   };
   const heatBlock = check('heat', target.heatC);
   const coolBlock = check('cool', target.coolC);
-  return { heat: heatBlock === 'ok', cool: coolBlock === 'ok', heatBlock, coolBlock, humidExcluded: humid };
+  return { heat: heatBlock === 'ok', cool: coolBlock === 'ok', heatBlock, coolBlock, humidExcluded: humid, humidityUnknown };
 }
 
 /** Weather compensation: every `perFrostC` of frost raises the heating ON threshold by `shiftC`. */
@@ -171,7 +180,7 @@ export interface DemandStep {
   heldByMinRequest: boolean;
 }
 
-/** D.7 demand: latch → request, held ≥ minRequestMin unless hard-blocked; frost always asks for heat. */
+/** Demand: latch → request, held ≥ minRequestMin unless hard-blocked; frost always asks for heat. */
 export function stepDemand(prevMode: ModeOrNone, prevSince: EpochMs | null, d: DemandInput, now: EpochMs): DemandStep {
   const raw: ModeOrNone = d.heatOn ? 'heat' : d.coolOn ? 'cool' : 'none';
   let mode = prevMode;
@@ -222,7 +231,7 @@ export function demandBlock(b: BlockInput): DemandBlock {
   if (b.airing) return 'airing';
   if (b.overheat && !b.modes.cool) return 'overheat';
   if (!b.modes.heat && !b.modes.cool) {
-    const seasonal = b.modes.heatBlock === 'season' || b.modes.coolBlock === 'season' || b.modes.coolBlock === 'humid';
+    const seasonal = b.modes.heatBlock === 'season' || b.modes.coolBlock === 'season' || b.modes.coolBlock === 'humid' || b.modes.coolBlock === 'humidity_unknown';
     return seasonal ? 'season' : 'not_capable';
   }
   if (b.policyNever) return 'policy_never';

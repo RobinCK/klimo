@@ -559,6 +559,12 @@ button.valuePill[aria-expanded='true'] {
   color: var(--ui-text-2);
 }
 
+@media (max-width: 699px) {
+  .valuePill {
+    min-height: 40px;
+  }
+}
+
 .popover.popover {
   min-width: 220px;
   padding: var(--ui-space-12);

@@ -6,7 +6,7 @@
 import { useState } from 'react';
 import type { ActivationRule, Id, ProfileDto, ProfilePatch, RoomProfileMode, RoomSummary, Schedule } from '@api/model';
 import { api } from '@api/endpoints';
-import { useAutosave, useMutation } from '@data';
+import { useAutosave, useLayout, useMutation } from '@data';
 import {
   Button,
   CheckboxRow,
@@ -15,6 +15,7 @@ import {
   DataTable,
   IconButton,
   IconPicker,
+  KeyValueList,
   ProfileIconTile,
   Row,
   RuleCard,
@@ -217,6 +218,7 @@ function RoomsTable({ c, profile, editable }: { c: ScheduleContext; profile: Pro
   const { put } = c.profiles;
   const limits = c.settings.data?.general.targetLimits ?? { heatMinC: 5, heatMaxC: 30, coolMinC: 16, coolMaxC: 32, stepC: 0.5 };
   const frost = c.settings.data?.safety.frostC ?? 7;
+  const phone = useLayout() === 'phone';
   const save = useMutation(
     (roomId: Id, mode: RoomProfileMode, heatC: number | null, coolC: number | null) => api.profiles.setRoom(profile.id, roomId, { mode, heatC, coolC }),
     { onSuccess: put, onError: () => void c.profiles.reload() },
@@ -230,7 +232,7 @@ function RoomsTable({ c, profile, editable }: { c: ScheduleContext; profile: Pro
     void save.run(room.id, mode, heatC, coolC);
   };
 
-  const rows: DataRow[] = c.rooms.map((room) => {
+  const items = c.rooms.map((room) => {
     const rt = profile.roomTargets.find((r) => r.roomId === room.id);
     const mode: RoomProfileMode = rt?.mode ?? 'inherit';
     const heatC = rt?.heatC ?? null;
@@ -266,31 +268,26 @@ function RoomsTable({ c, profile, editable }: { c: ScheduleContext; profile: Pro
     ) : (
       fmtTemp(mode === 'own' ? (coolC ?? profile.coolC) : profile.coolC)
     );
-    return {
-      key: room.id,
-      cells: {
-        room: room.name,
-        mode: (
-          <SegmentedControl<RoomProfileMode>
-            size="xs"
-            surface="well"
-            ariaLabel={t('Mode of {room}', { room: room.name })}
-            value={mode}
-            options={[
-              { value: 'inherit', label: t('from profile'), disabled: !editable },
-              { value: 'own', label: t('own'), disabled: !editable },
-              { value: 'off', label: t('off'), disabled: !editable },
-            ]}
-            onChange={(m) => setRoom(room, m, m === 'own' ? heatC : null, m === 'own' ? coolC : null)}
-          />
-        ),
-        heat: heatCell,
-        cool: coolCell,
-      },
-    };
+    const modeControl = (full: boolean) => (
+      <SegmentedControl<RoomProfileMode>
+        size="xs"
+        surface="well"
+        full={full}
+        ariaLabel={t('Mode of {room}', { room: room.name })}
+        value={mode}
+        options={[
+          { value: 'inherit', label: t('from profile'), disabled: !editable },
+          { value: 'own', label: t('own'), disabled: !editable },
+          { value: 'off', label: t('off'), disabled: !editable },
+        ]}
+        onChange={(m) => setRoom(room, m, m === 'own' ? heatC : null, m === 'own' ? coolC : null)}
+      />
+    );
+    return { key: room.id, name: room.name, modeControl, heat: heatCell, cool: coolCell };
   });
 
   const own = profile.roomTargets.length;
+  const rows: DataRow[] = items.map((it) => ({ key: it.key, cells: { room: it.name, mode: it.modeControl(false), heat: it.heat, cool: it.cool } }));
   return (
     <Section
       variant="plain"
@@ -298,17 +295,36 @@ function RoomsTable({ c, profile, editable }: { c: ScheduleContext; profile: Pro
       title={t('Rooms in this profile')}
       tag={own ? t('{count} with their own setting', { count: own }) : t('all take the profile target')}
     >
-      <DataTable
-        minWidth={540}
-        ariaLabel={t('Rooms in this profile')}
-        columns={[
-          { key: 'room', label: t('Room'), width: 'minmax(7rem, 1fr)' },
-          { key: 'mode', label: t('Mode'), width: 'minmax(14.5rem, 1.7fr)' },
-          { key: 'heat', label: t('Heat'), width: '6.5rem' },
-          { key: 'cool', label: t('Cool'), width: '6.5rem' },
-        ]}
-        rows={rows}
-      />
+      {phone ? (
+        // a phone has no room for four columns: one block per room, the mode across its width
+        <Stack gap="sm">
+          {items.map((it) => (
+            <Section key={it.key} variant="well" level={3} title={it.name}>
+              <Stack gap="sm">
+                {it.modeControl(true)}
+                <KeyValueList
+                  rows={[
+                    { key: t('Heat'), value: it.heat },
+                    { key: t('Cool'), value: it.cool },
+                  ]}
+                />
+              </Stack>
+            </Section>
+          ))}
+        </Stack>
+      ) : (
+        <DataTable
+          minWidth={540}
+          ariaLabel={t('Rooms in this profile')}
+          columns={[
+            { key: 'room', label: t('Room'), width: 'minmax(7rem, 1fr)' },
+            { key: 'mode', label: t('Mode'), width: 'minmax(14.5rem, 1.7fr)' },
+            { key: 'heat', label: t('Heat'), width: '6.5rem' },
+            { key: 'cool', label: t('Cool'), width: '6.5rem' },
+          ]}
+          rows={rows}
+        />
+      )}
     </Section>
   );
 }

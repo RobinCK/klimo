@@ -2,9 +2,8 @@
  * Keeps src/locales/<lang>.json in sync with the t() and ut() calls in the code:
  * new strings are added, strings no longer used are removed.
  *
- *   npm run i18n            update the dictionaries
- *   npm run i18n:check      fail if they are out of date or Ukrainian has gaps
- *   npm run locales:merge   fold src/locales/parts/*.json into the dictionaries
+ *   npm run i18n         update the dictionaries
+ *   npm run i18n:check   fail if they are out of date or a Ukrainian string is empty
  *
  * Keys are the English source text, so en.json is the list of source strings and
  * a language file only needs the keys it actually translates. t() is the app and

@@ -166,6 +166,15 @@ const REASONS: Record<ReasonCode, (p: P, c: Ctx) => string> = {
       dew: temp(p, 'dewC'),
       max: temp(p, 'maxSupplyC'),
     }),
+  'why.monitor.too_humid': (p) =>
+    t('Floor cooling is off — humidity {rh} is above {max}, the floor could sweat.', { rh: pct(p, 'rh'), max: pct(p, 'maxPct') }),
+  'why.monitor.humidity_unknown': (p, c) =>
+    num(p, 'since') != null
+      ? t('Floor cooling is off — no humidity reading since {since}, so the dew point is unknown.', { since: clock(p, 'since', c) })
+      : t('Floor cooling is off — no humidity reading, so the dew point is unknown.'),
+  'why.monitor.dew_hold': (p, c) => t('Floor cooling rests {until} after the dew point guard stopped it.', { until: until(p, 'until', c) }),
+  'why.monitor.dew_lockout': (p, c) =>
+    t('Floor cooling is locked {until} or until a reset: the dew point guard stopped it {n} times within 2 h.', { until: until(p, 'until', c), n: num(p, 'trips') ?? 0 }),
   'why.season_blocks': (p) =>
     str(p, 'mode') === 'cool'
       ? t('Cooling is not allowed now ({season}).', { season: season(p) })
@@ -311,6 +320,9 @@ const REASONS: Record<ReasonCode, (p: P, c: Ctx) => string> = {
   'plant.house_off': () => t('The house is switched off'),
   'plant.blind': (p, c) => t('No connection to Home Assistant since {since} — nothing is switched', { since: clock(p, 'since', c) }),
   'plant.cool_by_ac': (p) => t('Air conditioners cool {count} rooms', { count: num(p, 'n') ?? 0 }),
+  'plant.dew_hold': (p, c) => t('{circuit}: floor cooling rests {until} after the dew point guard', { circuit: circuit(p, c), until: until(p, 'until', c) }),
+  'plant.dew_lockout': (p, c) =>
+    t('{circuit}: floor cooling locked {until} after {n} dew point stops', { circuit: circuit(p, c), until: until(p, 'until', c), n: num(p, 'trips') ?? 0 }),
   // circuits
   'circuit.heating': (p, c) => {
     const parts = [t('Heating')];
@@ -330,6 +342,8 @@ const REASONS: Record<ReasonCode, (p: P, c: Ctx) => string> = {
   'circuit.dew_blocked': (p) => t('Blocked by the dew point {dew}', { dew: temp(p, 'dewC') }),
   'circuit.no_source': () => t('No source available'),
   'circuit.heat_only_blocked': () => t('Heating only — closed while cooling'),
+  'circuit.dew_hold': (p, c) => t('Paused by the dew point guard {until}', { until: until(p, 'until', c) }),
+  'circuit.dew_lockout': (p, c) => t('Locked by the dew point guard {until}', { until: until(p, 'until', c) }),
   // energy
   'energy.grid_ok': () => t('Grid power is on'),
   'energy.budget_used': (p) => t('Blackout: {used} of {budget}', { used: kw(p, 'usedKw'), budget: kw(p, 'budgetKw') }),
@@ -528,6 +542,10 @@ const JOURNAL: Record<JournalCode, JRender> = {
   'frost.fallback': (p, c) => t('Frost protection: {source} heats {room}', { source: source(p, c), room: room(p, c) }),
   'dew.guard': (p, c) =>
     t('{circuit}: supply {supply} near the dew point {dew} — cooling limited', { circuit: circuit(p, c), supply: temp(p, 'supplyC'), dew: temp(p, 'dewC') }),
+  'dew.lockout': (p, c) =>
+    t('{circuit}: the dew point guard stopped floor cooling {n} times in 2 h — locked {until}', { circuit: circuit(p, c), n: num(p, 'trips') ?? 0, until: until(p, 'until', c) }),
+  'dew.lockout_end': (p, c) => t('{circuit}: floor cooling allowed again', { circuit: circuit(p, c) }),
+  'dew.lockout_reset': (p, c) => t('{circuit}: floor cooling lock reset', { circuit: circuit(p, c) }) + byWhom(p),
   'budget.shed': (p, c) => t('{source} shed by the power budget: {used} of {budget}', { source: source(p, c), used: kw(p, 'usedKw'), budget: kw(p, 'budgetKw') }),
   'budget.critical': (p) => t('Battery {soc} — frost protection only', { soc: pct(p, 'soc') }),
   'cutoff.on': (p) => t('Outdoor {tout} — central heating not needed', { tout: temp(p, 'toutC') }),
@@ -549,6 +567,8 @@ const JOURNAL: Record<JournalCode, JRender> = {
   'room.overheat_off': (p, c, e) => t('{room}: the temperature is back to normal ({t})', { room: subjectRoom(e, c), t: temp(p, 't') }),
   'room.no_data': (_p, c, e) => t('{room}: no temperature data', { room: subjectRoom(e, c) }),
   'room.data_back': (p, c, e) => t('{room}: data is back ({t})', { room: subjectRoom(e, c), t: temp(p, 't') }),
+  'room.humidity_unknown': (p, c, e) => t('{room}: no humidity reading for {dur} — the floor is not cooled', { room: subjectRoom(e, c), dur: fmtDur(num(p, 'minutes')) }),
+  'room.humidity_back': (_p, c, e) => t('{room}: humidity reading is back — floor cooling allowed', { room: subjectRoom(e, c) }),
   'room.trv_fallback': (p, c, e) => t('{room}: using the radiator valves’ readings ({n})', { room: subjectRoom(e, c), n: num(p, 'n') ?? 0 }),
   'room.profile_written': (p, c, e) => {
     const targets = [num(p, 'heatC') != null ? temp(p, 'heatC') : null, num(p, 'coolC') != null ? temp(p, 'coolC') : null].filter(Boolean).join(' / ');
@@ -670,6 +690,7 @@ const ISSUES: Record<IssueCode, (p: P, c: Ctx) => string> = {
   condensation: (p) => t('Humidity {rh} · condensation risk', { rh: pct(p, 'rh') }),
   humidity_high: (p) => t('Humidity {rh}', { rh: pct(p, 'rh') }),
   floor_humid: (p) => t('Humid ({rh}) — no floor cooling', { rh: pct(p, 'rh') }),
+  humidity_unknown: () => t('Humidity unknown — no floor cooling'),
   battery_low: (p, c) => {
     const key = str(p, 'deviceKey');
     const name = key ? c.device?.(key) : undefined;

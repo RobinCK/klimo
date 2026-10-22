@@ -1127,6 +1127,26 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
     await this.runNow('pump.exercise');
   }
 
+  /** «Скинути»: floor cooling locked after repeated dew-guard trips may run again before midnight. */
+  async resetDewLockout(circuitId: Id, actor: Actor): Promise<boolean> {
+    const c = this.config.engineConfig().circuits.find((x) => x.id === circuitId);
+    if (!c) throw notFound('Circuit');
+    const now = this.clock.now();
+    const mem = this.memoryStore.current();
+    const lock = mem.plant.dewLockout?.[circuitId];
+    if (!lock || now >= lock.until) return false;
+    // the trips that led to the lockout go with it: a reset starts the count again
+    const lockout = { ...mem.plant.dewLockout };
+    const trips = { ...mem.plant.dewTrips };
+    delete lockout[circuitId];
+    delete trips[circuitId];
+    this.memoryStore.apply({ ...mem, plant: { ...mem.plant, dewLockout: lockout, dewTrips: trips } });
+    await this.record({ code: 'dew.lockout_reset', category: 'src', tone: 'ok', params: { circuitId, by: actorName(actor) }, entityIds: c.supply.sensorEntityId ? [c.supply.sensorEntityId] : [] }, now);
+    this.log.log(`${c.name}: floor cooling lockout reset (${actorName(actor)})`);
+    await this.runNow('dew.lockout_reset');
+    return true;
+  }
+
   async releaseTrvs(roomId: Id, deviceIds: Id[] | 'all', opts: { timeoutMs?: number } = {}): Promise<{ sent: number; confirmed: number }> {
     const cfg = this.config.engineConfig();
     const room = cfg.rooms.find((r) => r.id === roomId);

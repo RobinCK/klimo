@@ -269,7 +269,7 @@ const STRINGS = {
   uk: {
     waiting: 'Чекаю на дані Klimo',
     waitingFound: 'Знайдено {ids}, але даних ще немає.',
-    waitingHint: 'Чи працює адон Klimo і чи підключено MQTT? Стан MQTT видно в налаштуваннях Klimo.',
+    waitingHint: 'Чи працює доповнення Klimo і чи підключено MQTT? Стан MQTT видно в налаштуваннях Klimo.',
     offline: 'Klimo не на зв’язку',
     offlineSince: 'Klimo не на зв’язку · дані від {t}',
     roomNotFound: 'Кімнату «{room}» не знайдено',

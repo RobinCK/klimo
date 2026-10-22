@@ -227,7 +227,7 @@ export function DeviceTable({ rows, minWidth = 1080, ariaLabel, empty }: DeviceT
                 {r.signal}
                 <Seen seen={r.seen} />
               </span>
-              <span className={s.muted}>{[r.room, r.model, r.via].filter(Boolean).join(' · ')}</span>
+              <span className={s.muted}>{[r.room, r.model, r.via].filter((x) => x && x !== '—').join(' · ')}</span>
             </>
           );
           return (
@@ -252,7 +252,7 @@ export function DeviceTable({ rows, minWidth = 1080, ariaLabel, empty }: DeviceT
     { key: 'device', label: ut('Device'), width: 'minmax(220px, 1.6fr)' },
     { key: 'room', label: ut('Room'), width: 'minmax(100px, 0.8fr)' },
     { key: 'model', label: ut('Model'), width: 'minmax(120px, 1fr)' },
-    { key: 'state', label: ut('State'), width: 'minmax(150px, 1.1fr)' },
+    { key: 'state', label: ut('State'), width: 'minmax(170px, 1.1fr)' },
     { key: 'battery', label: ut('Battery'), width: '96px' },
     { key: 'signal', label: ut('Signal'), width: '96px' },
     { key: 'seen', label: ut('Last seen'), width: '100px' },
@@ -274,8 +274,9 @@ export function DeviceTable({ rows, minWidth = 1080, ariaLabel, empty }: DeviceT
           room: <span className={s.cellText}>{r.room}</span>,
           model: <span className={s.cellQuiet}>{r.model}</span>,
           state: (
-            <span className={s.toneChip} data-size="sm" style={toneVars(r.state.tone)}>
-              {r.state.label}
+            // a long state («Немає зв’язку 12 год 40 хв») is cut inside its column, never over the next one
+            <span className={`${s.toneChip} ${s.cellChip}`} data-size="sm" style={toneVars(r.state.tone)} title={r.state.label}>
+              <span className={s.cellChipText}>{r.state.label}</span>
             </span>
           ),
           battery: r.battery,

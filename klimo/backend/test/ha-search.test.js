@@ -218,6 +218,22 @@ test('detail: siblings classified, TRV capabilities and strategies', () => {
   assert.equal(search.detail('sensor.nope'), null);
 });
 
+test('detail: in a °F house the head’s range and setpoint step are read in °C', () => {
+  const { ha, search } = house();
+  ha.info = { ...ha.info, unit_system: { temperature: '°F' } };
+  ha.set(state('climate.living_trv', 'heat', { hvac_modes: ['off', 'heat'], current_temperature: 67, temperature: 70, min_temp: 41, max_temp: 95, target_temp_step: 1, friendly_name: 'Радіатор під вікном' }));
+  const d = search.detail('climate.living_trv');
+  assert.deepEqual(d.trv.capabilities.setpointRange, [5, 35]);
+  assert.equal(d.trv.capabilities.setpointStep, 0.56, '1 °F, not 1 °C');
+  assert.equal(d.climate.step, 0.56);
+  ha.set(state('climate.living_trv', 'heat', { hvac_modes: ['off', 'heat'], min_temp: 41, max_temp: 95, target_temp_step: 0.5 }));
+  assert.equal(search.detail('climate.living_trv').trv.capabilities.setpointStep, 0.28);
+  // a step HA does not report (or reports as 0) falls back to the default half degree
+  ha.set(state('climate.living_trv', 'heat', { hvac_modes: ['off', 'heat'], min_temp: 41, max_temp: 95, target_temp_step: 0 }));
+  assert.equal(search.detail('climate.living_trv').trv.capabilities.setpointStep, 0.5);
+  assert.equal(search.detail('climate.living_trv').climate.step, null);
+});
+
 test('discoverArea: roles, features, LQI, confidence, pre-selection, taken by another room', () => {
   const { search, config } = house();
   config.use('binary_sensor.living_window', { type: 'room', id: 'r_kitchen', label: 'Кухня' });

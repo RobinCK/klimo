@@ -73,6 +73,11 @@
   padding: 0 6px;
 }
 
+/* a choice that does not fit one line wraps into full rows rather than leaving an orphan */
+.seg[role='radiogroup']:not([data-full]) > .segItem {
+  flex-grow: 1;
+}
+
 .segItem > .segLabel {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -145,6 +150,7 @@
   .segItem,
   .seg[data-size='md'] .segItem {
     min-height: 44px;
+    min-width: 44px;
   }
   .seg[data-size='xs'] .segItem {
     min-height: 40px;

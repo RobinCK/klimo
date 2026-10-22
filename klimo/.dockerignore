@@ -1,0 +1,7 @@
+# the image copies only its build inputs; this keeps the build context small
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+backend/test
+backend/.simdata
+card/dev

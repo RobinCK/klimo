@@ -221,6 +221,151 @@ test('hard dew guard with a second loop on the same heat pump: the heat pump sti
   assert.equal(h.sourceState(res, 's_hp').on, false, 'the heat pump rests its minimum pause before the fan coils get it back');
 });
 
+/** A floor that cools with its supply sensor; the kitchen asks for cooling with a dew point of 14.6. */
+function dewFloor(extra = {}) {
+  const cfg = hpTwoCircuits({ floor: { supply: { sensorEntityId: 'sensor.floor_supply', returnEntityId: null, coolC: 18, coolMaxC: 22 } }, floorPump: { rule: 'source', runOnCoolMin: 0 }, ...extra });
+  return cfg;
+}
+
+/** Lets the supply run 1° under the hard limit (dew 14.6 + 2 − 0.5) until the guard trips; returns the trip time. */
+function tripGuard(run) {
+  run.set('sensor.floor_supply', '15.5');
+  for (let i = 0; i < 60; i++) {
+    const res = run.tick();
+    if (res.decisions.some((x) => x.code === 'dew.guard')) {
+      run.set('sensor.floor_supply', '19');
+      return run.st.now;
+    }
+  }
+  throw new Error('the dew guard did not trip');
+}
+
+const floorState = (res) => res.plant.circuits.find((c) => c.circuitId === 'c_floor');
+
+test('after a hard dew-guard trip the floor rests 30 minutes before it cools again', () => {
+  const run = h.runner(dewFloor(), { season: h.season('cooling') });
+  heatPumpRunning(run, 'cool', run.st.now - 30 * MIN);
+  pumpOn(run, 'p_floor', run.st.now - 30 * MIN);
+  run.set('switch.rad_pump', 'off');
+  run.room('r_kitchen', { t: 26.4, heatC: 20, coolC: 25, demand: 'cool', rh: 55, dew: 14.6 });
+  run.room('r_living', { t: 24, heatC: 20, coolC: 25, demand: 'none' });
+  const trip = tripGuard(run);
+
+  let res = run.runUntil(trip + 30 * MIN - 10 * SEC).at(-1);
+  assert.equal(h.sourceState(res, 's_hp').on, false, 'the minimum pause is long over, the floor still rests');
+  const floor = floorState(res);
+  assert.equal(floor.state.code, 'circuit.dew_hold');
+  assert.equal(floor.state.params.until, trip + 30 * MIN);
+  assert.deepEqual(floor.dewHold, { kind: 'hold', until: trip + 30 * MIN, trips: 1 });
+  assert.deepEqual(floor.excludedRooms, [{ roomId: 'r_kitchen', reason: 'dew' }]);
+  assert.equal(h.verdictOf(res, 'r_kitchen').emitterOpen.e_floor, false);
+  const guard = h.activeDetections(res, 'dew_point_guard')[0];
+  assert.equal(guard.facts.holdUntil, trip + 30 * MIN, 'the incident stays open while the floor rests');
+  assert.ok(res.plant.why.some((w) => w.code === 'plant.dew_hold'));
+  assert.equal(res.nextWakeAt !== null && res.nextWakeAt <= trip + 30 * MIN, true, 'the engine wakes when the rest ends');
+
+  // the floor pump runs its pre-run first, then the heat pump starts
+  res = run.runUntil(trip + 30 * MIN + 30 * SEC).at(-1);
+  assert.equal(h.sourceState(res, 's_hp').on, true);
+  assert.equal(h.sourceState(res, 's_hp').mode, 'cool');
+  assert.equal(floorState(res).dewHold, null);
+  assert.deepEqual(res.memory.plant.dewTrips.c_floor, [trip], 'the trip is remembered for two hours');
+});
+
+test('three hard trips within 2 hours lock floor cooling until midnight; the lock survives a restart and ends at midnight', () => {
+  const cfg = dewFloor();
+  const run = h.runner(cfg, { season: h.season('cooling') });
+  heatPumpRunning(run, 'cool', run.st.now - 30 * MIN);
+  pumpOn(run, 'p_floor', run.st.now - 30 * MIN);
+  run.set('switch.rad_pump', 'off');
+  run.room('r_kitchen', { t: 26.4, heatC: 20, coolC: 25, demand: 'cool', rh: 55, dew: 14.6 });
+  run.room('r_living', { t: 24, heatC: 20, coolC: 25, demand: 'none' });
+
+  const trips = [tripGuard(run)];
+  for (let i = 0; i < 2; i++) {
+    run.runUntil(trips.at(-1) + 30 * MIN + 30 * SEC);
+    assert.equal(h.sourceState(run.st.last, 's_hp').on, true, `cooling resumes after rest ${i + 1}`);
+    trips.push(tripGuard(run));
+  }
+  assert.ok(trips[2] - trips[0] < 2 * 3_600_000);
+  const midnight = kyiv(2026, 10, 22, 0, 0);
+  let res = run.st.last;
+  assert.ok(res.decisions.some((x) => x.code === 'dew.lockout' && x.params.trips === 3 && x.params.until === midnight));
+  assert.deepEqual(res.memory.plant.dewLockout.c_floor, { since: trips[2], until: midnight, trips: 3 });
+  const guard = h.activeDetections(res, 'dew_point_guard')[0];
+  assert.equal(guard.facts.lockedUntil, midnight);
+  assert.equal(guard.facts.trips, 3);
+
+  res = run.runUntil(trips[2] + 3 * 3_600_000, MIN).at(-1);
+  assert.equal(h.sourceState(res, 's_hp').on, false, 'no cooling through the floor for the rest of the day');
+  assert.equal(floorState(res).state.code, 'circuit.dew_lockout');
+  assert.deepEqual(floorState(res).dewHold, { kind: 'lockout', until: midnight, trips: 3 });
+  assert.deepEqual(res.memory.plant.dewTrips, {}, 'the trips have aged out, the lock stays');
+  assert.ok(res.plant.why.some((w) => w.code === 'plant.dew_lockout'));
+
+  // the add-on restarts: the lock is in the plant memory
+  const again = h.runner(cfg, { season: h.season('cooling'), start: run.st.now, memory: h.d.withDefaults(JSON.parse(JSON.stringify(run.st.memory)), run.st.memory) });
+  again.st.entities = JSON.parse(JSON.stringify(run.st.entities));
+  again.room('r_kitchen', { t: 26.4, heatC: 20, coolC: 25, demand: 'cool', rh: 55, dew: 14.6 });
+  again.room('r_living', { t: 24, heatC: 20, coolC: 25, demand: 'none' });
+  res = again.runUntil(midnight - 10 * SEC, MIN).at(-1);
+  assert.equal(h.sourceState(res, 's_hp').on, false);
+  assert.equal(floorState(res).state.code, 'circuit.dew_lockout');
+
+  res = again.tick(midnight);
+  assert.ok(res.decisions.some((x) => x.code === 'dew.lockout_end' && x.params.circuitId === 'c_floor'));
+  assert.deepEqual(res.memory.plant.dewLockout, {});
+  assert.equal(h.activeDetections(res, 'dew_point_guard').length, 0);
+  res = again.runUntil(midnight + 30 * SEC).at(-1);
+  assert.equal(h.sourceState(res, 's_hp').on, true, 'a new day, a new chance');
+});
+
+test('a lockout that ends at midnight takes its trips with it: one trip after midnight is a 30-minute rest, not another day', () => {
+  const late = kyiv(2026, 10, 21, 23, 30);
+  const midnight = kyiv(2026, 10, 22, 0, 0);
+  const run = h.runner(dewFloor(), { season: h.season('cooling'), start: midnight - 20 * SEC });
+  run.st.memory.plant.dewTrips = { c_floor: [late - 75 * MIN, late - 40 * MIN, late] };
+  run.st.memory.plant.dewLockout = { c_floor: { since: late, until: midnight, trips: 3 } };
+  run.set('climate.heat_pump', 'off').set('switch.floor_pump', 'off').set('switch.rad_pump', 'off').set('sensor.floor_supply', '19');
+  run.room('r_kitchen', { t: 26.4, heatC: 20, coolC: 25, demand: 'cool', rh: 55, dew: 14.6 });
+  run.room('r_living', { t: 24, heatC: 20, coolC: 25, demand: 'none' });
+  let res = run.tick(midnight);
+  assert.ok(res.decisions.some((x) => x.code === 'dew.lockout_end'));
+  assert.deepEqual(res.memory.plant.dewTrips, {}, 'the new day counts from zero');
+  run.runUntil(midnight + MIN);
+  const trip = tripGuard(run);
+  res = run.st.last;
+  assert.deepEqual(floorState(res).dewHold, { kind: 'hold', until: trip + 30 * MIN, trips: 1 });
+  assert.deepEqual(res.memory.plant.dewLockout, {});
+});
+
+test('while the floor rests the heat pump may cool the fan coils, but no cold water goes through the floor', () => {
+  const cfg = dewFloor();
+  cfg.circuits.push(h.circuit('c_fc', ['s_hp'], { kind: 'fancoil', capabilities: { heat: true, cool: true }, order: 2 }));
+  cfg.pumps.push(h.pump('p_fc', 'c_fc', 'switch.fc_pump', { rule: 'source', runOnCoolMin: 0 }));
+  cfg.rooms.push(h.room('r_bed'));
+  cfg.emittersByRoom.r_bed = [h.emitter('e_fc', 'r_bed', { kind: 'fancoil', circuitId: 'c_fc', roles: { heat: 'primary', cool: 'primary' } })];
+  const run = h.runner(cfg, { season: h.season('cooling') });
+  heatPumpRunning(run, 'cool', run.st.now - 30 * MIN);
+  pumpOn(run, 'p_floor', run.st.now - 30 * MIN);
+  run.set('switch.rad_pump', 'off').set('switch.fc_pump', 'on');
+  run.room('r_kitchen', { t: 26.4, heatC: 20, coolC: 25, demand: 'cool', rh: 55, dew: 14.6 });
+  run.room('r_living', { t: 24, heatC: 20, coolC: 25, demand: 'none' });
+  run.room('r_bed', { t: 26.4, heatC: 20, coolC: 25, demand: 'cool', rh: 50, dew: 13 });
+  const trip = tripGuard(run);
+
+  const res = run.runUntil(trip + 15 * MIN).at(-1);
+  assert.equal(h.sourceState(res, 's_hp').on, true, 'the fan coils get the heat pump back after its pause');
+  assert.equal(h.verdictOf(res, 'r_bed').served, true);
+  const fp = h.pumpState(res, 'p_floor');
+  assert.equal(fp.on, false);
+  assert.equal(fp.state, 'blocked');
+  assert.equal(h.desiredOf(res, 'switch.floor_pump').value.on, false);
+  assert.equal(h.verdictOf(res, 'r_kitchen').emitterOpen.e_floor, false);
+  assert.equal(floorState(res).state.code, 'circuit.dew_hold');
+  assert.ok(!res.decisions.some((x) => x.code === 'dew.guard'), 'a closed floor cannot trip the guard again');
+});
+
 test('mixing valve: 35° while the floor heats, the dew-safe supply while it cools', () => {
   const cfg = hpTwoCircuits({ floor: { mixingValve: { entityId: 'number.floor_mixing_valve', heatC: 35, coolC: null } } });
   const run = h.runner(cfg);

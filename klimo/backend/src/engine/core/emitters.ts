@@ -18,7 +18,7 @@ import type {
 import { circuitById, emitterSeasonAllowed, humidExcluded, sourceById } from './hysteresis';
 
 /* =====================================================================================================
- * What the room asks of each emitter (D.11). `primary` follows the room's demand; `assist` joins only for
+ * What the room asks of each emitter. `primary` follows the room's demand; `assist` joins only for
  * a large deficit; `trigger` stores heat above the target while its source's trigger holds; `reserve`
  * steps in when every primary path of the mode is gone. Whether a requested emitter is actually open is
  * decided with the plant verdict.
@@ -41,6 +41,8 @@ export interface EmitterInput {
   overlay: RuleOverlay;
   prevPlant: PlantState | null;
   rh: number | null;
+  /** No valid humidity reading for a while: floors take no cold water. */
+  humidityUnknown: boolean;
   floorLimit: boolean;
   floorC: number | null;
   /** Window pause, airing, room off or overheat: heat storage must not run. */
@@ -76,6 +78,8 @@ function exclusionFor(cfg: EngineConfig, e: Emitter, mode: Mode, x: EmitterInput
   if (mode === 'heat' && e.kind === 'floor' && x.floorLimit) return 'floor_limit';
   if (mode === 'cool' && e.excludeFromCooling) return 'humid';
   if (mode === 'cool' && e.circuitId && humidExcluded(cfg, x.rh)) return 'humid';
+  // without a humidity reading the dew point is unknown: the floor is closed for the dew point's sake
+  if (mode === 'cool' && e.circuitId && x.humidityUnknown) return 'dew';
   if (!(mode === 'heat' && x.frost) && !emitterSeasonAllowed(cfg, e, mode, x.season)) return 'season';
   return null;
 }
@@ -182,7 +186,10 @@ export function emitterRequests(cfg: EngineConfig, room: RoomConfig, x: EmitterI
       want[mode] = { role, excluded, requested };
     }
     const pick = (want.heat?.requested ? 'heat' : want.cool?.requested ? 'cool' : null) as Mode | null;
-    const shown: Mode = pick ?? (x.demand !== 'none' && want[x.demand] ? x.demand : want.heat ? 'heat' : 'cool');
+    // nothing requested: show the mode the season would use (a summer floor closed for the dew point says
+    // so, not «off for the season» of its heating role)
+    const idleMode = (['heat', 'cool'] as const).find((m) => want[m] && want[m].excluded !== 'season') ?? (want.heat ? 'heat' : 'cool');
+    const shown: Mode = pick ?? (x.demand !== 'none' && want[x.demand] ? x.demand : idleMode);
     const w = want[shown];
     if (!w) continue;
     requests.push({ emitterId: e.id, mode: pick, role: w.role, excluded: w.excluded });

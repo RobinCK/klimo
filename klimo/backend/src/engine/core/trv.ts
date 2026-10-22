@@ -162,7 +162,7 @@ export interface TrvOutput {
   valveIntegral: number | null;
 }
 
-/** D.16.1 setpoint of a head for its status, on its step grid and inside its range. */
+/** Setpoint of a head for its status, on its step grid and inside its range. */
 export function trvSetpoint(status: TrvStatus, x: Pick<TrvRoomInput, 'room' | 'safety' | 'heatC' | 'frostFloorC'>, caps: TrvCapabilities): number {
   const step = caps.setpointStep > 0 ? caps.setpointStep : 0.5;
   const tol = x.room.tolerance.heat;

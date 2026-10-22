@@ -231,7 +231,7 @@ export const trvActivityLabel = table<TrvActivity>(() => ({
 
 export const acControlLabel = table<AcControl>(() => ({
   target: t('Room target'),
-  onoff: t('On / off'),
+  onoff: t('On/off'),
   asis: t('As is'),
 }));
 

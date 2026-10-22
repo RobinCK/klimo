@@ -69,6 +69,32 @@ test('memory: flushNow persists, a restart reads it back', async () => {
   }
 });
 
+test('memory: a floor-cooling lockout, recent dew-guard trips and a lost humidity reading survive a restart', async () => {
+  const s = await openStores();
+  try {
+    const r = await s.config.create('rooms', { name: 'Кухня' }, ACTOR);
+    const mem = await s.memory.load();
+    assert.deepEqual(mem.plant.dewLockout, {});
+    assert.deepEqual(mem.rooms[r.id].humidityUnknown, { on: false, since: mem.rooms[r.id].humidityUnknown.since, pendingSince: null });
+    const now = s.clock.now();
+    const next = structuredClone(mem);
+    next.plant.dewTrips = { c_floor: [now - 50 * 60_000, now - 10 * 60_000, now] };
+    next.plant.dewLockout = { c_floor: { since: now, until: now + 6 * 3_600_000, trips: 3 } };
+    next.rooms[r.id].humidityUnknown = { on: true, since: now, pendingSince: null };
+    s.memory.apply(next);
+    await s.memory.flushNow();
+
+    const fresh = new MemoryStore(s.db, s.clock, s.config, s.bus);
+    const back = await fresh.load();
+    assert.deepEqual(back.plant.dewLockout, { c_floor: { since: now, until: now + 6 * 3_600_000, trips: 3 } });
+    assert.equal(back.plant.dewTrips.c_floor.length, 3);
+    assert.equal(back.rooms[r.id].humidityUnknown.on, true);
+    await fresh.onModuleDestroy();
+  } finally {
+    await s.close();
+  }
+});
+
 test('memory: the backup pause stops write-behind but not flushNow', async () => {
   const s = await openStores();
   try {

@@ -1,6 +1,7 @@
 import { ROOM_STATE_STYLE } from '../../shared/model';
 import type {
   ActuatorRecord,
+  DebouncedFlag,
   Decision,
   DesiredActuator,
   Detection,
@@ -22,6 +23,7 @@ import type {
   RoomStateKind,
   RoomSyncState,
   Season,
+  SensorReading,
   SourceConfig,
   SpanEvent,
   Tone,
@@ -52,7 +54,7 @@ import { finalizeTarget, resolveRoomTarget, roomOverride, roomProfileValues, sch
 import { fromLocal, hhmmToMinute, toLocal } from './time';
 import { trvActuation } from './trv';
 import { clamp } from './util';
-import { roomWhy } from './why';
+import { roomWhy, type WhyInput } from './why';
 import { evaluateWindows, windowOpenLong } from './windows';
 import { dehumidifierActuation, zoneActuation } from './zones';
 
@@ -72,6 +74,8 @@ const DRY_RELEASE_PCT = 5;
 const EXERCISE_STAGGER_MS = 30_000;
 /** A command confirmed this recently still shows as «підтверджено». */
 const SYNC_DONE_MS = 60_000;
+/** Humidity lost (or back) this long before the floor follows: one flaky sensor cannot short-cycle cooling. */
+const HUMIDITY_UNKNOWN_MS = 5 * MIN_MS;
 
 /** Context `evaluateRoom` hands to `finishRoom` for the same room in the same tick. */
 interface RoomInternals {
@@ -95,7 +99,7 @@ interface RoomInternals {
   reqId: string | null;
 }
 
-// Kept off the enumerable shape so the RoomEval stays exactly the contract type on the wire.
+// Kept off the enumerable shape so the RoomEval stays exactly the shared type on the wire.
 const INTERNALS = Symbol('roomInternals');
 type RoomEvalInternal = RoomEval & { [INTERNALS]?: RoomInternals };
 
@@ -125,6 +129,26 @@ function roomSourceIds(cfg: EngineConfig, roomId: Id): Set<Id> {
   const out = new Set<Id>();
   for (const e of cfg.emittersByRoom[roomId] ?? []) if (e.enabled) for (const s of feedingSources(cfg, e)) out.add(s.id);
   return out;
+}
+
+/**
+ * `on` follows `want` once it has held for `holdMs`, in either direction. Ticks further apart than
+ * MAX_DT_MS (a restart) say nothing about the time in between, so a pending change starts over.
+ */
+function stepDebounced(prev: DebouncedFlag, want: boolean, holdMs: number, gap: boolean, now: EpochMs): DebouncedFlag {
+  if (want === prev.on) return prev.pendingSince === null ? prev : { ...prev, pendingSince: null };
+  const pendingSince = prev.pendingSince === null || gap ? now : prev.pendingSince;
+  return now - pendingSince >= holdMs ? { on: want, since: pendingSince, pendingSince: null } : { ...prev, pendingSince };
+}
+
+/** A floor of this room can take chilled water (a cooling circuit, a cooling role, not excluded). */
+function hasCoolingFloor(cfg: EngineConfig, roomId: Id): boolean {
+  return (cfg.emittersByRoom[roomId] ?? []).some((e) => e.enabled && e.roles.cool !== null && !e.excludeFromCooling && !!circuitById(cfg, e.circuitId)?.capabilities.cool);
+}
+
+/** The room has humidity sensors, but none of them gives a valid reading (unavailable or stale). */
+function humidityLost(readings: readonly SensorReading[], valuePct: number | null): boolean {
+  return valuePct === null && readings.some((r) => r.role === 'humidity' && r.status !== 'excluded');
 }
 
 function keepOff(prev: Latch, step: LatchStep): LatchStep {
@@ -220,6 +244,22 @@ export const evaluateRoom: EvaluateRoomFn = (cfg, room, inputs, memory, ctx) => 
     dehumidifier: prev.dehumidifier,
     glassK: cfg.settings.glassCoefficient,
   });
+  // without a humidity reading nobody knows the dew point: the floor keeps out of cooling until it is back
+  const prevUnknown = prev.humidityUnknown ?? { on: false, since: now, pendingSince: null };
+  const humidityUnknown = stepDebounced(
+    prevUnknown,
+    hasCoolingFloor(cfg, room.id) && humidityLost(agg.readings, hum.state.valuePct),
+    HUMIDITY_UNKNOWN_MS,
+    now - prev.updatedAt > MAX_DT_MS,
+    now,
+  );
+  if (humidityUnknown.on !== prevUnknown.on && ctx.season.coolAllowed.central) {
+    decisions.push(
+      humidityUnknown.on
+        ? { code: 'room.humidity_unknown', category: 'rooms', tone: 'warn', params: { minutes: HUMIDITY_UNKNOWN_MS / MIN_MS }, roomId: room.id }
+        : { code: 'room.humidity_back', category: 'rooms', tone: 'ok', params: { rh: hum.state.valuePct }, roomId: room.id },
+    );
+  }
 
   // target and what the room can do with it
   const tr = resolveRoomTarget(cfg, room, inputs, prev, ctx, {
@@ -228,7 +268,7 @@ export const evaluateRoom: EvaluateRoomFn = (cfg, room, inputs, memory, ctx) => 
     windowReaction: reaction,
     airing,
   });
-  const modes = modeAvailability(cfg, room, tr.target, ctx.season, hum.state.valuePct, now);
+  const modes = modeAvailability(cfg, room, tr.target, ctx.season, hum.state.valuePct, now, humidityUnknown.on);
   let target = finalizeTarget(tr.target, modes);
   const houseOff = ctx.season.houseMode === 'off';
 
@@ -280,6 +320,7 @@ export const evaluateRoom: EvaluateRoomFn = (cfg, room, inputs, memory, ctx) => 
       overlay: ctx.overlay,
       prevPlant: ctx.prevPlant,
       rh: hum.state.valuePct,
+      humidityUnknown: humidityUnknown.on,
       floorLimit: floorLimit.latch.on,
       floorC: agg.result.floorC,
       blocked: commonBlock || overheat.latch.on,
@@ -380,6 +421,7 @@ export const evaluateRoom: EvaluateRoomFn = (cfg, room, inputs, memory, ctx) => 
     store: em.store,
     dehumidifier: hum.dehumidifier,
     floorLimit: floorLimit.latch,
+    humidityUnknown,
     demandMode: dem.mode,
     demandSince: dem.since,
     preheat: tr.preheat,
@@ -486,6 +528,7 @@ function internalsOf(ev: RoomEvalInternal, cfg: EngineConfig, room: RoomConfig):
     heatBlock: p.activeModes.heat ? 'ok' : p.demand.block === 'season' ? 'season' : 'no_emitter',
     coolBlock: p.activeModes.cool ? 'ok' : p.demand.block === 'season' ? 'season' : 'no_emitter',
     humidExcluded: false,
+    humidityUnknown: ev.memory.humidityUnknown?.on ?? false,
   };
   return {
     season: cfg.house.mode === 'cool' ? 'cooling' : 'heating',
@@ -576,16 +619,16 @@ function chipOf(room: RoomConfig, p: RoomEval['partial'], i: RoomInternals, serv
 }
 
 /** The plant keeps this room out of floor cooling for the dew point on every cooling path it has. */
-function dewBlockOf(cfg: EngineConfig, room: RoomConfig, p: RoomEval['partial'], plant: PlantState): { dewC: number | null; maxSupplyC: number } | null {
+function dewBlockOf(cfg: EngineConfig, room: RoomConfig, p: RoomEval['partial'], plant: PlantState): WhyInput['dewBlocked'] {
   if (p.activeModes.heat || !p.activeModes.cool) return null;
   const coolEmitters = (cfg.emittersByRoom[room.id] ?? []).filter((e) => e.enabled && e.roles.cool !== null && !e.excludeFromCooling);
   if (!coolEmitters.length || coolEmitters.some((e) => !e.circuitId)) return null;
-  let found: { dewC: number | null; maxSupplyC: number } | null = null;
+  let found: WhyInput['dewBlocked'] = null;
   for (const e of coolEmitters) {
     const cs = plant.circuits.find((c) => c.circuitId === e.circuitId);
     const ex = cs?.excludedRooms.find((x) => x.roomId === room.id);
     if (!cs || !ex || ex.reason !== 'dew') return null;
-    found = { dewC: cs.dewPointMaxC, maxSupplyC: circuitById(cfg, e.circuitId)?.supply.coolMaxC ?? cfg.cool.dewMarginC };
+    found = { dewC: cs.dewPointMaxC, maxSupplyC: circuitById(cfg, e.circuitId)?.supply.coolMaxC ?? cfg.cool.dewMarginC, hold: cs.dewHold ?? null };
   }
   return found;
 }
@@ -713,6 +756,8 @@ export const finishRoom: FinishRoomFn = (cfg, evIn, verdict, plant, inputs, ledg
     overheat: i.overheat,
     comfort: i.comfort,
     humidExcluded: i.modes.humidExcluded,
+    humidityUnknown: i.modes.humidityUnknown,
+    humidityUnknownSince: memory.humidityUnknown?.since ?? null,
     season: i.season,
     coolCentral: plant.circuits.some((c) => c.mode === 'cool') || i.season === 'cooling',
     verdict,

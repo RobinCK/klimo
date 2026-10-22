@@ -6,11 +6,11 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { HouseState, PlantState, SourceDto } from '@api/model';
 import { api } from '@api/endpoints';
-import { useCodeContext, useHouse, useIncidents, useLayout, useLiveEvent, useMe, useNow, usePlant, useResource, useRoomSummaries, useRoomsLoaded } from '@data';
+import { liveStore, useCodeContext, useHouse, useIncidents, useLayout, useLiveEvent, useMe, useNow, usePlant, useResource, useRoomSummaries, useRoomsLoaded } from '@data';
 import { AutoGrid, Button, Page, ProfileTile, RowList, Row, Section, Skeleton, SourceRow, Stack, StatusBanner } from '@ui';
 import { LogoMark, Wordmark } from '@brand';
 import { HouseSeasonPill, InboxBell, paths } from '@app';
-import { fmtDur, fmtTemp, sourceStateLabel, t } from '@i18n';
+import { errorText, fmtDur, fmtTemp, sourceStateLabel, t } from '@i18n';
 import { AttentionLine, AttentionSection } from './Attention';
 import { dateLine, headline, isRunning, profileOrigin, SOURCE_ICON, subline } from './house';
 import { Onboarding } from './Onboarding';
@@ -204,10 +204,17 @@ export default function OverviewPage(): JSX.Element {
   const sw = useProfileSwitch(d.ctx);
   const house = d.house;
   if (!house) {
-    // the engine has not published a house state yet (just started, or Home Assistant is away)
+    // the add-on always answers with a house state, so a failed request is a real error, not a wait
+    const failed = d.overview.error && !d.overview.loading;
+    const retry = () => {
+      void d.overview.reload();
+      void liveStore.bootstrap(true);
+    };
     return (
       <Stack gap="lg">
-        {d.overview.error && !d.overview.loading ? <StatusBanner tone="warn" icon="clock" text={t('Waiting for the first data from Home Assistant…')} /> : null}
+        {failed ? (
+          <StatusBanner tone="err" icon="alert" text={errorText(d.overview.error) || t('Could not load the overview.')} action={{ label: t('Try again'), onClick: retry }} />
+        ) : null}
         <Loading phone={phone} />
       </Stack>
     );

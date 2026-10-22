@@ -296,7 +296,10 @@ function PairDialog({ onClose, onPaired }: { onClose: () => void; onPaired: () =
 function ChatIdDialog({ model, onClose }: { model: NotificationsModel; onClose: () => void }) {
   const [chatId, setChatId] = useState('');
   const [name, setName] = useState('');
-  const valid = /^-?\d{1,20}$/.test(chatId.trim()) && name.trim() !== '';
+  const idOk = /^-?\d{1,20}$/.test(chatId.trim());
+  // the same chat twice would get every message twice
+  const taken = (model.data?.targets ?? []).some((x) => x.channel === 'telegram' && x.chatId === chatId.trim());
+  const valid = idOk && !taken && name.trim() !== '';
   const add = async () => {
     const id = chatId.trim();
     const r = await model.addTarget(
@@ -322,6 +325,7 @@ function ChatIdDialog({ model, onClose }: { model: NotificationsModel; onClose: 
           onChange={setChatId}
           mono
           placeholder="-1001872345678"
+          error={chatId.trim() && !idOk ? t('Digits only; a group id starts with a minus.') : taken ? t('This chat is already in the list.') : undefined}
           help={t('The chat must be allowed in the telegram_bot integration of Home Assistant; group ids start with a minus.')}
         />
       </Stack>
@@ -385,7 +389,7 @@ export function ChannelsSection({ dto, model, canEdit }: { dto: NotificationsDto
           title={t('HA app')}
           sub={t('native push · {count} devices', { count: phones.length })}
           status={statusOf(dto, 'ha_mobile', phones)}
-          test={phones.length ? { label: t('Send a test'), successLabel: t('Sent ✓'), run: () => testRun({ channel: 'ha_mobile' }) } : undefined}
+          test={phones.length ? { label: t('Send a test'), successLabel: t('Sent'), run: () => testRun({ channel: 'ha_mobile' }) } : undefined}
         >
           <Stack gap="xs">
             {phones.map((x) => (
@@ -414,7 +418,7 @@ export function ChannelsSection({ dto, model, canEdit }: { dto: NotificationsDto
           title={t('Telegram bot')}
           sub={t('messages with action buttons')}
           status={statusOf(dto, 'telegram', chats)}
-          test={chats.length ? { label: t('Send a test'), successLabel: t('Sent ✓'), run: () => testRun({ channel: 'telegram' }) } : undefined}
+          test={chats.length ? { label: t('Send a test'), successLabel: t('Sent'), run: () => testRun({ channel: 'telegram' }) } : undefined}
         >
           <SegmentedControl<'integration' | 'own'>
             value={tg.mode}
@@ -452,7 +456,7 @@ export function ChannelsSection({ dto, model, canEdit }: { dto: NotificationsDto
               {dto.telegramTokenPresent && canEdit ? (
                 <TestButton
                   label={t('Verify')}
-                  successLabel={botName ? `@${botName} ✓` : t('Works ✓')}
+                  successLabel={botName ? `@${botName}` : t('Works')}
                   icon="checkCircle"
                   run={async () => {
                     try {

@@ -585,7 +585,7 @@ function circuitPhase(t: Tick, sel: Selection): CircuitFacts {
       let open = false;
       // open whenever the room asks and the loop may carry that mode — even while the source waits to start
       if (rm !== null && c.capabilities[rm] && (mode === 'none' || mode === rm)) {
-        open = rm === 'heat' ? !blocked : !plan?.dew.blocked && !plan?.dew.tripped && !(plan?.humidRooms.includes(room) ?? false);
+        open = rm === 'heat' ? !blocked : !!plan && !plan.dew.blocked && !plan.dew.tripped && !plan.dew.hold && !plan.humidRooms.includes(room) && !plan.humidityUnknownRooms.includes(room);
       }
       facts.emitterOpen[emitter.id] = open;
       facts.emitterFeeding[emitter.id] = mode === 'none' ? [] : c.sourceIds.filter((id) => runningIn(t, id, mode));
@@ -616,12 +616,14 @@ function pumpPhase(t: Tick, en: EnergyCtx, facts: CircuitFacts, sel: Selection, 
   for (const c of idx.circuits) {
     const mode = facts.mode.get(c.id) ?? 'none';
     const members = idx.members.get(c.id) ?? [];
+    // a floor resting after the dew guard stays closed while its heat pump still cools another loop
+    const dewClosed = !!sel.plans.get(c.id)?.dew.hold && c.sourceIds.some((id) => runningIn(t, id, 'cool'));
     flows.set(c.id, {
       circuit: c,
       mode,
       openDemand: mode !== 'none' && members.some(({ emitter }) => facts.emitterOpen[emitter.id] && emitter.roles[mode as Mode] !== null),
       feedingOn: mode !== 'none',
-      heatOnlyBlocked: facts.heatOnlyBlocked.get(c.id) ?? false,
+      heatOnlyBlocked: (facts.heatOnlyBlocked.get(c.id) ?? false) || dewClosed,
       frost: c.capabilities.heat && members.some(({ room, emitter }) => room.frost && emitter.roles.heat !== null),
       forced: null,
       dewTripped: sel.dewTripped.has(c.id),
@@ -865,7 +867,8 @@ function circuitStateOf(t: Tick, c: Circuit, sel: Selection, facts: CircuitFacts
   const supplyC = numOf(snapOf(t.inputs, c.supply.sensorEntityId));
   const excluded: CircuitState['excludedRooms'] = [];
   for (const r of plan.humidRooms) excluded.push({ roomId: r.id, reason: 'humid' });
-  if (plan.dew.blocked) for (const r of plan.coolCallers) excluded.push({ roomId: r.id, reason: 'dew' });
+  for (const r of plan.humidityUnknownRooms) excluded.push({ roomId: r.id, reason: 'humidity_unknown' });
+  if (plan.dew.blocked || plan.dew.hold) for (const r of plan.coolCallers) excluded.push({ roomId: r.id, reason: 'dew' });
   for (const { room, emitter } of members) {
     if (excluded.some((e) => e.roomId === room.id)) continue;
     if (blocked && emitter.roles.heat !== null && room.demand === 'heat') excluded.push({ roomId: room.id, reason: 'heat_only' });
@@ -876,8 +879,11 @@ function circuitStateOf(t: Tick, c: Circuit, sel: Selection, facts: CircuitFacts
   const heatSp = lead && mode === 'heat' ? (c.mixingValve ? c.mixingValve.heatC : lead.curves.heat && t.toutForCurve !== null ? flowFromCurve(lead.curves.heat, t.toutForCurve) : null) : null;
   let state: Reason;
   let tone: Tone;
+  const hold = plan.dew.hold;
   if (blocked) [state, tone] = [{ code: 'circuit.heat_only_blocked', params: {} }, 'off'];
-  else if (plan.dew.blocked || plan.dew.tripped) [state, tone] = [{ code: 'circuit.dew_blocked', params: { dewC: plan.dew.maxDewC } }, 'warn'];
+  else if (hold && mode !== 'heat') {
+    [state, tone] = [hold.kind === 'lockout' ? { code: 'circuit.dew_lockout', params: { until: hold.until, trips: hold.trips } } : { code: 'circuit.dew_hold', params: { until: hold.until } }, 'warn'];
+  } else if (plan.dew.blocked || plan.dew.tripped) [state, tone] = [{ code: 'circuit.dew_blocked', params: { dewC: plan.dew.maxDewC } }, 'warn'];
   else if (mode === 'heat') [state, tone] = [{ code: 'circuit.heating', params: { supplyC, sourceId: plan.lead ?? c.sourceIds.find((id) => runningIn(t, id, 'heat')) ?? null } }, 'heat'];
   else if (mode === 'cool') [state, tone] = [{ code: 'circuit.cooling', params: { supplyC, dewC: plan.dew.maxDewC } }, 'cool'];
   else if (runOn.length) [state, tone] = [{ code: 'circuit.run_on', params: { until: Math.max(...runOn) } }, 'idle'];
@@ -898,6 +904,7 @@ function circuitStateOf(t: Tick, c: Circuit, sel: Selection, facts: CircuitFacts
     returnC: numOf(snapOf(t.inputs, c.supply.returnEntityId)),
     supplySetpointC: mode === 'cool' ? plan.dew.supplySpC : heatSp,
     dewPointMaxC: plan.dew.maxDewC,
+    dewHold: hold ? { ...hold } : null,
     pumpOn: pumpsOf.some((p) => p.on),
     runOnUntil: runOn.length ? Math.max(...runOn) : null,
     pumps: pumpsOf,
@@ -997,11 +1004,12 @@ export const plantStep: PlantStepFn = (cfg, evals, ctx, inputs, memory, ledger) 
     fits: en.fits,
     prevPlant: ctx.prevPlant,
   };
-  const sel = selectSources(selCtx, t.plantMem.dewGuardSince);
-  t.plantMem = { ...t.plantMem, dewGuardSince: sel.dewGuardSince };
+  const sel = selectSources(selCtx, { since: t.plantMem.dewGuardSince, trips: t.plantMem.dewTrips ?? {}, lockout: t.plantMem.dewLockout ?? {} });
+  t.plantMem = { ...t.plantMem, dewGuardSince: sel.dew.since, dewTrips: sel.dew.trips, dewLockout: sel.dew.lockout };
   t.decisions.push(...sel.decisions);
   t.detections.push(...sel.detections);
-  for (const since of Object.values(sel.dewGuardSince)) t.wakes.push(since + 2 * MIN_MS);
+  for (const since of Object.values(sel.dew.since)) t.wakes.push(since + 2 * MIN_MS);
+  for (const p of sel.plans.values()) if (p.dew.hold) t.wakes.push(p.dew.hold.until);
 
   const plan = planPhase(t, sel, en);
   const shedOrder = shedOrderOf(cfg);
@@ -1325,6 +1333,11 @@ function plantWhy(
   if (plant.bivalent.lagActive && x.pair) out.push({ code: 'plant.lag', params: { sourceId: x.pair.reserveId, minutes: cfg.heat.lag.forMin } });
   if (plant.lead.cool) out.push({ code: 'plant.lead', params: { sourceId: plant.lead.cool, mode: 'cool', toutC: x.tout10 } });
   for (const p of plans) {
+    const hold = p.dew.hold;
+    if (hold) {
+      out.push(hold.kind === 'lockout' ? { code: 'plant.dew_lockout', params: { circuitId: p.circuit.id, until: hold.until, trips: hold.trips } } : { code: 'plant.dew_hold', params: { circuitId: p.circuit.id, until: hold.until } });
+      break;
+    }
     if (p.dew.blocked || p.dew.tripped) {
       out.push({ code: 'plant.dew_guard', params: { circuitId: p.circuit.id, dewC: p.dew.maxDewC, supplyC: p.dew.supplySpC } });
       break;

@@ -1,4 +1,5 @@
 import type {
+  CircuitState,
   EngineConfig,
   Mode,
   Override,
@@ -47,7 +48,13 @@ export interface WhyInput {
   plant: PlantState;
   trvs: TrvState[];
   /** The room's cooling is blocked by the circuit's dew-point guard (from the plant). */
-  dewBlocked: { dewC: number | null; maxSupplyC: number } | null;
+  dewBlocked: { dewC: number | null; maxSupplyC: number; hold: CircuitState['dewHold'] } | null;
+}
+
+function dewReason(d: NonNullable<WhyInput['dewBlocked']>): Reason {
+  if (d.hold?.kind === 'lockout') return { code: 'why.monitor.dew_lockout', params: { until: d.hold.until, trips: d.hold.trips } };
+  if (d.hold) return { code: 'why.monitor.dew_hold', params: { until: d.hold.until } };
+  return { code: 'why.monitor.dew_blocked', params: { dewC: d.dewC, maxSupplyC: d.maxSupplyC } };
 }
 
 function latchReason(mode: Mode, pos: LatchPosition, x: WhyInput): Reason | null {
@@ -89,11 +96,14 @@ function mainReason(x: WhyInput): Reason {
     const sign = s.target.mode === 'cool' ? 1 : -1;
     return { code: 'why.window.lower', params: { deltaC: sign * x.room.windows.lowerByC } };
   }
+  // the room may cool, but the plant keeps cold water out of its floor
+  if (x.dewBlocked) return dewReason(x.dewBlocked);
   if (!s.activeModes.heat && !s.activeModes.cool) {
-    if (x.dewBlocked) return { code: 'why.monitor.dew_blocked', params: { dewC: x.dewBlocked.dewC, maxSupplyC: x.dewBlocked.maxSupplyC } };
     const m = x.modes;
+    if (m.coolBlock === 'humidity_unknown') return { code: 'why.monitor.humidity_unknown', params: { since: x.memory.humidityUnknown?.since ?? null } };
+    if (m.coolBlock === 'humid') return { code: 'why.monitor.too_humid', params: { rh: s.humidity.valuePct, maxPct: x.cfg.cool.floorExcludeAbovePct } };
     const seasonalMode: Mode | null =
-      m.heatBlock === 'season' && (m.coolBlock !== 'season' || x.season !== 'heating') ? 'heat' : m.coolBlock === 'season' || m.coolBlock === 'humid' ? 'cool' : null;
+      m.heatBlock === 'season' && (m.coolBlock !== 'season' || x.season !== 'heating') ? 'heat' : m.coolBlock === 'season' ? 'cool' : null;
     if (seasonalMode) return { code: 'why.season_blocks', params: { mode: seasonalMode, season: x.season } };
     return { code: 'why.monitor.no_emitter', params: { mode: x.season === 'cooling' ? 'cool' : 'heat' } };
   }

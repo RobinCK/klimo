@@ -1,6 +1,6 @@
 import type { EntityRolePreset, HaEntityDetailDto, HaStateObj, TrvCapabilities, TrvSiblings, TrvStrategy, WizardDeviceRole } from '../shared/model';
 import { searchKey } from './search-text';
-import { parseNumber, tempAttr, tempUnit, type TempUnit } from './units';
+import { entityTempUnit, parseNumber, tempAttr, tempUnit, type TempUnit } from './units';
 
 /* =====================================================================================================
  * Heuristics that turn raw HA entities into Klimo roles: which climate is a radiator head and which an
@@ -135,13 +135,20 @@ export function trvSiblings(siblings: readonly SiblingRef[]): TrvSiblings {
   };
 }
 
+/** A climate's `target_temp_step` in °C. In a °F house the step is in °F too: 1 °F is 0.56 °C, not 1 °C. */
+export function setpointStepC(climate: HaStateObj | undefined, haUnit: TempUnit): number | null {
+  const step = parseNumber(climate?.attributes.target_temp_step);
+  if (step === null || step <= 0) return null;
+  const unit = climate ? entityTempUnit(climate, haUnit) : haUnit;
+  return unit === '°F' ? Math.round(((step * 5) / 9) * 100) / 100 : step;
+}
+
 export function trvCapabilities(climate: HaStateObj | undefined, sib: TrvSiblings, siblings: readonly SiblingRef[], haUnit: TempUnit): TrvCapabilities {
   const calib = sib.calibration ? siblings.find((s) => s.entityId === sib.calibration)?.state : undefined;
   const lo = parseNumber(calib?.attributes.min);
   const hi = parseNumber(calib?.attributes.max);
   const minT = tempAttr(climate, 'min_temp', haUnit);
   const maxT = tempAttr(climate, 'max_temp', haUnit);
-  const step = parseNumber(climate?.attributes.target_temp_step);
   return {
     externalSensor: !!sib.externalTemp,
     calibration: !!sib.calibration,
@@ -151,7 +158,7 @@ export function trvCapabilities(climate: HaStateObj | undefined, sib: TrvSibling
     childLock: !!sib.childLock,
     windowDetection: !!sib.windowDetection,
     setpointRange: [minT ?? 5, maxT ?? 30],
-    setpointStep: step && step > 0 ? step : 0.5,
+    setpointStep: setpointStepC(climate, haUnit) ?? 0.5,
   };
 }
 

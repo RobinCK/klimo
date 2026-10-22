@@ -179,7 +179,7 @@ function Cards() {
             title={ut('Home Assistant app')}
             sub={ut('native push · 2 devices')}
             status={{ tone: 'ok', label: ut('working') }}
-            test={{ label: ut('Send a test'), successLabel: ut('Sent ✓'), run: () => new Promise((r) => window.setTimeout(() => r({ ok: true }), 600)) }}
+            test={{ label: ut('Send a test'), successLabel: ut('Sent'), run: () => new Promise((r) => window.setTimeout(() => r({ ok: true }), 600)) }}
           >
             <CheckboxRow checked={bypass} title={ut('Critical — even in «Do not disturb»')} hint={ut('with an alarm sound, on iOS and Android')} onChange={setBypass} />
           </ChannelCard>

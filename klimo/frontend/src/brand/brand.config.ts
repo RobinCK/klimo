@@ -32,7 +32,7 @@ export const brand: BrandConfig = {
   productName: 'Klimo',
   wordmark: 'klimo',
   tagline: {
-    uk: 'Клімат кожної кімнати: опалення, охолодження й вологість в одному адоні для Home Assistant.',
+    uk: 'Клімат кожної кімнати: опалення, охолодження й вологість в одному доповненні для Home Assistant.',
     en: 'The climate of every room: heating, cooling and humidity in one Home Assistant add-on.',
   },
   mark: {

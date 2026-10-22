@@ -27,6 +27,7 @@ import {
   isValvePosition,
   looksLikeTrv,
   matchesRole,
+  setpointStepC,
   type SiblingRef,
   siblingRole,
   trvCapabilities,
@@ -148,7 +149,7 @@ export class EntitySearchService implements IEntitySearch {
             fanModes: fanModes(state),
             minTemp: tempAttr(state, 'min_temp', haUnit),
             maxTemp: tempAttr(state, 'max_temp', haUnit),
-            step: parseNumber(state?.attributes.target_temp_step),
+            step: setpointStepC(state, haUnit),
           }
         : null;
     return {

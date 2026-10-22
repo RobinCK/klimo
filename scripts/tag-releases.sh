@@ -31,11 +31,14 @@ changelog_section() {
 
 created=0
 seen=""
-# oldest first, so the first sighting of a version is the commit that shipped it
-for sha in $(git log --reverse --format=%H -- "$CONFIG"); do
-  version=$(git show "$sha:$CONFIG" | sed -n 's/^version:[[:space:]]*"\{0,1\}\([0-9.]*\)"\{0,1\}.*/\1/p')
+# Oldest first, so the first sighting of a version is the commit that shipped it. A version
+# only counts once its changelog section exists as well: 0.1.0 sat in config.yaml from the very
+# first commit, and its release is the commit that wrote "## 0.1.0", not the empty scaffold.
+for sha in $(git log --reverse --format=%H -- "$CONFIG" "$CHANGELOG"); do
+  version=$(git show "$sha:$CONFIG" 2>/dev/null | sed -n 's/^version:[[:space:]]*"\{0,1\}\([0-9.]*\)"\{0,1\}.*/\1/p')
   [ -n "$version" ] || continue
   case " $seen " in *" $version "*) continue ;; esac
+  git show "$sha:$CHANGELOG" 2>/dev/null | grep -qxF "## $version" || continue
   seen="$seen $version"
 
   tag="v$version"

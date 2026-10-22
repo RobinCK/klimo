@@ -36,7 +36,7 @@ function Desktop({ dto, model, inbox, now, canEdit }: { dto: NotificationsDto; m
     <Page
       title={t('Notifications')}
       subtitle={t('Where and about what you are told. Critical alerts always arrive, the rest follows the rules below.')}
-      actions={<TestButton label={t('Test notification')} successLabel={t('Sent to every channel ✓')} run={testAll} />}
+      actions={<TestButton label={t('Test notification')} successLabel={t('Sent to every channel')} run={testAll} />}
     >
       {!canEdit ? <StatusBanner tone="event" icon="lock" text={t('Only a Home Assistant administrator can change these settings.')} /> : null}
       {inbox.items.length ? (

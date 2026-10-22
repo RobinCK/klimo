@@ -19,7 +19,7 @@ import { feedingSources } from './emitters';
 import type { ComfortAlerts } from './safety';
 
 /* =====================================================================================================
- * Room issue chips (D.20), sorted by rank: the room card shows the first, «+N» for the rest. Device-level
+ * Room issue chips, sorted by rank: the room card shows the first, «+N» for the rest. Device-level
  * problems that need history (weak signal medians, battery forecasts) come from device health instead.
  * ===================================================================================================== */
 
@@ -36,6 +36,9 @@ export interface IssueInput {
   overheat: boolean;
   comfort: ComfortAlerts;
   humidExcluded: boolean;
+  /** No valid humidity reading for a while: the floor takes no cold water. */
+  humidityUnknown: boolean;
+  humidityUnknownSince: EpochMs | null;
   season: Season;
   coolCentral: boolean;
   verdict: RoomServiceVerdict;
@@ -101,6 +104,7 @@ export function roomIssues(x: IssueInput): RoomIssue[] {
   if (s.humidity.condensationRisk) add('condensation', { rh, glassC: s.humidity.glassC, dewC: s.humidity.dewPointC });
   else if (s.humidity.warn) add('humidity_high', { rh });
   if (x.humidExcluded && x.coolCentral && hasCoolingFloor(x)) add('floor_humid', { rh });
+  else if (x.humidityUnknown && x.coolCentral && hasCoolingFloor(x)) add('humidity_unknown', { since: x.humidityUnknownSince }, x.humidityUnknownSince);
 
   for (const r of s.sensors) {
     const pct = r.batteryPct;

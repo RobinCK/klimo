@@ -294,8 +294,9 @@
   gap: 2px;
   overflow-x: auto;
   scrollbar-width: none;
-  margin: 0 -4px;
-  padding: 2px 4px;
+  /* room for the focus ring (2 px + 2 px offset), which the scroller would clip */
+  margin: -2px -4px;
+  padding: 4px;
 }
 
 .subNav::-webkit-scrollbar {
@@ -432,6 +433,20 @@
 .link[data-variant='block'] {
   display: block;
   border-radius: inherit;
+}
+
+/* on a phone a text link gets a 40 px tall target without changing the line */
+@media (max-width: 699px) {
+  .link[data-variant='inline'],
+  .link[data-variant='muted'] {
+    position: relative;
+  }
+  .link[data-variant='inline']::after,
+  .link[data-variant='muted']::after {
+    content: '';
+    position: absolute;
+    inset: -10px -4px;
+  }
 }
 
 /* ---------- OverlayPanel ---------- */

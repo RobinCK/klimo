@@ -44,6 +44,10 @@ function cardLabel(kind: CardKind): string {
 
 function lovelaceText(l: SettingsBundle['lovelace']): { tone: 'ok' | 'warn' | 'err'; text: string } {
   if (l.resource === 'error') return { tone: 'err', text: t('Could not install the cards — see the add-on log.') };
+  if (l.resource === 'simulated') {
+    const path = l.path ?? '/card/klimo-cards.js';
+    return { tone: 'ok', text: t('Simulator: the add-on serves the cards itself at {path}; nothing is copied to Home Assistant.', { path }) };
+  }
   if (l.resource === 'unsupported') return { tone: 'warn', text: t('Dashboards are in YAML mode: add the resource {path} (module) by hand.', { path: l.path ?? '/local/klimo-cards.js' }) };
   if (l.deployed) return { tone: 'ok', text: l.path ? t('Cards installed · resource {path}', { path: l.path }) : t('Cards installed') };
   return { tone: 'warn', text: t('The cards are not installed yet.') };
@@ -123,7 +127,8 @@ export function IntegrationsSection({
           variant="plain"
           level={3}
           action={
-            canEdit ? (
+            // the simulator has no Home Assistant config folder to copy the bundle into
+            canEdit && bundle.lovelace.resource !== 'simulated' ? (
               <Button variant="secondary" size="sm" icon="sync" loading={redeploy.pending} onClick={() => void redeploy.run()}>
                 {t('Install again')}
               </Button>

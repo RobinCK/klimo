@@ -232,3 +232,25 @@ test('sources sharing a name read with their room in the diagram', () =>
     assert.equal(title(p.conv.id), 'Електроконвектор', 'a name of its own stays as it is');
     assert.equal(view.nodes.find((n) => n.key === `source:${p.hp.id}`).title, 'Тепловий насос');
   }));
+
+test('the rooms box of a loop notes the dew guard only: a resting or locked floor says until when, a heating-only loop says nothing', () =>
+  withPlant(async (s, p) => {
+    const until = s.clock.now() + 20 * MIN;
+    s.engine.plantState = plantWith(s, p, (plant) => {
+      const rad = plant.circuits.find((c) => c.circuitId === p.rad.id);
+      Object.assign(rad, { state: { code: 'circuit.heat_only_blocked', params: {} }, excludedRooms: [{ roomId: p.living.id, reason: 'heat_only' }] });
+      const floor = plant.circuits.find((c) => c.circuitId === p.floor.id);
+      Object.assign(floor, { state: { code: 'circuit.dew_hold', params: { until } }, excludedRooms: [{ roomId: p.kitchen.id, reason: 'dew' }], dewHold: { kind: 'hold', until, trips: 1 } });
+    });
+    let view = s.preview.schema();
+    const meta = (id) => view.nodes.find((n) => n.key === `rooms:circuit:${id}`).meta;
+    assert.equal(meta(p.rad.id), null, 'not «blocked by the dew point»');
+    assert.deepEqual(meta(p.floor.id), { code: 'circuit.dew_hold', params: { until } });
+
+    s.engine.plantState = plantWith(s, p, (plant) => {
+      const floor = plant.circuits.find((c) => c.circuitId === p.floor.id);
+      Object.assign(floor, { excludedRooms: [{ roomId: p.kitchen.id, reason: 'humidity_unknown' }] });
+    });
+    view = s.preview.schema();
+    assert.equal(meta(p.floor.id), null, 'a room without humidity readings says so on its own card');
+  }));

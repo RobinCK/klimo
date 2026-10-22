@@ -374,6 +374,12 @@
   .button[data-size='sm'] {
     --h: 44px;
   }
+  /* a text link keeps its line height; the finger gets a 40 px tall target */
+  .button[data-variant='link']::after {
+    content: '';
+    position: absolute;
+    inset: -12px -4px;
+  }
 }
 
 /* ---------- IconButton ---------- */

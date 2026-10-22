@@ -6,10 +6,11 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import type { RoomDetailDto, RoomPatch } from '@api/model';
 import { api } from '@api/endpoints';
+import { isApiError } from '@api/client';
 import { useCodeContext, useLayout, useMe, useNow, useResource, useRoom, useRoomSummaries, useRoomsLoaded } from '@data';
 import { EmptyState, Skeleton, Stack } from '@ui';
 import { paths, useRoute } from '@app';
-import { t, type CodeContext } from '@i18n';
+import { errorText, t, type CodeContext } from '@i18n';
 import { closeDialog } from './dialogs';
 import { PhoneControl } from './PhoneControl';
 import { PhoneSettings } from './PhoneSettings';
@@ -86,7 +87,12 @@ export default function RoomPage(): JSX.Element {
   );
 
   if (!room || !state) {
-    if (unknown || (res.error && !res.loading)) return <Missing />;
+    const failed = res.error != null && !res.loading;
+    if (unknown || (failed && isApiError(res.error) && res.error.code === 'not_found')) return <Missing />;
+    // any other failure (no connection, a server error) is not a deleted room: offer a retry
+    if (failed) {
+      return <EmptyState icon="alert" title={t('Could not load the room')} text={errorText(res.error)} action={{ label: t('Try again'), onClick: () => void res.reload() }} />;
+    }
     return (
       <Stack gap="lg">
         <Skeleton height={44} radius={12} />

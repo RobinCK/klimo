@@ -278,7 +278,7 @@ export function StepDevices({ w, ctx }: { w: Wizard; ctx: CodeContext }) {
           text={t('Also found: {names} — they fit what is not chosen on the first step.', { names: elsewhere.map((c) => c.name).join(', ') })}
         />
       ) : null}
-      <DashedAddButton label={t('+ Find another device')} onClick={() => setAdding(true)} />
+      <DashedAddButton label={t('Find another device')} onClick={() => setAdding(true)} />
       <Issues w={w} />
       <AddDeviceDialog w={w} open={adding} onClose={() => setAdding(false)} />
     </Stack>

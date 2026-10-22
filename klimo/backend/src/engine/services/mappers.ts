@@ -637,6 +637,7 @@ export function emptyCircuitState(cfg: EngineConfig, c: Circuit): CircuitState {
     returnC: null,
     supplySetpointC: null,
     dewPointMaxC: null,
+    dewHold: null,
     pumpOn: false,
     runOnUntil: null,
     pumps: cfg.pumps.filter((p) => p.circuitId === c.id).map(emptyPumpState),

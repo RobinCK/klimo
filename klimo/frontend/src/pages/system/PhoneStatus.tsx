@@ -3,7 +3,7 @@
  * changes), the sources and loops as they run now, the energy line, the triggers, and the rows
  * that lead to devices, notifications, the journal and the settings.
  */
-import type { SourceDto, Tone } from '@api/model';
+import type { SourceDto, SourceState, Tone } from '@api/model';
 import { api } from '@api/endpoints';
 import { useLiveEvent, useResource } from '@data';
 import { InboxBell, paths } from '@app';
@@ -26,6 +26,12 @@ function sourceRows(d: SystemData) {
     rows.push({ key: s.config.id, dto: s, name: d.nameOf(s.config.id), count: 1 });
   }
   return { rows, acs };
+}
+
+/** The short chip of a phone row: «Чекає» leaves room for the source's name; the row says what it waits for. */
+function phoneChip(state: SourceState): { tone: Tone; label: string } {
+  const chip = sourceChip(state);
+  return state.state === 'waiting_trigger' && chip.tone !== 'err' ? { ...chip, label: t('Waiting') } : chip;
 }
 
 export function PhoneStatus({ d }: { d: SystemData }) {
@@ -66,7 +72,7 @@ export function PhoneStatus({ d }: { d: SystemData }) {
                 icon={SOURCE_ICON[dto.config.kind]}
                 name={name}
                 meta={count > 1 ? renderReason(dto.state.roleReason, d.ctx) : sourceMeta({ ...dto, state }, d.ctx)}
-                chip={count > 1 ? acChip() : sourceChip(state)}
+                chip={count > 1 ? acChip() : phoneChip(state)}
                 on={count > 1 ? acs.some((s) => isRunning(d.liveState(s.config.id))) : isRunning(state)}
                 to={count > 1 ? paths.sources() : paths.source(dto.config.id)}
               />

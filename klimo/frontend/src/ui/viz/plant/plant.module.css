@@ -356,6 +356,12 @@
   border-top: 1px solid var(--ui-divider);
 }
 
+/* the list clips its rows to its rounded frame, so the focus ring is drawn inside */
+a.srcRow:focus-visible {
+  outline-offset: -3px;
+  border-radius: calc(var(--ui-radius-2xl) - 1px);
+}
+
 .srcIcon {
   flex: none;
   width: 34px;

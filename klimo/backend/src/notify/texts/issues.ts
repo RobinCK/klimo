@@ -26,6 +26,7 @@ export const ISSUES: Record<IssueCode, Row> = {
   condensation: ['Humidity {rh} · condensation risk', 'Вологість {rh} · ризик конденсату'],
   humidity_high: ['Humidity {rh}', 'Вологість {rh}'],
   floor_humid: ['Humid ({rh}) — no floor cooling', 'Волого ({rh}) — без охолодження підлогою'],
+  humidity_unknown: ['Humidity unknown — no floor cooling', 'Вологість невідома — без охолодження підлогою'],
   battery_low: [
     (v) => (v.deviceKey ? '{deviceKey}: battery {pct}' : 'Sensor: battery {pct}'),
     (v) => (v.deviceKey ? '{deviceKey}: батарея {pct}' : 'Датчик: батарея {pct}'),

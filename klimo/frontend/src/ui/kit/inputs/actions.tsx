@@ -9,7 +9,7 @@ import s from './list.module.css';
 
 export interface TestButtonProps {
   label: string;
-  /** Shown for a moment after success («Надіслано ✓»). */
+  /** Shown for a moment after success, next to a check mark («Надіслано»). */
   successLabel: string;
   run: () => Promise<{ ok: boolean; error?: string }>;
   icon?: IconName;

@@ -19,6 +19,7 @@ import type {
   PlantState,
   Pump,
   Reason,
+  ReasonParams,
   RoomConfig,
   RoomEval,
   RuleOverlay,
@@ -36,6 +37,8 @@ import { numOf, runCondition, snapOf, type ConditionScratch, type PlantCondition
 import { coolSupplySetpoint } from './curves';
 import { commandEntity, type HealthResult } from './confirm';
 import { nominalKw, type EnergyPhase } from './energy';
+import { humidExcluded } from './hysteresis';
+import { addDays, fromLocal, toLocal } from './time';
 
 /* =====================================================================================================
  * Who heats and who cools, this tick. Rooms ask; every circuit with callers walks its strategy chain
@@ -50,6 +53,11 @@ const HOUR_MS = 3_600_000;
 /** Supply below dew + margin − this, for the hold time, trips the hard dew guard. */
 const DEW_HARD_SLACK_C = 0.5;
 const DEW_HARD_HOLD_MS = 2 * MIN_MS;
+/** After a hard trip the floor rests this long, so one wet evening cannot short-cycle the heat pump… */
+const DEW_HOLD_OFF_MS = 30 * MIN_MS;
+/** …and this many trips within the window lock floor cooling until local midnight (or a reset). */
+const DEW_LOCKOUT_TRIPS = 3;
+const DEW_TRIP_WINDOW_MS = 2 * HOUR_MS;
 
 /* ── index ───────────────────────────────────────────────────────────────────────────────────────── */
 
@@ -67,6 +75,8 @@ export interface RoomView {
   dry: boolean;
   rh: number | null;
   dewC: number | null;
+  /** Every humidity sensor lost for a while: the room's floor stays out of cooling. */
+  humidityUnknown: boolean;
   /** Window reaction (other than «лише сповістити») or airing. */
   paused: boolean;
   overheat: boolean;
@@ -116,6 +126,7 @@ function roomView(room: RoomConfig, ev: RoomEval, cfg: EngineConfig): RoomView {
     dry: p.demand.dry,
     rh: p.humidity.valuePct,
     dewC: p.humidity.dewPointC,
+    humidityUnknown: ev.memory.humidityUnknown?.on ?? false,
     paused: (reaction !== null && reaction !== 'notify') || p.demand.block === 'airing',
     overheat: ev.memory.overheat.on,
     heatLatchOn: p.demand.latched.heat,
@@ -420,23 +431,38 @@ function localCoolFirst(x: SelectionCtx, room: RoomView, c: Circuit): boolean {
   return false;
 }
 
-export function coolCallers(c: Circuit, x: SelectionCtx): { callers: RoomView[]; humid: RoomView[] } {
-  const callers: RoomView[] = [];
-  const humid: RoomView[] = [];
-  if (!c.capabilities.cool || x.phase === 'critical') return { callers, humid };
-  const cool = x.idx.cfg.cool;
+export interface CoolCallers {
+  callers: RoomView[];
+  /** Kept out of floor cooling: too humid, or no valid humidity reading for a while. */
+  humid: RoomView[];
+  humidityUnknown: RoomView[];
+}
+
+export function coolCallers(c: Circuit, x: SelectionCtx): CoolCallers {
+  const out: CoolCallers = { callers: [], humid: [], humidityUnknown: [] };
+  if (!c.capabilities.cool || x.phase === 'critical') return out;
+  const cfg = x.idx.cfg;
   for (const { room, emitter } of x.idx.members.get(c.id) ?? []) {
-    if (emitter.roles.cool === null || callers.includes(room) || humid.includes(room)) continue;
-    const req = room.requests.get(emitter.id);
-    if (room.demand !== 'cool' || !room.canCall || req?.mode !== 'cool' || emitter.excludeFromCooling) continue;
-    if (cool.floorExcludeAbovePct !== null && room.rh !== null && room.rh > cool.floorExcludeAbovePct) {
-      humid.push(room);
-      continue;
+    if (emitter.roles.cool === null || emitter.excludeFromCooling) continue;
+    if (out.callers.includes(room) || out.humid.includes(room) || out.humidityUnknown.includes(room)) continue;
+    // a floor kept out of cooling is reported whether or not the room asks now: the room cannot ask
+    // through a floor that is closed to it, and the circuit should still say why
+    if (x.season.coolAllowed.central && room.room.controlEnabled) {
+      if (humidExcluded(cfg, room.rh)) {
+        out.humid.push(room);
+        continue;
+      }
+      if (room.humidityUnknown) {
+        out.humidityUnknown.push(room);
+        continue;
+      }
     }
-    if (!cool.singleRoomCentralStart && localCoolFirst(x, room, c)) continue;
-    callers.push(room);
+    const req = room.requests.get(emitter.id);
+    if (room.demand !== 'cool' || !room.canCall || req?.mode !== 'cool') continue;
+    if (!cfg.cool.singleRoomCentralStart && localCoolFirst(x, room, c)) continue;
+    out.callers.push(room);
   }
-  return { callers, humid };
+  return out;
 }
 
 /* ── chains ──────────────────────────────────────────────────────────────────────────────────────── */
@@ -490,6 +516,7 @@ export interface CircuitPlan {
   heatCallers: Caller[];
   coolCallers: RoomView[];
   humidRooms: RoomView[];
+  humidityUnknownRooms: RoomView[];
   selected: Id[];
   lead: Id | null;
   /** The first source the walk could not take, with its reasons (rooms' wait reason). */
@@ -497,7 +524,33 @@ export interface CircuitPlan {
   failover: { from: Id; code: SourceFaultCode } | null;
   frostFallback: Id | null;
   bivalent: { applies: boolean; hp: Id | null; reserve: Id | null; hpPermitted: boolean; reserveJoins: boolean; mode: BivalentMode };
-  dew: { maxDewC: number | null; supplySpC: number | null; blocked: boolean; tripped: boolean };
+  dew: { maxDewC: number | null; supplySpC: number | null; blocked: boolean; tripped: boolean; hold: DewHold | null };
+}
+
+/** Floor cooling resting after a hard dew-guard trip, or locked after repeated trips. */
+export interface DewHold {
+  kind: 'hold' | 'lockout';
+  until: EpochMs;
+  trips: number;
+}
+
+/** The hard dew guard's memory: condition timers, recent trips and lockouts, per circuit. */
+export interface DewMemory {
+  /** circuitId → condition since (other keys in the map belong to other timers and are kept). */
+  since: Record<Id, EpochMs>;
+  trips: Record<Id, EpochMs[]>;
+  lockout: Record<Id, { since: EpochMs; until: EpochMs; trips: number }>;
+}
+
+/** Local midnight after `now`: a lockout lasts until the next day. */
+function nextMidnight(now: EpochMs, tz: string): EpochMs {
+  return fromLocal(addDays(toLocal(now, tz).date, 1), 0, tz);
+}
+
+function dewHoldOf(trips: readonly EpochMs[], lockout: DewMemory['lockout'][Id] | undefined, now: EpochMs): DewHold | null {
+  if (lockout) return { kind: 'lockout', until: lockout.until, trips: lockout.trips };
+  const last = trips.length ? Math.max(...trips) : null;
+  return last !== null && now < last + DEW_HOLD_OFF_MS ? { kind: 'hold', until: last + DEW_HOLD_OFF_MS, trips: trips.length } : null;
 }
 
 export interface HpDirection {
@@ -592,14 +645,14 @@ export interface Selection {
   /** Room-scope sources: the room's reason they cannot run. */
   roomBlocked: Map<Id, { sourceId: Id; blockers: Reason[] }[]>;
   eligibilityCache: Map<string, Eligibility>;
-  dewGuardSince: Record<Id, EpochMs>;
+  dew: DewMemory;
   dewTripped: Set<Id>;
   decisions: Decision[];
   detections: Detection[];
 }
 
 /** Plans every circuit and room-scope source for this tick. */
-export function selectSources(x: SelectionCtx, prevDewGuardSince: Record<Id, EpochMs>): Selection {
+export function selectSources(x: SelectionCtx, prevDew: DewMemory): Selection {
   const { idx, now } = x;
   const cfg = idx.cfg;
   const wants = new Map<Id, SourceWant>();
@@ -611,7 +664,23 @@ export function selectSources(x: SelectionCtx, prevDewGuardSince: Record<Id, Epo
   const detections: Detection[] = [];
   const dewGuardSince: Record<Id, EpochMs> = {};
   const dewTripped = new Set<Id>();
-  for (const [k, v] of Object.entries(prevDewGuardSince)) if (!idx.circuit.has(k)) dewGuardSince[k] = v; // other timers kept
+  for (const [k, v] of Object.entries(prevDew.since)) if (!idx.circuit.has(k)) dewGuardSince[k] = v; // other timers kept
+  // trips older than the window are forgotten; a lockout ends at its midnight and the new day counts
+  // from zero (a clock moved back drops what lies ahead of it)
+  const dewTrips: Record<Id, EpochMs[]> = {};
+  for (const [k, list] of Object.entries(prevDew.trips)) {
+    const kept = list.filter((at) => at <= now && now - at < DEW_TRIP_WINDOW_MS);
+    if (idx.circuit.has(k) && kept.length) dewTrips[k] = kept;
+  }
+  const dewLockout: DewMemory['lockout'] = {};
+  for (const [k, lock] of Object.entries(prevDew.lockout)) {
+    if (!idx.circuit.has(k) || lock.since > now) continue;
+    if (now < lock.until) dewLockout[k] = lock;
+    else {
+      delete dewTrips[k];
+      decisions.push({ code: 'dew.lockout_end', category: 'src', tone: 'ok', params: { circuitId: k } });
+    }
+  }
 
   const elig = (s: SourceConfig, mode: SourceMode, opts: { frost?: boolean; coldGuard?: boolean } = {}) => {
     const key = `${s.id}:${mode}:${opts.frost ? 1 : 0}${opts.coldGuard ? 1 : 0}`;
@@ -625,7 +694,7 @@ export function selectSources(x: SelectionCtx, prevDewGuardSince: Record<Id, Epo
 
   /* callers and heat-pump directions */
   const heatBy = new Map<Id, Caller[]>();
-  const coolBy = new Map<Id, { callers: RoomView[]; humid: RoomView[] }>();
+  const coolBy = new Map<Id, CoolCallers>();
   for (const c of idx.circuits) {
     heatBy.set(c.id, heatCallers(c, x));
     coolBy.set(c.id, coolCallers(c, x));
@@ -647,20 +716,21 @@ export function selectSources(x: SelectionCtx, prevDewGuardSince: Record<Id, Epo
   const biv = cfg.heat.bivalence;
   for (const c of idx.circuits) {
     const callers = heatBy.get(c.id) ?? [];
-    const { humid } = coolBy.get(c.id) ?? { callers: [], humid: [] };
+    const { humid, humidityUnknown } = coolBy.get(c.id) ?? { humid: [], humidityUnknown: [] };
     const plan: CircuitPlan = {
       circuit: c,
       mode: null,
       heatCallers: callers,
       coolCallers: [],
       humidRooms: humid,
+      humidityUnknownRooms: humidityUnknown,
       selected: [],
       lead: null,
       blocked: null,
       failover: null,
       frostFallback: null,
       bivalent: { applies: false, hp: null, reserve: null, hpPermitted: true, reserveJoins: false, mode: biv.mode },
-      dew: { maxDewC: null, supplySpC: null, blocked: false, tripped: false },
+      dew: { maxDewC: null, supplySpC: null, blocked: false, tripped: false, hold: null },
     };
     plans.set(c.id, plan);
     const entries = circuitEntries(x, heatChain, c, 'heat');
@@ -757,21 +827,25 @@ export function selectSources(x: SelectionCtx, prevDewGuardSince: Record<Id, Epo
     const plan = plans.get(c.id)!;
     const { callers } = coolBy.get(c.id) ?? { callers: [] };
     // the dew points of every member that would get cold water (also for the hard guard)
-    const members = (idx.members.get(c.id) ?? []).filter((mm) => mm.emitter.roles.cool !== null && !mm.emitter.excludeFromCooling && !plan.humidRooms.includes(mm.room));
+    const members = (idx.members.get(c.id) ?? []).filter(
+      (mm) => mm.emitter.roles.cool !== null && !mm.emitter.excludeFromCooling && !plan.humidRooms.includes(mm.room) && !plan.humidityUnknownRooms.includes(mm.room),
+    );
     const dewOf = (rooms: readonly RoomView[]) => {
       const dews = rooms.map((r) => r.dewC).filter((d): d is number => d !== null);
       return dews.length ? Math.max(...dews) : null;
     };
     const maxDew = dewOf(callers);
     const supplySp = coolSupplySetpoint(c.supply.coolC, maxDew, margin(c));
-    plan.dew = { maxDewC: maxDew, supplySpC: callers.length ? supplySp : null, blocked: false, tripped: false };
+    plan.dew = { maxDewC: maxDew, supplySpC: callers.length ? supplySp : null, blocked: false, tripped: false, hold: null };
 
-    // hard guard: the measured supply runs too close to the dew point while the circuit cools
-    const coolingNow = c.sourceIds.some((id) => x.mem[id]?.on && x.mem[id]?.mode === 'cool');
+    // hard guard: the measured supply runs too close to the dew point while the circuit cools (a floor
+    // already resting is closed to the cold water, whatever else its heat pump still cools)
+    const resting = c.capabilities.cool && dewHoldOf(dewTrips[c.id] ?? [], dewLockout[c.id], now) !== null;
+    const coolingNow = !resting && c.sourceIds.some((id) => x.mem[id]?.on && x.mem[id]?.mode === 'cool');
     const supplyC = numOf(snapOf(x.inputs, c.supply.sensorEntityId));
     const memberDew = dewOf(members.map((mm) => mm.room));
     if (coolingNow && supplyC !== null && memberDew !== null && supplyC < memberDew + margin(c) - DEW_HARD_SLACK_C) {
-      const since = prevDewGuardSince[c.id] ?? now;
+      const since = prevDew.since[c.id] ?? now;
       dewGuardSince[c.id] = since;
       if (now - since >= DEW_HARD_HOLD_MS) {
         plan.dew.tripped = true;
@@ -779,22 +853,46 @@ export function selectSources(x: SelectionCtx, prevDewGuardSince: Record<Id, Epo
         delete dewGuardSince[c.id];
         for (const id of c.sourceIds) if (x.mem[id]?.on && x.mem[id]?.mode === 'cool') safetyStops.set(id, 'dew_guard');
         decisions.push({ code: 'dew.guard', category: 'src', tone: 'warn', params: { circuitId: c.id, supplyC, dewC: memberDew }, entityIds: c.supply.sensorEntityId ? [c.supply.sensorEntityId] : [] });
+        const trips = [...(dewTrips[c.id] ?? []), now];
+        dewTrips[c.id] = trips;
+        if (trips.length >= DEW_LOCKOUT_TRIPS && !dewLockout[c.id]) {
+          const until = nextMidnight(now, x.inputs.tz);
+          dewLockout[c.id] = { since: now, until, trips: trips.length };
+          decisions.push({ code: 'dew.lockout', category: 'src', tone: 'err', params: { circuitId: c.id, trips: trips.length, until } });
+        }
       }
     }
+    // after a trip the floor rests, after repeated trips it stays locked; either way no source cools it
+    const hold = c.capabilities.cool ? dewHoldOf(dewTrips[c.id] ?? [], dewLockout[c.id], now) : null;
+    plan.dew.hold = hold;
+    const guardFacts = {
+      circuitId: c.id,
+      dewC: memberDew,
+      supplyC,
+      trips: hold?.trips ?? 0,
+      holdUntil: hold?.kind === 'hold' ? hold.until : null,
+      lockedUntil: hold?.kind === 'lockout' ? hold.until : null,
+    };
+    const guard = (active: boolean, facts: ReasonParams = guardFacts) => detections.push({ kind: 'dew_point_guard', dedupKey: `dew_point_guard:${c.id}`, active, facts });
 
     if (!callers.length || plan.mode === 'heat') {
       plan.coolCallers = plan.mode === 'heat' ? [] : callers;
-      detections.push({ kind: 'dew_point_guard', dedupKey: `dew_point_guard:${c.id}`, active: plan.dew.tripped, facts: { circuitId: c.id, dewC: memberDew, supplyC } });
+      guard(plan.dew.tripped || hold !== null);
       continue;
     }
     plan.coolCallers = callers;
+    if (hold) {
+      plan.dew.supplySpC = null;
+      guard(true);
+      continue;
+    }
     if (supplySp > c.supply.coolMaxC) {
       // the floor would have to run warmer than is useful: cooling through it is pointless
       plan.dew.blocked = true;
-      detections.push({ kind: 'dew_point_guard', dedupKey: `dew_point_guard:${c.id}`, active: true, facts: { circuitId: c.id, dewC: maxDew, supplyC: supplySp, maxSupplyC: c.supply.coolMaxC } });
+      guard(true, { circuitId: c.id, dewC: maxDew, supplyC: supplySp, maxSupplyC: c.supply.coolMaxC });
       continue;
     }
-    detections.push({ kind: 'dew_point_guard', dedupKey: `dew_point_guard:${c.id}`, active: plan.dew.tripped, facts: { circuitId: c.id, dewC: memberDew, supplyC } });
+    guard(plan.dew.tripped);
     if (plan.dew.tripped) continue;
 
     const selected: Id[] = [];
@@ -935,7 +1033,7 @@ export function selectSources(x: SelectionCtx, prevDewGuardSince: Record<Id, Epo
     if (!before) decisions.push({ code: 'source.changeover_blocked', category: 'src', tone: 'warn', params: { until: d.blocker.params?.until ?? null }, sourceId: id });
   }
 
-  return { wants, plans, hp, safetyStops, roomBlocked, eligibilityCache: cache, dewGuardSince, dewTripped, decisions, detections };
+  return { wants, plans, hp, safetyStops, roomBlocked, eligibilityCache: cache, dew: { since: dewGuardSince, trips: dewTrips, lockout: dewLockout }, dewTripped, decisions, detections };
 }
 
 /** The trigger that gates a source (its first trigger condition item). */

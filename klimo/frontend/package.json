@@ -9,8 +9,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "check": "node scripts/check-boundaries.mjs && tsc --noEmit -p tsconfig.json",
     "i18n": "i18next",
-    "i18n:check": "i18next --fail-on-update && node scripts/merge-locales.mjs --check",
-    "locales:merge": "node scripts/merge-locales.mjs",
+    "i18n:check": "i18next --fail-on-update && node scripts/check-locales.mjs",
     "tokens:card": "node scripts/tokens-to-card.mjs"
   },
   "dependencies": {

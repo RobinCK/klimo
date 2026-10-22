@@ -325,3 +325,27 @@ test('an AC on fixed on/off setpoints turned by hand: the number on the AC becom
   assert.deepEqual(e.roomActionsCalls[0].req, { value: 26, duration: 'slot' });
   e.engine.onModuleDestroy();
 });
+
+test('«Скинути» lifts a floor-cooling lockout before midnight, journalled with who did it', async () => {
+  const until = h.kyiv(2026, 10, 22, 0, 0);
+  const e = h.makeEngine({
+    safety: NO_DRY_RUN,
+    memoryOf: (cfg, now) => {
+      const m = h.makeMemory(cfg, now);
+      m.plant.dewTrips = { c_rad: [now - 20 * MIN, now - 10 * MIN, now - 5 * MIN] };
+      m.plant.dewLockout = { c_rad: { since: now - 5 * MIN, until, trips: 3 } };
+      return m;
+    },
+  });
+  await e.boot();
+  await e.advance(20 * SEC);
+  assert.deepEqual(e.engine.memory().plant.dewLockout.c_rad, { since: WED_1910 - 5 * MIN, until, trips: 3 }, 'kept across the restart');
+  const actor = { via: 'ui', userId: 'u1', userName: 'Ігор' };
+  assert.equal(await e.engine.resetDewLockout('c_rad', actor), true);
+  assert.deepEqual(e.engine.memory().plant.dewLockout, {});
+  assert.deepEqual(e.engine.memory().plant.dewTrips, {}, 'the count starts again');
+  assert.ok(e.journal.entries.some((x) => x.code === 'dew.lockout_reset' && x.params.circuitId === 'c_rad' && x.params.by === 'Ігор'));
+  assert.equal(await e.engine.resetDewLockout('c_rad', actor), false, 'nothing left to reset');
+  await assert.rejects(() => e.engine.resetDewLockout('c_nope', actor), (err) => err.status === 404 || err.getStatus?.() === 404);
+  e.engine.onModuleDestroy();
+});

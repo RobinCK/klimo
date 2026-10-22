@@ -384,8 +384,8 @@ function Lists() {
       </Item>
       <Item name="TestButton · QuickActionPill · DashedAddButton · FileButton">
         <Row gap="sm" wrap>
-          <TestButton label={ut('Send a test')} successLabel={ut('Sent ✓')} run={() => new Promise((r) => window.setTimeout(() => r({ ok: true }), 700))} />
-          <TestButton label={ut('Check the token')} successLabel={ut('Token works ✓')} icon="sync" run={() => new Promise((r) => window.setTimeout(() => r({ ok: false, error: ut('Telegram answered 401: the token is wrong') }), 700))} />
+          <TestButton label={ut('Send a test')} successLabel={ut('Sent')} run={() => new Promise((r) => window.setTimeout(() => r({ ok: true }), 700))} />
+          <TestButton label={ut('Check the token')} successLabel={ut('Token works')} icon="sync" run={() => new Promise((r) => window.setTimeout(() => r({ ok: false, error: ut('Telegram answered 401: the token is wrong') }), 700))} />
         </Row>
         <Row gap="sm" wrap>
           <QuickActionPill icon="bolt" label={ut('+1° for 30 min')} onClick={() => undefined} />

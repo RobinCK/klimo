@@ -78,6 +78,12 @@ export const JOURNAL: Record<JournalCode, Row> = {
     '{circuitId}: supply {supplyC} near the dew point {dewC} — cooling limited',
     '{circuitId}: подача {supplyC} близько до точки роси {dewC} — охолодження обмежено',
   ],
+  'dew.lockout': [
+    '{circuitId}: the dew point guard stopped floor cooling {trips|time|times} in 2 h — locked until {until}',
+    '{circuitId}: захист від роси зупинив охолодження {trips|раз|рази|разів} за 2 год — заблоковано до {until}',
+  ],
+  'dew.lockout_end': ['{circuitId}: floor cooling allowed again', '{circuitId}: охолодження підлогою знову дозволене'],
+  'dew.lockout_reset': ['{circuitId}: floor cooling lock reset[ · {by}]', '{circuitId}: блокування охолодження скинуто[ · {by}]'],
   'budget.shed': ['{sourceId} shed by the power budget: {usedKw} of {budgetKw}', '{sourceId} відключено бюджетом потужності: {usedKw} з {budgetKw}'],
   'budget.critical': ['Battery {soc} — frost protection only', 'Батарея {soc} — лише захист від морозу'],
   'cutoff.on': ['Outdoor {toutC} — central heating not needed', 'Надворі {toutC} — центральне опалення не потрібне'],
@@ -99,6 +105,8 @@ export const JOURNAL: Record<JournalCode, Row> = {
   'room.overheat_off': ['{room}: the temperature is back to normal ({t})', '{room}: температура знову в нормі ({t})'],
   'room.no_data': ['{room}: no temperature data', '{room}: немає даних про температуру'],
   'room.data_back': ['{room}: data is back[ ({t})]', '{room}: дані знову є[ ({t})]'],
+  'room.humidity_unknown': ['{room}: no humidity reading for {minutes} — the floor is not cooled', '{room}: немає даних про вологість {minutes} — підлогу не охолоджую'],
+  'room.humidity_back': ['{room}: humidity reading is back[ ({rh})] — floor cooling allowed', '{room}: дані про вологість знову є[ ({rh})] — підлогу можна охолоджувати'],
   'room.trv_fallback': ['{room}: using the radiator valves’ readings ({n})', '{room}: рахую за показами головок ({n})'],
   'room.profile_written': [
     '{room}: new «{profileId}» target[ {heatC}][ / {coolC}][ · {by}]',

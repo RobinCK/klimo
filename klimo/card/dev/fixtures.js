@@ -16,7 +16,7 @@
  *   const house = KlimoFixtures.create('summer', { darkMode: false });
  *   house.subscribe((hass) => { card.hass = hass; });
  *
- * Times are relative to now in Europe/Kyiv, so the texts read like the designs at any hour.
+ * Times are relative to now in Europe/Kyiv, so countdowns and "since" texts stay plausible at any hour.
  */
 (function () {
   const TZ = 'Europe/Kyiv';

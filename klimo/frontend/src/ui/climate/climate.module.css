@@ -165,8 +165,9 @@
 .tabs {
   position: relative;
   overflow-x: auto;
-  margin: 0 -4px;
-  padding: 0 4px 2px;
+  /* room for the focus ring (2 px + 2 px offset), which the scroller would clip */
+  margin: -4px -4px -2px;
+  padding: 4px;
   scrollbar-width: thin;
 }
 

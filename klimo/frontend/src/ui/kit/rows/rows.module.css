@@ -316,6 +316,23 @@
   font-size: var(--ui-fs-body-sm);
 }
 
+/* on a phone the tag and the switch share the first line and the text gets the full width */
+@media (max-width: 699px) {
+  .ruleRow {
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: var(--ui-space-8);
+  }
+  .ruleRow > .enable {
+    order: 1;
+    margin-left: auto;
+  }
+  .ruleText {
+    order: 2;
+    flex-basis: 100%;
+  }
+}
+
 .whenLine {
   display: flex;
   flex-wrap: wrap;
@@ -712,6 +729,16 @@ button.bindingValue > svg {
 
 .cellText {
   color: var(--ui-text-2);
+}
+
+.cellChip {
+  max-width: 100%;
+}
+
+.cellChipText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cellQuiet {

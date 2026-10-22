@@ -56,6 +56,22 @@ export const REASONS: Record<ReasonCode, Row> = {
     'Floor cooling is blocked — at the dew point {dewC} the water would have to be warmer than {maxSupplyC}.',
     'Охолодження підлогою заблоковано — при точці роси {dewC} вода мала б бути теплішою за {maxSupplyC}.',
   ],
+  'why.monitor.too_humid': [
+    'Floor cooling is off — humidity {rh} is above {maxPct}, the floor could sweat.',
+    'Охолодження підлогою вимкнене — вологість {rh} вища за {maxPct}, підлога може запотіти.',
+  ],
+  'why.monitor.humidity_unknown': [
+    'Floor cooling is off — no humidity reading[ since {since}], so the dew point is unknown.',
+    'Охолодження підлогою вимкнене — немає даних про вологість[ з {since}], тож точка роси невідома.',
+  ],
+  'why.monitor.dew_hold': [
+    'Floor cooling rests after the dew point guard stopped it — back at {until}.',
+    'Охолодження підлогою на паузі після спрацювання захисту від роси — знову о {until}.',
+  ],
+  'why.monitor.dew_lockout': [
+    'Floor cooling is locked: the dew point guard stopped it {trips|time|times} — until {until} or a reset.',
+    'Охолодження підлогою заблоковано: захист від роси спрацював {trips|раз|рази|разів} — до {until} або до скидання.',
+  ],
   'why.season_blocks': [
     (v) => (isCool(v) ? 'Cooling is not allowed now ({season}).' : 'Heating is not allowed now ({season}).'),
     (v) => (isCool(v) ? 'Охолодження зараз не дозволене ({season}).' : 'Опалення зараз не дозволене ({season}).'),
@@ -189,6 +205,11 @@ export const REASONS: Record<ReasonCode, Row> = {
   'plant.trigger_active': ['Trigger «{triggerId}» is active', 'Активний тригер «{triggerId}»'],
   'plant.no_demand': ['No room is asking for heat or cooling', 'Жодна кімната не просить тепла чи прохолоди'],
   'plant.dew_guard': ['{circuitId}: supply {supplyC} kept above the dew point {dewC}', '{circuitId}: подачу {supplyC} тримаю вище точки роси {dewC}'],
+  'plant.dew_hold': ['{circuitId}: floor cooling rests after the dew point guard, until {until}', '{circuitId}: охолодження на паузі після захисту від роси, до {until}'],
+  'plant.dew_lockout': [
+    '{circuitId}: floor cooling locked after {trips|dew point stop|dew point stops}, until {until}',
+    '{circuitId}: охолодження заблоковано після {trips|спрацювання|спрацювань|спрацювань} захисту від роси, до {until}',
+  ],
   'plant.summer_idle': ['Summer: central heating rests', 'Літо: центральне опалення відпочиває'],
   'plant.neutral_guard': ['Between seasons: heating {n|cold room|cold rooms}', 'Міжсезоння: гріє {n|холодну кімнату|холодні кімнати|холодних кімнат}'],
   'plant.frost_fallback': ['Frost protection: {sourceId} heats {roomId}', 'Захист від морозу: {sourceId} гріє кімнату «{roomId}»'],
@@ -206,6 +227,8 @@ export const REASONS: Record<ReasonCode, Row> = {
   'circuit.idle': ['Not running', 'Не працює'],
   'circuit.summer': ['Summer pause', 'Літня пауза'],
   'circuit.dew_blocked': ['Blocked by the dew point {dewC}', 'Заблоковано точкою роси {dewC}'],
+  'circuit.dew_hold': ['Paused by the dew point guard until {until}', 'Пауза через точку роси до {until}'],
+  'circuit.dew_lockout': ['Cooling locked until {until}[ · {trips|stop|stops} in 2 h]', 'Охолодження заблоковано до {until}[ · {trips|спрацювання|спрацювання|спрацювань} за 2 год]'],
   'circuit.no_source': ['No source available', 'Немає доступного джерела'],
   'circuit.heat_only_blocked': ['Heating only — closed while cooling', 'Лише для тепла — закритий, поки охолоджує'],
 

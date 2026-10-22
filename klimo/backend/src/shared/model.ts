@@ -1,11 +1,11 @@
 /* =====================================================================================================
- * Klimo — shared domain model (FINAL CONTRACT v1)
+ * Klimo — shared domain model
  *
  * Copied VERBATIM to:
  *   klimo/backend/src/shared/model.ts     (backend imports: `import type { … } from '../shared/model'`,
  *                                            const catalogues with a normal import)
  *   klimo/frontend/src/api/model.ts       (frontend imports: `import type { … } from '@api/model'`)
- * Nobody edits the copies. A change goes into the contract first, then both copies are replaced.
+ * Edit the backend copy, then copy it over the frontend one; the two must stay identical.
  *
  * Rules for this file
  *  - No imports. Types, plus `as const` catalogues of enum values and tiny pure helpers (section 12).
@@ -62,7 +62,7 @@ export interface Reason {
 /** Semantic tones (brand "мова станів"). Buttons are never toned. */
 export type Tone = 'heat' | 'cool' | 'hold' | 'warn' | 'err' | 'off' | 'ok' | 'event' | 'wait' | 'idle' | 'mixed';
 
-/** Canonical icon names (brand-uikit §7.6). Shared by the SPA icon set and the Lovelace cards. */
+/** Canonical icon names. Shared by the SPA icon set and the Lovelace cards. */
 export type IconName =
   | 'flame' | 'snow' | 'checkCircle' | 'check' | 'clock' | 'windowOpen' | 'windowClosed' | 'alert' | 'info'
   | 'power' | 'eye' | 'hand' | 'bolt' | 'pause' | 'airing' | 'shield' | 'sync' | 'offline' | 'battery'
@@ -96,7 +96,7 @@ export type HouseMode = 'auto' | 'heat' | 'cool' | 'off';
 /** Derived season ('neutral' = міжсезоння). */
 export type Season = 'heating' | 'neutral' | 'cooling';
 
-/** Room chip state («мова станів»). Precedence: contract D.7. */
+/** Room chip state («мова станів»), in order of precedence. */
 export type RoomStateKind = 'heat' | 'cool' | 'hold' | 'wait' | 'window' | 'off' | 'frost' | 'error' | 'monitor';
 
 export type AggregationMethod = 'median' | 'average' | 'weighted' | 'min' | 'max' | 'primary';
@@ -156,7 +156,7 @@ export type HpModeSelection = 'demand' | 'weather';
 export type TriggerKind = 'entity_state' | 'numeric' | 'template' | 'time' | 'sun_weather' | 'composite';
 
 export type Severity = 'critical' | 'warning' | 'event' | 'report';
-/** Every alert/notification kind. Catalogue (severity, default routing, params, auto-resolve): contract I.2. */
+/** Every alert/notification kind. Severity, default routing, params and auto-resolve: the notification catalogue. */
 export type EventKind =
   // critical
   | 'source_failed' | 'source_unavailable' | 'frost_risk' | 'z2m_offline' | 'room_no_data' | 'ha_disconnected'
@@ -197,7 +197,7 @@ export type SyncPhase = 'idle' | 'sending' | 'partial' | 'done' | 'retry' | 'fai
 export type TargetLayer =
   | 'frost' | 'window' | 'airing' | 'manual' | 'room_off' | 'room_profile' | 'house_manual' | 'calendar' | 'presence'
   | 'room_schedule' | 'house_schedule' | 'default' | 'monitor';
-/** Target-source line kind (brand-uikit §5.3). */
+/** Target-source line kind. */
 export type TargetDisplayKind =
   | 'schedule' | 'profile_updated' | 'manual' | 'range' | 'boost' | 'window' | 'airing' | 'off' | 'monitor' | 'frost'
   | 'presence' | 'calendar' | 'room_profile' | 'preheat' | 'no_data';
@@ -214,17 +214,18 @@ export type PumpReason =
 export type PumpStateKind = 'running' | 'run_on' | 'off' | 'exercise' | 'forced' | 'blocked' | 'unavailable';
 export type EngineHealth = 'starting' | 'ok' | 'dry_run' | 'blind' | 'degraded';
 
-/** Room issue chips (the room card shows the first by rank, «+N» when more). Table: contract D.20. */
+/** Room issue chips (the room card shows the first by rank, «+N» when more); rank and tone in ISSUE_STYLE. */
 export type IssueCode =
   | 'no_data' | 'sensor_offline' | 'source_fault' | 'trv_failed' | 'entity_missing' | 'too_cold' | 'too_hot'
   | 'trv_retry' | 'overheat' | 'source_wait' | 'fallback_sensors' | 'actuator_conflict' | 'condensation'
-  | 'humidity_high' | 'floor_humid' | 'battery_low' | 'window_long' | 'signal_weak' | 'humid_dry_hint' | 'airing_hint';
+  | 'humidity_high' | 'floor_humid' | 'humidity_unknown' | 'battery_low' | 'window_long' | 'signal_weak'
+  | 'humid_dry_hint' | 'airing_hint';
 
 /* ───────────────────────────────────── 2 Reason and journal codes ─────────────────────────────── */
 
 /** Closed catalogue of reason codes. The SPA's `i18n/codes.ts` and the backend `notify/messages.ts`
- *  must be exhaustive over it (a missing code is a compile error there). Params per code: contract D.21.
- *  Engine packages must use these codes only; a new code is a contract change. */
+ *  must be exhaustive over it (a missing code is a compile error there). The engine uses these codes only;
+ *  a new code needs its wording on both sides. */
 export type ReasonCode =
   // «Чому гріє / не гріє» — room why (RoomState.why = [main, ...details])
   | 'why.heat.below_on' | 'why.heat.in_band_on' | 'why.heat.in_band_off' | 'why.heat.above_off'
@@ -236,7 +237,8 @@ export type ReasonCode =
   | 'why.monitor.dew_blocked' | 'why.season_blocks' | 'why.min_request' | 'why.served' | 'why.trvs_open'
   | 'why.trvs_closed' | 'why.ac_running' | 'why.ac_assist' | 'why.ac_dry' | 'why.trigger_heat' | 'why.preheat'
   | 'why.rule_offset' | 'why.weather_comp' | 'why.floor_limit' | 'why.eta.reach' | 'why.eta.cooling_down'
-  | 'why.eta.warming_up' | 'why.cold_guard'
+  | 'why.eta.warming_up' | 'why.cold_guard' | 'why.monitor.too_humid' | 'why.monitor.humidity_unknown'
+  | 'why.monitor.dew_hold' | 'why.monitor.dew_lockout'
   // room wait reasons (RoomDemand.waitReason)
   | 'wait.min_off' | 'wait.max_starts' | 'wait.trigger' | 'wait.condition' | 'wait.budget' | 'wait.stagger'
   | 'wait.starting' | 'wait.prerun' | 'wait.changeover' | 'wait.piggyback' | 'wait.no_source' | 'wait.fault'
@@ -265,10 +267,10 @@ export type ReasonCode =
   | 'plant.season' | 'plant.lead' | 'plant.bivalent_hp' | 'plant.bivalent_reserve' | 'plant.lag' | 'plant.failover'
   | 'plant.budget' | 'plant.rule_active' | 'plant.trigger_active' | 'plant.no_demand' | 'plant.dew_guard'
   | 'plant.summer_idle' | 'plant.neutral_guard' | 'plant.frost_fallback' | 'plant.flow_curve' | 'plant.cutoff'
-  | 'plant.house_off' | 'plant.blind' | 'plant.cool_by_ac'
+  | 'plant.house_off' | 'plant.blind' | 'plant.cool_by_ac' | 'plant.dew_hold' | 'plant.dew_lockout'
   // circuit state
   | 'circuit.heating' | 'circuit.cooling' | 'circuit.run_on' | 'circuit.idle' | 'circuit.summer'
-  | 'circuit.dew_blocked' | 'circuit.no_source' | 'circuit.heat_only_blocked'
+  | 'circuit.dew_blocked' | 'circuit.no_source' | 'circuit.heat_only_blocked' | 'circuit.dew_hold' | 'circuit.dew_lockout'
   // energy notes
   | 'energy.grid_ok' | 'energy.budget_used' | 'energy.economy' | 'energy.critical' | 'energy.night_tariff_at'
   | 'energy.solar_to_heat' | 'energy.solar_to_cold' | 'energy.not_configured'
@@ -283,19 +285,20 @@ export type ReasonCode =
   // season
   | 'season.auto' | 'season.forced' | 'season.pending' | 'season.months_gate' | 'season.no_data';
 
-/** Decision-journal codes («Журнал рішень»). Params per code: contract D.22. */
+/** Decision-journal codes («Журнал рішень»). */
 export type JournalCode =
   // src
   | 'source.start' | 'source.stop' | 'source.confirmed' | 'source.fault' | 'source.failover' | 'source.recovered'
   | 'source.test' | 'source.lock' | 'source.lock_expired' | 'source.stage_up' | 'source.stage_down'
   | 'source.changeover' | 'source.changeover_blocked' | 'bivalent.hp_off' | 'bivalent.hp_on' | 'lag.join'
   | 'lag.leave' | 'pump.on' | 'pump.run_on' | 'pump.off' | 'pump.exercise' | 'pump.flow_safety' | 'pump.duty_switch'
-  | 'frost.fallback' | 'dew.guard' | 'budget.shed' | 'budget.critical' | 'cutoff.on' | 'cutoff.off'
+  | 'frost.fallback' | 'dew.guard' | 'dew.lockout' | 'dew.lockout_end' | 'dew.lockout_reset' | 'budget.shed'
+  | 'budget.critical' | 'cutoff.on' | 'cutoff.off'
   // rooms
   | 'room.window_reaction' | 'room.window_resume' | 'room.window_virtual' | 'room.override' | 'room.override_cleared'
   | 'room.override_expired' | 'room.frost_on' | 'room.frost_off' | 'room.overheat_on' | 'room.overheat_off'
   | 'room.no_data' | 'room.data_back' | 'room.trv_fallback' | 'room.profile_written' | 'room.created'
-  | 'room.deleted'
+  | 'room.deleted' | 'room.humidity_unknown' | 'room.humidity_back'
   // dev
   | 'trv.retry' | 'trv.failed' | 'trv.confirmed' | 'trv.manual' | 'trv.manual_reverted' | 'trv.handback'
   | 'sensor.stale' | 'sensor.back' | 'sensor.excluded' | 'sensor.included' | 'sensor.suggest_weight'
@@ -380,7 +383,7 @@ export interface ConditionEval {
 }
 
 /* ───────────────────────────── 4 Configuration (persisted, edited by the user) ────────────────── */
-/* Defaults in comments; contract D.24 repeats them as one table; backend/src/shared/defaults.ts holds them. */
+/* Defaults in comments; backend/src/shared/defaults.ts holds them. */
 
 /** Hysteresis on the temperature axis, per mode. Heating: ON ≤ T − below, OFF ≥ T + above.
  *  Cooling: ON ≥ T + above, OFF ≤ T − below. Range 0.1…1.0, step 0.1. */
@@ -435,7 +438,7 @@ export interface GeneralSettings {
   /** Config writes (routes marked A) require an HA admin. Control actions are open to every panel user. */
   adminOnlyConfig: boolean; // true
   /** Publish config-level MQTT entities (bivalent point, source allowed switches, rule switches).
-   *  Their commands are accepted only from HA admins (call_service context), contract G.6. */
+   *  Their commands are accepted only from HA admins (call_service context). */
   mqttConfigEntities: boolean; // false
   glassCoefficient: number; // 0.35 (double glazing) — T_glass ≈ T_in − k·(T_in − T_out)
   presence: PresenceConfig;
@@ -1259,6 +1262,15 @@ export interface Latch {
   since: EpochMs; // last flip
 }
 
+/** A flag that flips only once the opposite condition has held for a while, in either direction.
+ *  `since` is when the condition behind the current state began (before the flip); `pendingSince`
+ *  when the opposite one began, null while the current state is confirmed. */
+export interface DebouncedFlag {
+  on: boolean;
+  since: EpochMs;
+  pendingSince: EpochMs | null;
+}
+
 /** Table room_control_state (one row per room). */
 export interface RoomMemory {
   roomId: Id;
@@ -1271,6 +1283,8 @@ export interface RoomMemory {
   store: Latch; // trigger-role heat storage
   dehumidifier: Latch;
   floorLimit: Latch; // floor probe ≥ maxFloorC
+  /** Every humidity sensor of the room unavailable or stale: no floor cooling. 5 min either way. */
+  humidityUnknown: DebouncedFlag;
   demandMode: ModeOrNone;
   demandSince: EpochMs | null; // min-request timer
   /** Optimal start under way: held until the block begins, the room reaches its target + tolerance above,
@@ -1397,6 +1411,10 @@ export interface PlantMemory {
   budgetOverSince: EpochMs | null;
   lastShedAt: EpochMs | null;
   dewGuardSince: Record<Id, EpochMs>; // circuitId → hard dew guard condition since
+  /** circuitId → hard dew-guard trips of the last 2 h; floor cooling rests 30 min after each one. */
+  dewTrips: Record<Id, EpochMs[]>;
+  /** circuitId → floor cooling locked after 3 hard trips within 2 h, until local midnight or a reset. */
+  dewLockout: Record<Id, { since: EpochMs; until: EpochMs; trips: number }>;
   lastHeartbeatAt: EpochMs; // written every 60 s; closes dangling spans after a crash
   bootCount: number;
   updatedAt: EpochMs;
@@ -1812,12 +1830,14 @@ export interface CircuitState {
   state: Reason; // circuit.* codes
   requestingRoomIds: Id[];
   memberRoomIds: Id[];
-  excludedRooms: { roomId: Id; reason: 'dew' | 'humid' | 'heat_only' | 'excluded' }[];
+  excludedRooms: { roomId: Id; reason: 'dew' | 'humid' | 'humidity_unknown' | 'heat_only' | 'excluded' }[];
   feedingSourceIds: Id[]; // running now
   supplyC: Celsius | null;
   returnC: Celsius | null;
   supplySetpointC: Celsius | null; // curve / dew-safe cooling setpoint
   dewPointMaxC: Celsius | null; // cooling only
+  /** Floor cooling rests after a hard dew-guard trip ('hold', 30 min) or is locked after repeated trips. */
+  dewHold: { kind: 'hold' | 'lockout'; until: EpochMs; trips: number } | null;
   pumpOn: boolean;
   runOnUntil: EpochMs | null;
   pumps: PumpState[];
@@ -1836,7 +1856,7 @@ export interface SeasonState {
   outdoorSource: 'sensor' | 'weather' | 'hold' | 'none';
   rule: { heatBelowC: Celsius; coolAboveC: Celsius; hysteresisC: DeltaC; avgDays: number };
   pending: { to: Season; since: EpochMs; eligibleAt: EpochMs } | null;
-  /** Gates (D.8): central = circuits/hydronic sources, local = room-scope sources. */
+  /** Gates: central = circuits/hydronic sources, local = room-scope sources. */
   heatAllowed: { central: boolean; local: boolean; coldGuardOnly: boolean };
   coolAllowed: { central: boolean; local: boolean };
   reason: Reason; // season.* codes
@@ -1987,7 +2007,6 @@ export interface DevicesSummary {
 }
 
 /* ──────────────────────────────────────── 7 REST DTOs ──────────────────────────────────────────── */
-/* Endpoint table with permissions: contract F.2. */
 
 export interface ApiErrorIssue {
   path: string; // 'tolerance.heat.below'
@@ -2976,7 +2995,7 @@ export type WsServerMessage =
   | { type: 'sim'; payload: { now: EpochMs; speed: number; paused: boolean; scenario: SimScenarioId } };
 
 /* ─────────────────────────── 9 MQTT payloads (HA entities + Lovelace card transport) ──────────────── */
-/* Topic map, discovery configs and budgets: contract G. All attributes below are retained JSON. Texts
+/* All attributes below are retained JSON. Texts
  * (`t`, `sub`, `head`, `label`, `value`) are pre-rendered in settings.notificationLanguage and may contain
  * `{d}` (duration between now and `at`, «12 хв» / «1 год 5 хв») and `{t}` (clock time of `at`, «23:00»). */
 
@@ -3121,7 +3140,7 @@ export interface RoomClimateStatePayload {
 
 /** Commands on topic `klimo/command` (JSON), published by the cards with
  *  hass.callService('mqtt','publish',{topic:'klimo/command', payload}). `user` (hass.user.id) is used for
- *  attribution display only; authorization uses the HA call_service context (contract G.6). */
+ *  attribution display only; authorization uses the HA call_service context. */
 export type KlimoCommand = (
   | { action: 'room.set_target'; roomId: Id; value?: Celsius; lo?: Celsius; hi?: Celsius; which?: 't' | 'lo' | 'hi'; duration: RoomTargetDuration; until?: EpochMs }
   | { action: 'room.preview_target'; roomId: Id; value?: Celsius; lo?: Celsius; hi?: Celsius; duration: RoomTargetDuration }
@@ -3338,7 +3357,7 @@ export interface EvaluateResult {
 /** The pure entry point: same function for live control, previews, what-if, the simulator pre-roll and tests. */
 export type EvaluateFn = (cfg: EngineConfig, inputs: InputSnapshot, memory: EngineMemory, ledger: Record<string, ActuatorRecord>) => EvaluateResult;
 
-/* Seams between engine core rooms (WP-05) and engine core plant (WP-06) */
+/* Seams between the room half and the plant half of the engine core */
 
 /** Merged effect of all active trigger rules this tick. */
 export interface RuleOverlay {
@@ -3361,7 +3380,7 @@ export interface RoomEval {
   memory: RoomMemory;
   /** Everything of RoomState except what needs the plant verdict. */
   partial: Omit<RoomState, 'state' | 'tone' | 'trvs' | 'emitters' | 'issues' | 'why' | 'sync' | 'hvacAction'>;
-  /** Per emitter: requested mode by role logic (D.11), before plant availability. */
+  /** Per emitter: requested mode by role logic, before plant availability. */
   emitterRequests: { emitterId: Id; mode: Mode | null; role: EmitterRole; excluded: EmitterState['excluded'] }[];
   decisions: Decision[];
   detections: Detection[];
@@ -3476,9 +3495,9 @@ export interface MqttTransport {
 }
 
 
-/* ─────────────── 10b Pure engine core function signatures (implemented by WP-05 rooms / WP-06 plant) ───────────────── */
+/* ─────────────── 10b Pure engine core function signatures ───────────────── */
 /* Each signature is exported by the named file as `export const <name>: <Type> = …` (or a function with
- * an identical signature). engine/core/evaluate.ts (WP-14) composes them in the order of contract D.0. */
+ * an identical signature). engine/core/evaluate.ts composes them: season, rooms, plant, rooms again. */
 
 /** Context handed to every room evaluation. */
 export interface RoomContext {
@@ -3489,18 +3508,18 @@ export interface RoomContext {
   prevPlant: PlantState | null;
 }
 
-/** engine/core/targets.ts (WP-05) */
+/** engine/core/targets.ts */
 export type ResolveHouseProfileFn = (cfg: EngineConfig, inputs: InputSnapshot, memory: EngineMemory) => {
   state: HouseProfileState;
   decisions: Decision[];
   detections: Detection[];
   spans: SpanEvent[];
 };
-/** engine/core/durations.ts (WP-05). roomId null = house scope. */
+/** engine/core/durations.ts. roomId null = house scope. */
 export type DurationUntilFn = (cfg: EngineConfig, roomId: Id | null, duration: OverrideDuration, now: EpochMs, tz: string, explicitUntil?: EpochMs) => EpochMs | null;
-/** engine/core/room.ts (WP-05): aggregate → humidity → window → target → safety → hysteresis → demand → emitter requests. */
+/** engine/core/room.ts: aggregate → humidity → window → target → safety → hysteresis → demand → emitter requests. */
 export type EvaluateRoomFn = (cfg: EngineConfig, room: RoomConfig, inputs: InputSnapshot, memory: EngineMemory, ctx: RoomContext) => RoomEval;
-/** engine/core/room.ts (WP-05): after the plant verdict — state chip, TRV/zone/dehumidifier actuation, issues, why, ETA. */
+/** engine/core/room.ts: after the plant verdict — state chip, TRV/zone/dehumidifier actuation, issues, why, ETA. */
 export type FinishRoomFn = (cfg: EngineConfig, ev: RoomEval, verdict: RoomServiceVerdict, plant: PlantState, inputs: InputSnapshot, ledger: Record<string, ActuatorRecord>) => {
   state: RoomState;
   memory: RoomMemory;
@@ -3508,7 +3527,7 @@ export type FinishRoomFn = (cfg: EngineConfig, ev: RoomEval, verdict: RoomServic
   decisions: Decision[];
   detections: Detection[];
 };
-/** engine/core/preview.ts (WP-05): consequence of a proposed room target (UI pending panel, thermostat card). */
+/** engine/core/preview.ts: consequence of a proposed room target (UI pending panel, thermostat card). */
 export type PreviewTargetFn = (cfg: EngineConfig, room: RoomConfig, state: RoomState, req: SetTargetRequest, now: EpochMs, tz: string) => TargetPreview;
 
 /** Context for evaluating a ConditionNode. */
@@ -3523,13 +3542,13 @@ export interface ConditionCtx {
   sourceId: Id | null;
   budgetFits: ((sourceId: Id) => boolean) | null;
 }
-/** engine/core/conditions.ts (WP-06): one node tree, three-valued, with latches/timers in memory. */
+/** engine/core/conditions.ts: one node tree, three-valued, with latches/timers in memory. */
 export type EvalConditionFn = (node: ConditionNode, ownerKey: string, ctx: ConditionCtx, memory: ConditionMemory) => {
   eval: ConditionEval;
   value: boolean | null; // null = unknown
   memory: ConditionMemory;
 };
-/** engine/core/rules.ts (WP-06): triggers (topological), rules, energy gate, custom watch rules. */
+/** engine/core/rules.ts: triggers (topological), rules, energy gate, custom watch rules. */
 export type EvaluateTriggersFn = (cfg: EngineConfig, inputs: InputSnapshot, memory: EngineMemory, prevPlant: PlantState | null, rooms: Record<Id, RoomState>) => {
   triggers: TriggerState[];
   rules: RuleState[];
@@ -3540,14 +3559,14 @@ export type EvaluateTriggersFn = (cfg: EngineConfig, inputs: InputSnapshot, memo
   detections: Detection[];
   spans: SpanEvent[];
 };
-/** engine/core/season.ts (WP-06). */
+/** engine/core/season.ts. */
 export type StepSeasonFn = (cfg: EngineConfig, inputs: InputSnapshot, memory: SeasonMemory) => {
   state: SeasonState;
   memory: SeasonMemory;
   decisions: Decision[];
   detections: Detection[];
 };
-/** engine/core/plant.ts (WP-06): circuits → selection → guards → budget → pumps → source/pump/mixing actuation. */
+/** engine/core/plant.ts: circuits → selection → guards → budget → pumps → source/pump/mixing actuation. */
 export type PlantStepFn = (
   cfg: EngineConfig,
   rooms: RoomEval[],
@@ -3566,14 +3585,14 @@ export type PlantStepFn = (
   edges: EvaluateResult['edges'];
   nextWakeAt: EpochMs | null;
 };
-/** engine/core/curves.ts (WP-06): piecewise-linear weather curve, clamped, + shift, rounded to 0.1. */
+/** engine/core/curves.ts: piecewise-linear weather curve, clamped, + shift, rounded to 0.1. */
 export type FlowFromCurveFn = (curve: WeatherCurve, outdoorC: Celsius) => Celsius;
 
-/* ───────────────── 10c Service ports between work packages (Nest DI tokens in src/tokens.ts) ──────────── */
-/* Consumers inject `@Inject(TOKEN) x: IPort`; the owning package provides the implementation in its
+/* ───────────────── 10c Service ports between modules (Nest DI tokens in src/tokens.ts) ──────────── */
+/* Consumers inject `@Inject(TOKEN) x: IPort`; the owning module provides the implementation in its
  * @Global() module and exports the token. Methods throw ApiException (common/http.ts) with ApiErrorCode. */
 
-/** Typed in-process bus (common/bus.ts, WP-01). */
+/** Typed in-process bus (common/bus.ts). */
 export interface BusEvents {
   'config.changed': { entity: ConfigEntityName; id: Id | null; op: 'created' | 'updated' | 'deleted' | 'reordered' | 'imported'; actor: Actor | null; revision: number };
   'engine.tick': { at: EpochMs; result: EvaluateResult };
@@ -3589,13 +3608,13 @@ export interface IBus {
   on<K extends keyof BusEvents>(event: K, cb: (payload: BusEvents[K]) => void): () => void;
 }
 
-/** WebSocket fan-out (events/events.service.ts, WP-01). Topic routing + throttles per contract F.3. */
+/** WebSocket fan-out (events/events.service.ts) with per-topic routing and throttles. */
 export interface IEvents {
   send(msg: WsServerMessage): void;
   clientCount(): number;
 }
 
-/* Persistence (WP-01) */
+/* Persistence */
 
 export interface ConfigCollections {
   rooms: RoomConfig;
@@ -3721,7 +3740,7 @@ export interface ISpanStore {
   closeDangling(at: EpochMs, stillOn: (s: RunSpan) => boolean): Promise<number>;
 }
 
-/* Home Assistant services (WP-04) */
+/* Home Assistant services */
 
 export interface IEntitySearch {
   search(q: HaEntityQuery): HaEntityDto[];
@@ -3744,7 +3763,7 @@ export interface IHistory {
   outdoor(days: number): Promise<OutdoorHistoryDto>;
 }
 
-/** Inputs the shell needs besides plain states (WP-04 services; values are cached, cheap to read). */
+/** Inputs the shell needs besides plain states (Home Assistant services; values are cached, cheap to read). */
 export interface IHaInputs {
   outdoor(): InputSnapshot['outdoor'];
   forecasts(): InputSnapshot['forecasts'];
@@ -3771,8 +3790,8 @@ export interface ISupervisor {
   mqttService(): Promise<{ host: string; port: number; username: string | null; password: string | null } | null>;
 }
 
-/** The pure core functions, provided by the engine module (token CORE, WP-14) so that WP-07 services can call
- *  them without importing engine/core files of parallel packages. */
+/** The pure core functions, provided by the engine module (token CORE) so that the engine services can call
+ *  them without importing engine/core files directly. */
 export interface ICoreFns {
   evaluate: EvaluateFn;
   durationUntil: DurationUntilFn;
@@ -3782,7 +3801,7 @@ export interface ICoreFns {
   resolveHouseProfile: ResolveHouseProfileFn;
 }
 
-/* Engine (WP-14 shell: IEngine; WP-07 services: actions, setup, read models, previews, device health) */
+/* Engine (the shell: IEngine; its services: actions, setup, read models, previews, device health) */
 
 export interface IEngine {
   health(): EngineHealth;
@@ -3808,6 +3827,8 @@ export interface IEngine {
   startSourceTest(sourceId: Id, req: SourceTestRequest, actor: Actor): Promise<SourceTestResult>;
   stopSourceTest(sourceId: Id, actor: Actor): Promise<SourceTestResult | null>;
   exercisePump(pumpId: Id, actor: Actor): Promise<void>;
+  /** Lifts a floor-cooling lockout after repeated dew-guard trips; false when the circuit was not locked. */
+  resetDewLockout(circuitId: Id, actor: Actor): Promise<boolean>;
   /** Hands radiator heads back to their own regulation before Klimo forgets them (room or head deleted):
    *  heat at the room's release setpoint, internal sensor, child lock off. Sent through the reconciler like
    *  every other write; resolves once the heads confirm or after `timeoutMs` (30 s), whichever comes first. */
@@ -3830,7 +3851,7 @@ export interface IRoomActions {
   setRoomProfile(roomId: Id, req: RoomProfileRequest, actor: Actor): Promise<RoomState>;
   clearRoomProfile(roomId: Id, actor: Actor): Promise<RoomState>;
   durations(roomId: Id): DurationOption[];
-  /** HA climate entity commands (MQTT): mode/temp/low/high/preset (contract G.4). */
+  /** HA climate entity commands (MQTT): mode/temp/low/high/preset. */
   applyClimateCommand(roomId: Id, cmd: { mode?: RoomClimateStatePayload['mode']; temp?: Celsius; low?: Celsius; high?: Celsius; preset?: string }, actor: Actor): Promise<RoomState>;
 }
 
@@ -3894,7 +3915,7 @@ export interface IDeviceHealth {
   detect(now: EpochMs): Detection[];
 }
 
-/* Notifications (WP-08) */
+/* Notifications */
 
 export interface IncidentQuery {
   scope: 'attention' | 'devices' | 'inbox' | 'all' | `room:${string}` | `source:${string}`;
@@ -3923,7 +3944,7 @@ export interface INotify {
   watchDetections(now: EpochMs): Detection[];
 }
 
-/* MQTT & card deploy (WP-09) */
+/* MQTT & card deploy */
 
 export interface IMqtt {
   status(): MqttStatus;
@@ -3937,7 +3958,7 @@ export interface ICardDeploy {
   redeploy(): Promise<SettingsBundle['lovelace']>;
 }
 
-/* Simulator (WP-11) */
+/* Simulator */
 
 export interface ISimControl {
   state(): SimStateDto;
@@ -3948,10 +3969,10 @@ export interface ISimControl {
   outdoor(tempC: Celsius): SimStateDto;
 }
 
-/* Backend text catalogue (notify/messages.ts, WP-08): the ONLY place the backend turns codes into words
+/* Backend text catalogue (notify/messages.ts): the ONLY place the backend turns codes into words
  * (notifications, MQTT card texts, reports, exports). uk + en; missing keys are compile errors there. */
 
-/** Card text keys (MQTT attributes). Vars per key: contract G.7. Texts may contain {d}/{t} placeholders. */
+/** Card text keys (MQTT attributes). Texts may contain {d}/{t} placeholders. */
 export type CardTextKey =
   | 'card.src.schedule' | 'card.src.profile_updated' | 'card.src.manual' | 'card.src.range' | 'card.src.boost'
   | 'card.src.window' | 'card.src.window_pending' | 'card.src.airing' | 'card.src.off_profile' | 'card.src.off_room'
@@ -4028,7 +4049,7 @@ export const EVENT_SEVERITY: Readonly<Record<EventKind, Severity>> = {
   report_daily: 'report', report_weekly: 'report',
 };
 
-/** Room chip: tone and icon per state (brand-uikit §5.1). 'wait' uses the tone of the requested mode. */
+/** Room chip: tone and icon per state. 'wait' uses the tone of the requested mode. */
 export const ROOM_STATE_STYLE: Readonly<Record<RoomStateKind, { tone: Tone; icon: IconName }>> = {
   heat: { tone: 'heat', icon: 'flame' },
   cool: { tone: 'cool', icon: 'snow' },
@@ -4058,6 +4079,7 @@ export const ISSUE_STYLE: Readonly<Record<IssueCode, { rank: number; tone: 'warn
   condensation: { rank: 220, tone: 'warn', icon: 'droplet' },
   humidity_high: { rank: 225, tone: 'warn', icon: 'droplet' },
   floor_humid: { rank: 228, tone: 'warn', icon: 'droplet' },
+  humidity_unknown: { rank: 229, tone: 'warn', icon: 'droplet' },
   battery_low: { rank: 230, tone: 'warn', icon: 'battery' },
   window_long: { rank: 240, tone: 'warn', icon: 'windowOpen' },
   signal_weak: { rank: 250, tone: 'warn', icon: 'signal' },

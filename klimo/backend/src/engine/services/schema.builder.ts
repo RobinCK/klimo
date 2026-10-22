@@ -39,6 +39,13 @@ type NodeTone = SchemaNode['tone'];
 
 const FLOWING: ReadonlySet<NodeTone> = new Set<NodeTone>(['heat', 'cool', 'mixed']);
 
+/** The rooms box notes the dew guard only: rooms kept out for humidity or heating-only loops say so themselves. */
+function dewMeta(cs: CircuitState): Reason | null {
+  const hold = cs.dewHold;
+  if (hold) return hold.kind === 'lockout' ? { code: 'circuit.dew_lockout', params: { until: hold.until, trips: hold.trips } } : { code: 'circuit.dew_hold', params: { until: hold.until } };
+  return cs.excludedRooms.some((x) => x.reason === 'dew') ? { code: 'circuit.dew_blocked', params: { dewC: cs.dewPointMaxC } } : null;
+}
+
 function circuitIcon(kind: CircuitKind): IconName {
   switch (kind) {
     case 'floor':
@@ -154,7 +161,7 @@ export function buildSchema(x: SchemaInput): SchemaView {
       icon: 'home',
       title: members.map((id) => cfg.rooms.find((r) => r.id === id)?.name ?? '').filter(Boolean).join(' · '),
       state: requesting ? { code: 'why.trvs_open', params: { n: requesting, total: members.length } } : cs.state,
-      meta: cs.excludedRooms.length ? { code: 'circuit.dew_blocked', params: { dewC: cs.dewPointMaxC } } : null,
+      meta: dewMeta(cs),
       roomIds: members,
       dashed: !FLOWING.has(tone),
     });

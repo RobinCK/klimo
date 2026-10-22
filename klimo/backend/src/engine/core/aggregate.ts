@@ -99,7 +99,7 @@ export interface TrvInput {
   snap: EntitySnap | undefined;
 }
 
-/** D.3 for one room. `ema` is the previous smoothing state (volatile, rebuilt after a restart). */
+/** Temperature aggregation for one room. `ema` is the previous smoothing state (volatile, rebuilt after a restart). */
 export function aggregateRoom(
   room: RoomConfig,
   sensors: RoomSensor[],

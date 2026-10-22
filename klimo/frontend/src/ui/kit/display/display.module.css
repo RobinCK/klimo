@@ -132,6 +132,17 @@
   color: var(--ui-tone-ok-fg);
 }
 
+@media (max-width: 699px) {
+  .copy {
+    position: relative;
+  }
+  .copy::after {
+    content: '';
+    position: absolute;
+    inset: -6px;
+  }
+}
+
 /* ---------- Text ---------- */
 
 .text {
@@ -511,6 +522,17 @@ a.tile:hover {
 
 .season:hover {
   border-color: var(--ui-border-strong);
+}
+
+@media (max-width: 699px) {
+  .season {
+    position: relative;
+  }
+  .season::after {
+    content: '';
+    position: absolute;
+    inset: -4px 0;
+  }
 }
 
 .season[data-variant='filled'] {

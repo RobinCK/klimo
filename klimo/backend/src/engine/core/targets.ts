@@ -440,7 +440,7 @@ function findPreheat(
   return null;
 }
 
-/** D.6 room target: priority walk, profile values, offsets, optimal start, window, limits, dual gap. */
+/** Room target: priority walk, profile values, offsets, optimal start, window, limits, dual gap. */
 export function resolveRoomTarget(cfg: EngineConfig, room: RoomConfig, inputs: InputSnapshot, memory: RoomMemory, ctx: RoomContext, input: RoomTargetInput): RoomTargetResult {
   const now = inputs.now;
   const frostFloorC = frostFloorOf(cfg, room);
