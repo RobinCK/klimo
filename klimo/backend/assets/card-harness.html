@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Klimo · картки Home Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+  /* Home Assistant's theme variables, as the cards see them inside a dashboard */
+  :root {
+    --ha-font-family-body: 'IBM Plex Sans', system-ui, sans-serif;
+    --ha-card-border-radius: 16px;
+    --ha-card-border-width: 1px;
+  }
+  body[data-theme='light'] {
+    --primary-background-color: #f2f3f5;
+    --secondary-background-color: #e9ebee;
+    --card-background-color: #ffffff;
+    --ha-card-background: #ffffff;
+    --primary-text-color: #1b1f24;
+    --secondary-text-color: #5b636d;
+    --divider-color: rgba(27, 31, 36, 0.12);
+    --ha-card-border-color: #e3e6ea;
+    background: #d9dce0;
+    color: #1b1f24;
+  }
+  body[data-theme='dark'] {
+    --primary-background-color: #111111;
+    --secondary-background-color: #202020;
+    --card-background-color: #1c1c1c;
+    --ha-card-background: #1c1c1c;
+    --primary-text-color: #e1e1e1;
+    --secondary-text-color: #9b9b9b;
+    --divider-color: rgba(225, 225, 225, 0.12);
+    --ha-card-border-color: #2c2c2c;
+    background: #0b0c0e;
+    color: #eceef1;
+  }
+  body {
+    margin: 0;
+    padding: 24px;
+    font-family: var(--ha-font-family-body);
+    font-size: 14px;
+    line-height: 1.45;
+    font-variant-numeric: tabular-nums;
+  }
+  .frame {
+    margin: 0 auto;
+    border: 8px solid #23272d;
+    border-radius: 28px;
+    background: var(--primary-background-color);
+    box-sizing: border-box;
+  }
+  .phone {
+    width: 412px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .tablet {
+    width: 1180px;
+    padding: 16px;
+    display: grid;
+    grid-template-columns: 380px repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    align-items: start;
+  }
+  .column {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+  }
+  .notice {
+    max-width: 640px;
+    margin: 40px auto;
+    padding: 16px 20px;
+    border-radius: 14px;
+    border: 1px solid var(--divider-color);
+    background: var(--card-background-color);
+    color: var(--primary-text-color);
+  }
+  .notice code {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  // Query: ?layout=phone|tablet&theme=dark|light&user=ihor|olia
+  const params = new URLSearchParams(location.search);
+  const layout = params.get('layout') === 'phone' ? 'phone' : 'tablet';
+  const theme = params.get('theme') === 'light' || params.get('theme') === 'dark' ? params.get('theme') : layout === 'phone' ? 'light' : 'dark';
+  const user = params.get('user') === 'olia' ? 'olia' : 'ihor';
+  document.body.dataset.theme = theme;
+  document.body.dataset.layout = layout;
+
+  const root = document.getElementById('root');
+  const cards = [];
+  let hass = null;
+  let mounted = false;
+  const known = new Map();
+
+  function notice(html) {
+    root.innerHTML = '<div class="notice">' + html + '</div>';
+  }
+
+  async function callService(domain, service, data) {
+    const res = await fetch('./service?user=' + user, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain, service, data: data || {} }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.message || 'service call failed');
+    return body;
+  }
+
+  /** Like HA: a new hass object on every update, unchanged state objects keep their identity. */
+  function nextHass(payload) {
+    const states = {};
+    for (const s of payload.states) {
+      const prev = known.get(s.entity_id);
+      const same = prev && prev.state === s.state && prev.last_updated === s.last_updated;
+      states[s.entity_id] = same ? prev : s;
+      known.set(s.entity_id, states[s.entity_id]);
+    }
+    return {
+      states,
+      user: payload.user,
+      language: payload.language,
+      locale: { language: payload.language },
+      themes: { darkMode: payload.themes.darkMode },
+      callService,
+    };
+  }
+
+  function card(tag, config) {
+    const el = document.createElement(tag);
+    el.setConfig(config);
+    if (hass) el.hass = hass;
+    cards.push(el);
+    return el;
+  }
+
+  function roomSlugs() {
+    const hub = hass && hass.states['sensor.klimo_hub'];
+    const rooms = hub && Array.isArray(hub.attributes.rooms) ? hub.attributes.rooms.slice() : [];
+    rooms.sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0));
+    return rooms.length ? rooms.map((r) => r.s) : ['vitalnia', 'spalnia', 'dytiacha', 'kabinet', 'kukhnia', 'vanna', 'korydor'];
+  }
+
+  function mountPhone() {
+    const frame = document.createElement('div');
+    frame.className = 'frame phone';
+    frame.append(card('klimo-house-card', { type: 'custom:klimo-house-card', theme }));
+    // the rooms card brings its own «Кімнати» title
+    frame.append(card('klimo-rooms-card', { type: 'custom:klimo-rooms-card', rooms: 'all', variant: 'compact', sort: 'attention_first', theme }));
+    frame.append(card('klimo-thermostat-card', { type: 'custom:klimo-thermostat-card', rooms: 'all', theme }));
+    root.replaceChildren(frame);
+  }
+
+  function mountTablet() {
+    const slugs = roomSlugs();
+    const frame = document.createElement('div');
+    frame.className = 'frame tablet';
+    const a = document.createElement('div');
+    a.className = 'column';
+    a.append(card('klimo-house-card', { type: 'custom:klimo-house-card', theme }));
+    a.append(card('klimo-thermostat-card', { type: 'custom:klimo-thermostat-card', room: slugs[0], theme }));
+    const b = document.createElement('div');
+    b.className = 'column';
+    for (const s of slugs.slice(0, 4)) b.append(card('klimo-room-card', { type: 'custom:klimo-room-card', room: s, variant: 'card', theme }));
+    const c = document.createElement('div');
+    c.className = 'column';
+    c.append(card('klimo-system-card', { type: 'custom:klimo-system-card', show: ['sources', 'circuits', 'energy', 'triggers'], theme }));
+    for (const s of slugs.slice(4)) c.append(card('klimo-room-card', { type: 'custom:klimo-room-card', room: s, variant: 'card', theme }));
+    frame.append(a, b, c);
+    root.replaceChildren(frame);
+  }
+
+  async function refresh() {
+    try {
+      const res = await fetch('./hass?user=' + user + '&theme=' + theme, { cache: 'no-store' });
+      hass = nextHass(await res.json());
+      for (const el of cards) el.hass = hass;
+      if (!mounted && hass.states['sensor.klimo_hub']) {
+        mounted = true;
+        if (layout === 'phone') mountPhone();
+        else mountTablet();
+      }
+    } catch (e) {
+      if (!mounted) notice('Немає зв’язку з Klimo: ' + String(e));
+    }
+  }
+
+  async function start() {
+    notice('Чекаю на дані Klimo…');
+    const script = document.createElement('script');
+    script.type = 'module';
+    script.src = '../../card/klimo-cards.js';
+    script.onerror = () => notice('Не вдалося завантажити <code>/card/klimo-cards.js</code>.');
+    document.head.append(script);
+    try {
+      await Promise.all(['klimo-house-card', 'klimo-room-card', 'klimo-rooms-card', 'klimo-thermostat-card', 'klimo-system-card'].map((t) => customElements.whenDefined(t)));
+    } catch (e) {
+      notice('Картки не зареєструвалися: ' + String(e));
+      return;
+    }
+    await refresh();
+    setInterval(refresh, 1000);
+  }
+
+  start();
+</script>
+</body>
+</html>
