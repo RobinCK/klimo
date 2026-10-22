@@ -610,6 +610,18 @@
   cursor: pointer;
 }
 
+.checkLabel[data-info] {
+  flex: 0 1 auto;
+}
+
+/* the «i» right after the text, on the title line; the trailing value stays at the far end */
+.checkInfo {
+  flex: 1 0 auto;
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+}
+
 .checkRow[data-disabled] .checkLabel {
   cursor: not-allowed;
   color: var(--ui-text-3);

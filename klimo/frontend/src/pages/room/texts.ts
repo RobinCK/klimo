@@ -209,6 +209,8 @@ export function haRoleText(role: RoomDetailDto['haEntities'][number]['role']): s
   switch (role) {
     case 'climate':
       return t('room thermostat');
+    case 'control':
+      return t('control: schedule, manual or off');
     case 'temperature':
       return t('calculated temperature');
     case 'humidity':

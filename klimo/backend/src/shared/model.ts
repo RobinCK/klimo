@@ -453,8 +453,23 @@ export interface GeneralSettings {
   glassCoefficient: number; // 0.35 (double glazing) — T_glass ≈ T_in − k·(T_in − T_out)
   presence: PresenceConfig;
   defaults: RoomDefaults;
+  /** Prices for the consumption charts of sources with meters. */
+  tariffs: EnergyTariffs;
   onboardingDismissed: boolean; // false
   updatedAt: EpochMs;
+}
+
+/** Unit a gas price is quoted per: suppliers bill by volume or by energy. */
+export type GasPriceUnit = 'm³' | 'kWh';
+
+export interface EnergyTariffs {
+  /** Shown as typed ('₴', 'UAH', '€'); '' = none. */
+  currency: string; // ''
+  electricityPerKwh: number | null; // null = cost not shown for electricity
+  gasPrice: number | null; // per `gasPriceUnit`
+  gasPriceUnit: GasPriceUnit; // 'm³'
+  /** Calorific value: converts gas volume to energy (boiler efficiency, gas billed per kWh). */
+  gasKwhPerM3: number; // 10.5 [5…15]
 }
 
 /** Singleton `safety` (System «Захист і запобіжники»). */
@@ -703,6 +718,20 @@ export interface SourceEnergy {
   staggerSec: number | null; // null = energy policy default (30)
 }
 
+/** What a meter counts. An electricity meter may also be a power sensor (W, kW): its readings are integrated. */
+export type MeterKind = 'electricity' | 'gas' | 'heat';
+
+/**
+ * A consumption meter of a source (HA `total_increasing` / `total` sensor). Klimo stores no readings:
+ * consumption comes from HA's long-term statistics, the current hour and single runs from its history.
+ */
+export interface SourceMeter {
+  kind: MeterKind;
+  entityId: EntityId;
+  /** The entity's unit when it was bound ('m³', 'ft³', 'kWh', 'MJ', 'W'…); the live unit wins when HA reports one. */
+  unit: string | null;
+}
+
 /** Confirmation that a source really runs. */
 export type ConfirmSpec =
   | { kind: 'none' } // confirmed immediately (weak; UI warns)
@@ -856,6 +885,9 @@ export interface SourceConfig {
   enabled: boolean;
   capabilities: { heat: boolean; cool: boolean; dry: boolean; fan: boolean };
   energy: SourceEnergy;
+  /** At most one meter per kind. Device bindings: a duplicate starts without them and links never copy them.
+   *  Sources saved before meters existed read their power sensor as the electricity meter. */
+  meters: SourceMeter[];
   adapter: SourceAdapter;
   curves: { heat: WeatherCurve | null; cool: CoolSupply | null };
   outdoorLimits: { heat: OutdoorLimit | null; cool: OutdoorLimit | null };
@@ -3053,6 +3085,133 @@ export interface OutdoorHistoryDto {
   days: number;
 }
 
+/* Consumption of sources with meters (HA long-term statistics + Klimo's run spans) */
+
+export type ConsumptionRange = 'day' | 'week' | 'month' | 'year';
+/** day → hours, week and month → days, year → months. */
+export type ConsumptionBucketSize = 'hour' | 'day' | 'month';
+
+/** GET /api/sources/:id/consumption?range=day|week|month|year&date=YYYY-MM-DD */
+export interface ConsumptionQuery {
+  range: ConsumptionRange; // 'day'
+  /** Any day inside the period (HA time zone); default today. Weeks start on Monday. */
+  date?: LocalDate;
+}
+
+/** Amounts in `ConsumptionUnits`; null = no meter of that kind or nothing recorded. */
+export interface ConsumptionValues {
+  gas: number | null;
+  electricity: number | null;
+  heat: number | null;
+  /** Tariff currency; counts the carriers that have a price, null when none has one. */
+  cost: number | null;
+}
+
+export interface ConsumptionBucket extends ConsumptionValues {
+  start: EpochMs;
+  end: EpochMs;
+  /** Minutes the source ran (Klimo's own run spans). */
+  runtimeMin: number;
+  outdoorAvgC: Celsius | null;
+  /** Heating degree-days below `hddBaseC`; an hour bucket holds its 1/24 share. */
+  hdd: number | null;
+  /** heat ÷ gas energy (a gas source with a heat meter). */
+  efficiency: number | null;
+  /** heat ÷ electricity (a source without gas, with a heat meter). */
+  cop: number | null;
+  /** Includes now: its latest part is read from the meter's state history, not yet from statistics. */
+  partial: boolean;
+  /** Entirely after now (values null, runtime 0). */
+  future: boolean;
+}
+
+export interface ConsumptionTotals extends ConsumptionValues {
+  runtimeMin: number;
+  /** Runs that started in the period. */
+  runs: number;
+  outdoorAvgC: Celsius | null;
+  hdd: number | null;
+  /** Gas per degree-day (`units.gas` per K·day); null below one degree-day. */
+  gasPerHdd: number | null;
+  efficiency: number | null;
+  cop: number | null;
+}
+
+export interface ConsumptionRun {
+  start: EpochMs;
+  /** null = still running (counted up to now). */
+  end: EpochMs | null;
+  minutes: number;
+  mode: SourceMode | null;
+  gas: number | null;
+  electricity: number | null;
+  heat: number | null;
+  cost: number | null;
+  /** Shared out between runs, spread over sparse readings, or integrated from a power sensor. */
+  estimated: boolean;
+}
+
+export interface ConsumptionMeterDto {
+  kind: MeterKind;
+  entityId: EntityId;
+  name: string | null;
+  /** Live unit of the entity, else the one stored with the binding. */
+  unit: string | null;
+  /** meter = a cumulative counter; power = a W/kW sensor integrated over time (estimates). */
+  reading: 'meter' | 'power';
+  status: 'ok' | 'unavailable' | 'missing' | 'unsupported_unit';
+  /** HA keeps long-term statistics for it (the sensor has a state class). */
+  statistics: boolean;
+}
+
+export interface ConsumptionUnits {
+  /** m³ for volume meters (ft³, L… converted), kWh for gas meters that count energy. */
+  gas: GasPriceUnit | null;
+  electricity: 'kWh' | null;
+  heat: 'kWh' | null;
+  currency: string | null;
+}
+
+export interface SourceConsumptionDto {
+  sourceId: Id;
+  range: ConsumptionRange;
+  /** First day of the period. */
+  date: LocalDate;
+  from: EpochMs;
+  to: EpochMs;
+  bucket: ConsumptionBucketSize;
+  buckets: ConsumptionBucket[];
+  totals: ConsumptionTotals;
+  /** The period before; while this one is running it is cut at the same elapsed time («so far»). */
+  previous: { date: LocalDate; from: EpochMs; to: EpochMs; totals: ConsumptionTotals };
+  /** Day and week only (single runs need the recorder's state history, kept about ten days); null otherwise. */
+  runs: ConsumptionRun[] | null;
+  meters: ConsumptionMeterDto[];
+  units: ConsumptionUnits;
+  tariffs: EnergyTariffs;
+  hddBaseC: Celsius;
+  /** 'unavailable': HA or its recorder did not answer — meter values are null, runtime still counts. */
+  recorder: 'ok' | 'unavailable';
+  now: EpochMs;
+}
+
+/** GET /api/energy/consumption — the overview energy tile: today across the sources with meters. */
+export interface HouseConsumptionDto {
+  date: LocalDate;
+  from: EpochMs;
+  to: EpochMs;
+  gas: number | null;
+  electricity: number | null;
+  cost: number | null;
+  /** Yesterday up to the same time of day. */
+  previous: ConsumptionValues;
+  units: ConsumptionUnits;
+  sources: { sourceId: Id; gas: number | null; electricity: number | null; cost: number | null; runtimeMin: number }[];
+  /** At least one source has a meter (otherwise the tile invites to bind one). */
+  configured: boolean;
+  recorder: 'ok' | 'unavailable';
+}
+
 /* 7.10 Simulator (KLIMO_SIMULATE=1 only) --------------------------------------------------------------- */
 
 export type SimScenarioId = 'heating_evening' | 'frost_morning' | 'blackout_sun' | 'shoulder' | 'summer';
@@ -3611,7 +3770,8 @@ export interface HaPort {
   /** Returns an unsubscribe function; callbacks keep firing across reconnects (re-subscribed). */
   subscribeTemplate(template: string, variables: Record<string, unknown>, cb: (result: unknown, error: string | null) => void): Promise<() => void>;
   history(entityIds: EntityId[], start: EpochMs, end: EpochMs, opts: { minimal: boolean; noAttributes: boolean }): Promise<Record<EntityId, { s: string; lu: number; a?: Record<string, unknown> }[]>>;
-  statistics(statIds: string[], start: EpochMs, end: EpochMs, period: '5minute' | 'hour' | 'day' | 'week', types: ('mean' | 'min' | 'max' | 'state' | 'sum' | 'change')[]): Promise<Record<string, { start: number; mean?: number | null; min?: number | null; max?: number | null; state?: number | null; sum?: number | null }[]>>;
+  /** `recorder/statistics_during_period`; day, week and month periods follow the HA time zone and include the period still running. */
+  statistics(statIds: string[], start: EpochMs, end: EpochMs, period: '5minute' | 'hour' | 'day' | 'week' | 'month', types: ('mean' | 'min' | 'max' | 'state' | 'sum' | 'change')[]): Promise<Record<string, { start: number; mean?: number | null; min?: number | null; max?: number | null; state?: number | null; sum?: number | null; change?: number | null }[]>>;
   registries(): HaRegistries;
   onRegistriesUpdated(cb: () => void): void;
   config(): HaConfigInfo | null;
@@ -3875,7 +4035,9 @@ export interface JournalQuery {
 }
 /** journal/journal.service.ts — persists decisions (dedup: same code+subject within 60 s), WS 'journal'. */
 export interface IJournal {
-  add(entry: Decision, ts: EpochMs): Promise<JournalEntry | null>;
+  /** Repeats of the same decision about the same subject within 60 s are dropped; `dedup: false` keeps
+   *  every line (a person switching a room off and back again within a minute did two things). */
+  add(entry: Decision, ts: EpochMs, opts?: { dedup?: boolean }): Promise<JournalEntry | null>;
   page(q: JournalQuery): Promise<JournalPageDto>;
 }
 
@@ -3909,6 +4071,12 @@ export interface IHistory {
   roomDay(roomId: Id, date: LocalDate): Promise<RoomDayDto>;
   sparks(roomIds?: Id[]): Promise<Record<Id, SparkDto>>;
   outdoor(days: number): Promise<OutdoorHistoryDto>;
+}
+
+/** ha/consumption.service.ts — what sources used, from their meters' statistics and Klimo's run spans. */
+export interface IConsumption {
+  source(sourceId: Id, q: ConsumptionQuery): Promise<SourceConsumptionDto>;
+  house(date?: LocalDate): Promise<HouseConsumptionDto>;
 }
 
 /** Inputs the shell needs besides plain states (Home Assistant services; values are cached, cheap to read). */
@@ -4167,6 +4335,9 @@ export const OUTDOOR_AGGREGATIONS = ['median', 'average', 'min', 'max', 'primary
 export const HOUSE_MODES = ['auto', 'heat', 'cool', 'off'] as const;
 export const SEASONS = ['heating', 'neutral', 'cooling'] as const;
 export const SOURCE_KINDS = ['gas_boiler', 'electric_boiler', 'heat_pump', 'ac', 'electric_radiator', 'electric_floor', 'ir_panel', 'custom'] as const;
+export const METER_KINDS = ['electricity', 'gas', 'heat'] as const satisfies readonly MeterKind[];
+export const CONSUMPTION_RANGES = ['day', 'week', 'month', 'year'] as const satisfies readonly ConsumptionRange[];
+export const GAS_PRICE_UNITS = ['m³', 'kWh'] as const satisfies readonly GasPriceUnit[];
 export const ADAPTER_TYPES = ['relay', 'climate', 'flow', 'script', 'custom'] as const;
 export const EMITTER_KINDS = ['radiator', 'floor', 'fancoil', 'towel_rail', 'direct'] as const;
 export const EMITTER_ROLES = ['primary', 'assist', 'trigger', 'reserve'] as const;
@@ -4179,6 +4350,7 @@ export const PRIORITY_DEFAULT = ['frost', 'window', 'manual', 'calendar', 'prese
 export const ROOM_TARGET_DURATIONS = ['slot', '1h', '2h', '3h', 'morning', 'until', 'forever', 'manual'] as const;
 export const ROOM_CONTROL_CHOICES = ['schedule', 'manual', 'off'] as const satisfies readonly RoomControlChoice[];
 export const HOUSE_CONTROL_MODES = ['schedule', 'manual'] as const satisfies readonly HouseControlMode[];
+/** Same order as ROOM_CONTROL_CHOICES. */
 export const ROOM_CONTROL_OPTIONS = ['Schedule', 'Manual', 'Off'] as const satisfies readonly RoomControlOption[];
 /** HA event type of the script/automation command channel (see HaCommandEventData). */
 export const HA_COMMAND_EVENT = 'klimo_command';
@@ -4282,4 +4454,66 @@ export function round1(x: number): number {
 export function outdoorSensorIds(o: Pick<GeneralSettings['outdoor'], 'sensorEntityIds' | 'sensorEntityId'>): EntityId[] {
   if (Array.isArray(o.sensorEntityIds) && o.sensorEntityIds.length) return [...o.sensorEntityIds];
   return o.sensorEntityId ? [o.sensorEntityId] : [];
+}
+
+/** What a meter unit measures and its factor to the unit Klimo charts it in (kWh, m³, kW). */
+export interface MeterUnitInfo {
+  quantity: 'energy' | 'volume' | 'power';
+  factor: number;
+}
+
+/** HA's energy, volume and power units (sensor device classes energy, gas, power), as HA writes them. */
+export const METER_UNITS: Readonly<Record<string, MeterUnitInfo>> = {
+  mWh: { quantity: 'energy', factor: 1e-6 },
+  Wh: { quantity: 'energy', factor: 1e-3 },
+  kWh: { quantity: 'energy', factor: 1 },
+  MWh: { quantity: 'energy', factor: 1e3 },
+  GWh: { quantity: 'energy', factor: 1e6 },
+  TWh: { quantity: 'energy', factor: 1e9 },
+  J: { quantity: 'energy', factor: 1 / 3_600_000 },
+  kJ: { quantity: 'energy', factor: 1 / 3_600 },
+  MJ: { quantity: 'energy', factor: 1 / 3.6 },
+  GJ: { quantity: 'energy', factor: 1_000 / 3.6 },
+  cal: { quantity: 'energy', factor: 4.184 / 3_600_000 },
+  kcal: { quantity: 'energy', factor: 4.184 / 3_600 },
+  Mcal: { quantity: 'energy', factor: 4.184 / 3.6 },
+  Gcal: { quantity: 'energy', factor: 4_184 / 3.6 },
+  BTU: { quantity: 'energy', factor: 0.000293071 },
+  MMBtu: { quantity: 'energy', factor: 293.071 },
+  therm: { quantity: 'energy', factor: 29.3071 },
+  'm³': { quantity: 'volume', factor: 1 },
+  m3: { quantity: 'volume', factor: 1 },
+  'dm³': { quantity: 'volume', factor: 1e-3 },
+  L: { quantity: 'volume', factor: 1e-3 },
+  mL: { quantity: 'volume', factor: 1e-6 },
+  'ft³': { quantity: 'volume', factor: 0.028316846592 },
+  ft3: { quantity: 'volume', factor: 0.028316846592 },
+  CCF: { quantity: 'volume', factor: 2.8316846592 },
+  MCF: { quantity: 'volume', factor: 28.316846592 },
+  gal: { quantity: 'volume', factor: 0.003785411784 },
+  W: { quantity: 'power', factor: 1e-3 },
+  kW: { quantity: 'power', factor: 1 },
+  MW: { quantity: 'power', factor: 1e3 },
+};
+
+/** Gas is counted by volume or energy, electricity by energy (or integrated power), heat by energy. */
+export const METER_QUANTITIES: Readonly<Record<MeterKind, readonly MeterUnitInfo['quantity'][]>> = {
+  electricity: ['energy', 'power'],
+  gas: ['volume', 'energy'],
+  heat: ['energy'],
+};
+
+/** A meter unit as HA writes it, or a spelling that differs only in case when that is unambiguous ('KWH', 'M3'). */
+export function meterUnit(unit: string | null | undefined): MeterUnitInfo | null {
+  if (typeof unit !== 'string') return null;
+  const u = unit.trim();
+  if (METER_UNITS[u]) return METER_UNITS[u];
+  const folded = Object.keys(METER_UNITS).filter((k) => k.toLowerCase() === u.toLowerCase());
+  return folded.length === 1 ? METER_UNITS[folded[0]] : null;
+}
+
+/** Whether a meter of `kind` can be read in `unit`. */
+export function meterUnitFits(kind: MeterKind, unit: string | null | undefined): boolean {
+  const info = meterUnit(unit);
+  return !!info && METER_QUANTITIES[kind].includes(info.quantity);
 }

@@ -455,12 +455,54 @@ function byWhom(p: P): string {
   const by = str(p, 'by');
   if (!by) return '';
   // a house profile chosen by a layer names the layer («Розклад будинку», «Календар»)
-  const label = ['ui', 'card', 'ha', 'voice', 'automation', 'mqtt', 'trv', 'engine', 'rule', 'schedule', 'notification', 'telegram', 'import', 'system'].includes(by)
+  const label = ['ui', 'card', 'ha', 'voice', 'automation', 'mqtt', 'trv', 'engine', 'rule', 'schedule', 'notification', 'telegram', 'import', 'system', 'event'].includes(by)
     ? actorViaLabel(by as never)
     : ['house_schedule', 'calendar', 'presence', 'default', 'house_manual'].includes(by)
       ? targetLayerLabel(by as never)
       : by;
   return ` · ${label}`;
+}
+
+/** Which of Klimo's own HA entities carried a change («· Вітальня керування»). */
+function viaEntity(p: P, c: Ctx): string {
+  const id = str(p, 'entityId');
+  return id ? ` · ${c.entity?.(id) ?? id}` : '';
+}
+
+function roomControlText(p: P, c: Ctx, e: JournalEntry): string {
+  const room = subjectRoom(e, c);
+  const mode = str(p, 'mode');
+  let main: string;
+  if (mode === 'manual') {
+    if (num(p, 'lo') != null && num(p, 'hi') != null) main = t('{room}: manual control, {lo}–{hi}', { room, lo: temp(p, 'lo'), hi: temp(p, 'hi') });
+    else if (num(p, 'valueC') != null) main = t('{room}: manual control at {value}', { room, value: temp(p, 'valueC') });
+    else main = t('{room}: manual control', { room });
+  } else if (mode === 'off') main = t('{room}: off until the schedule is resumed', { room });
+  else main = t('{room}: back to schedule', { room });
+  return main + byWhom(p) + viaEntity(p, c);
+}
+
+function houseControlText(p: P, c: Ctx): string {
+  if (str(p, 'mode') === 'manual') return t('House under manual control: the schedule is paused on «{profile}»', { profile: profile(p, c) }) + byWhom(p) + viaEntity(p, c);
+  const parts = [t('House back to schedule')];
+  if (num(p, 'rooms') != null) parts.push(t('rooms resumed: {n}', { n: num(p, 'rooms') ?? 0 }));
+  if (num(p, 'off') != null) parts.push(t('rooms left off: {n}', { n: num(p, 'off') ?? 0 }));
+  return parts.join(' · ') + byWhom(p) + viaEntity(p, c);
+}
+
+function rejectedCommandText(p: P): string {
+  const reasons: Record<string, string> = {
+    unknown_command: t('unknown command'),
+    room_required: t('the command needs a room'),
+    room_not_found: t('no such room'),
+    target_required: t('the command needs a target temperature'),
+    invalid: t('invalid data'),
+    failed: t('not applied'),
+  };
+  const reason = reasons[str(p, 'reason') ?? ''] ?? reasons.invalid;
+  const room = str(p, 'room');
+  const detail = str(p, 'detail');
+  return t('Home Assistant command «{command}» rejected: {reason}', { command: str(p, 'command') ?? '—', reason }) + (room ? ` · «${room}»` : '') + (detail ? ` (${detail})` : '') + byWhom(p);
 }
 
 function overrideText(p: P, c: Ctx, e: JournalEntry): string {
@@ -560,7 +602,13 @@ const JOURNAL: Record<JournalCode, JRender> = {
   'room.window_virtual': (p, c, e) => t('{room}: the temperature dropped {drop} — treated as an open window', { room: subjectRoom(e, c), drop: delta(p, 'dropC') }),
   'room.override': (p, c, e) => overrideText(p, c, e) + byWhom(p),
   'room.override_cleared': (p, c, e) => t('{room}: back to schedule', { room: subjectRoom(e, c) }) + byWhom(p),
-  'room.override_expired': (_p, c, e) => t('{room}: the manual change ended', { room: subjectRoom(e, c) }),
+  'room.override_expired': (p, c, e) =>
+    str(p, 'back') === 'manual'
+      ? t('{room}: the temporary change ended — back to manual control', { room: subjectRoom(e, c) })
+      : str(p, 'back') === 'off'
+        ? t('{room}: the temporary change ended — the room is off again', { room: subjectRoom(e, c) })
+        : t('{room}: the manual change ended', { room: subjectRoom(e, c) }),
+  'room.control': roomControlText,
   'room.frost_on': (p, c, e) => t('{room}: frost protection on at {t}', { room: subjectRoom(e, c), t: temp(p, 't') }),
   'room.frost_off': (p, c, e) => t('{room}: frost protection off at {t}', { room: subjectRoom(e, c), t: temp(p, 't') }),
   'room.overheat_on': (p, c, e) => t('{room}: overheating {t} — heating closed', { room: subjectRoom(e, c), t: temp(p, 't') }),
@@ -612,6 +660,8 @@ const JOURNAL: Record<JournalCode, JRender> = {
   'house_profile.changed': (p, c) => t('House profile «{profile}» {until}', { profile: profile(p, c), until: until(p, 'until', c) }) + byWhom(p),
   'house_profile.cleared': (p) => t('House profile back to schedule') + byWhom(p),
   'house_profile.expired': () => t('The house profile change ended'),
+  'house.control': (p, c) => houseControlText(p, c),
+  'ha.command_rejected': (p) => rejectedCommandText(p),
   'trigger.on': (p, c) => t('Trigger «{trigger}» fired', { trigger: trigger(p, c) }),
   'trigger.off': (p, c) => t('Trigger «{trigger}» is off', { trigger: trigger(p, c) }),
   'rule.on': (p, c) => t('Rule «{rule}» is active', { rule: rule(p, c) }),

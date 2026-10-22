@@ -274,7 +274,7 @@ export class HouseActionsService implements IHouseActions {
         const cfg = this.config.engineConfig();
         const profileId = (this.access.engine()?.houseProfile() ?? emptyHouseProfileState(cfg)).activeProfileId;
         await this.overrides.put(this.houseOverrideOf(profileId, 'none', null, now, actor, req.reqId ?? null));
-        await this.support.record({ code: 'house.control', category: 'system', tone: 'event', params: { mode: 'manual', from: before, profileId, rooms: null, off: null, ...via } });
+        await this.support.record({ code: 'house.control', category: 'system', tone: 'event', params: { mode: 'manual', from: before, profileId, rooms: null, off: null, ...via } }, { dedup: false });
       }
     } else {
       const removed = await this.overrides.removeGroup('house', HOUSE, 'house_profile');
@@ -285,7 +285,7 @@ export class HouseActionsService implements IHouseActions {
           category: 'system',
           tone: 'idle',
           params: { mode: 'schedule', from: before, profileId: null, rooms: resumed.length || null, off: off.length || null, ...via },
-        });
+        }, { dedup: false });
       }
     }
     await this.access.runNow('house.control');
@@ -328,7 +328,7 @@ export class HouseActionsService implements IHouseActions {
         tone: 'idle',
         params: { mode: 'schedule', from: control.mode, kind: active?.kind ?? null, by: actorName(actor), via: actor.via, entityId: origin?.entityId ?? null },
         roomId: room.id,
-      });
+      }, { dedup: false });
     }
     return { resumed, off };
   }

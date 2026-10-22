@@ -378,3 +378,36 @@ family('Zigbee2MQTT instance', S.z2mCreateRequest, {
   ok: [{ name: 'Z2M #1', baseTopic: 'zigbee2mqtt', frontendUrl: 'http://192.168.1.10:8080' }],
   bad: [[{ name: 'Z2M', baseTopic: 'zigbee/#' }, 'baseTopic'], [{ name: 'Z2M', baseTopic: 'z', frontendUrl: 'ftp://x' }, 'frontendUrl']],
 });
+
+/* ── control modes ────────────────────────────────────────────────────────────────────────────── */
+
+family('room control', S.roomControlRequest, {
+  ok: [{ mode: 'schedule' }, { mode: 'off', reqId: 'r-1' }, { mode: 'manual' }, { mode: 'manual', heatC: 22 }, { mode: 'manual', coolC: 25 }, { mode: 'manual', heatC: 21, coolC: 25 }],
+  bad: [
+    [{}, 'mode'],
+    [{ mode: 'temporary' }, 'mode'],
+    [{ mode: 'auto' }, 'mode'],
+    [{ mode: 'manual', heatC: 45 }, 'heatC'],
+    [{ mode: 'manual', coolC: 10 }, 'coolC'],
+    [{ mode: 'off', heatC: 20 }, 'heatC'],
+    [{ mode: 'schedule', coolC: 25 }, 'coolC'],
+  ],
+});
+
+family('house control', S.houseControlRequest, {
+  ok: [{ mode: 'schedule' }, { mode: 'manual', reqId: 'h-1' }],
+  bad: [
+    [{}, 'mode'],
+    [{ mode: 'off' }, 'mode'],
+  ],
+});
+
+family('target change with manual control', S.setTargetRequest, {
+  ok: [{ value: 22, duration: 'manual' }, { lo: 20, hi: 24, duration: 'manual' }],
+  bad: [[{ value: 22, duration: 'always' }, 'duration']],
+});
+
+family('changes from Home Assistant are temporary or written to the profile, never manual by setting', S.generalSettingsPatch, {
+  ok: [{ haTargetChangeDuration: 'slot' }, { haTargetChangeDuration: 'forever' }],
+  bad: [[{ haTargetChangeDuration: 'manual' }, 'haTargetChangeDuration']],
+});

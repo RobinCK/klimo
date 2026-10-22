@@ -116,6 +116,8 @@ test('room summaries and the room detail read the live state and the configurati
     assert.deepEqual(sum.src, { kind: 'boost', profileId: 'home', until: boost.until, valueC: 21, deltaC: 1, since: null });
     assert.equal(sum.canHeat, true);
     assert.equal(sum.canCool, false);
+    // a boost is a temporary change: the room still follows its schedule and goes back by itself
+    assert.deepEqual(sum.control, { mode: 'temporary', since: boost.createdAt, until: boost.until, setBy: 'ui' });
 
     const d = s.readModels.roomDetail('vitalnia');
     assert.equal(d.config.id, room.id);
@@ -123,8 +125,10 @@ test('room summaries and the room detail read the live state and the configurati
     assert.equal(d.emitters[0].devices.length, 2);
     assert.deepEqual(d.servedBy, [{ mode: 'heat', emitterId: emitter.id, role: 'primary', circuitId: emitter.circuitId, sourceIds: [hp.id] }]);
     assert.equal(d.overrides.length, 1);
+    assert.deepEqual(d.control, sum.control);
     assert.deepEqual(d.haEntities.map((e) => e.entityId), [
       'climate.klimo_vitalnia',
+      'select.klimo_vitalnia_control',
       'sensor.klimo_vitalnia_temperature',
       'sensor.klimo_vitalnia_target',
       'binary_sensor.klimo_vitalnia_heat_demand',

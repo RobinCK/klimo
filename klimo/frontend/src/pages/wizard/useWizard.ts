@@ -5,7 +5,7 @@
  * «Далі» (the server knows which entities exist and belong elsewhere), and after «Створити
  * кімнату» a live report of what the room's devices confirmed.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AggregationMethod,
   ApiErrorIssue,
@@ -356,18 +356,23 @@ export function useWizard(): Wizard {
             ? { name: floor.newName.trim() || t('Floor heating · {room}', { room: name.trim() }), pumpEntityId: floor.pumpEntityId, sourceIds: [] }
             : null,
       },
-      method,
+      // with one sensor or none there is nothing to choose: the server takes what fits the count
+      method: tempCount >= 2 ? method : null,
       heatTolerance: heatTol ?? defaults?.heat ?? DEFAULT_HEAT,
       coolTolerance: needsCool ? (coolTol ?? defaults?.cool ?? DEFAULT_COOL) : null,
       windowReaction: reaction,
       trvStrategy: strategy,
     }),
-    [name, areaId, kinds, demand, devices, floor, method, heatTol, coolTol, needsCool, defaults, reaction, strategy],
+    [name, areaId, kinds, demand, devices, floor, method, tempCount, heatTol, coolTol, needsCool, defaults, reaction, strategy],
   );
+
+  // the newest check wins: a slow answer to an older draft must not bring back a fixed problem
+  const checkSeq = useRef(0);
 
   const validate = useCallback(
     async (s: 1 | 2 | 3 | 4): Promise<boolean> => {
       setBusy(true);
+      checkSeq.current++;
       try {
         const res = await api.rooms.validate({ step: s, draft: request });
         patch((x) => ({ issues: res.issues.map(plainPath), hints: res.hints ?? x.hints }));
@@ -385,6 +390,26 @@ export function useWizard(): Wizard {
     },
     [request, patch],
   );
+
+  // once a check has found problems they follow the edits: a fixed one goes away without another «Next»
+  const hasIssues = issues.length > 0;
+  useEffect(() => {
+    if (!hasIssues || step > 4) return undefined;
+    const s = step as 1 | 2 | 3 | 4;
+    const timer = window.setTimeout(() => {
+      const seq = ++checkSeq.current;
+      const apply = (list: ApiErrorIssue[], next?: ValidationResult['hints']) => {
+        if (seq === checkSeq.current) patch((x) => (x.step === s ? { issues: list.map(plainPath), hints: next ?? x.hints } : {}));
+      };
+      api.rooms
+        .validate({ step: s, draft: request })
+        .then((res) => apply(res.issues, res.hints))
+        .catch((e: unknown) => {
+          if (isApiError(e) && e.issues.length) apply(e.issues);
+        });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [hasIssues, step, request, patch]);
 
   const create = useCallback(async () => {
     setBusy(true);

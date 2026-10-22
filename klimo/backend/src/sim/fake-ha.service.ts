@@ -433,6 +433,18 @@ export class FakeHaService implements HaPort, TemplateHost, OnModuleDestroy {
     return this.call(userId, domain, service, target, rest, false);
   }
 
+  /**
+   * An event fired on the HA bus as a script or an automation would (`event` action): a script run from
+   * the dashboard carries its user, an automation only a parent context.
+   */
+  async fireEventAs(userId: string | null, eventType: string, data: Doc = {}, fromAutomation = false): Promise<{ contextId: string }> {
+    if (!this.online) throw new Error('Home Assistant is not connected');
+    const at = this.clock.now();
+    const ctx: Ctx = { id: newContextId(at), user_id: fromAutomation ? null : userId, parent_id: fromAutomation ? newContextId(at) : null };
+    this.emitEvent(eventType, data, ctx);
+    return { contextId: ctx.id as string };
+  }
+
   outboxEntries(): OutboxEntry[] {
     return [...this.outbox];
   }

@@ -27,7 +27,9 @@ import {
   defaultSafety,
   defaultSeason,
   defaultSettings,
+  defaultTariffs,
   sourceMergeBase,
+  storedMeters,
   withDefaults,
 } from '../shared/defaults';
 import type {
@@ -224,7 +226,15 @@ const BASES: { [K in ConfigCollectionName]: (row: ObjectLiteral) => ConfigCollec
 };
 
 export function collectionFromRow<K extends ConfigCollectionName>(c: K, row: ObjectLiteral): ConfigCollections[K] {
-  return fromRow(row, BASES[c](row));
+  const value = fromRow(row, BASES[c](row));
+  if (c !== 'sources') {
+    return value;
+  }
+
+  // a row saved before meters existed has none: its power sensor becomes the electricity meter
+  const source = value as SourceConfig;
+
+  return { ...source, meters: storedMeters(row.meters, source.energy) } as ConfigCollections[K];
 }
 
 /** Defaults a new object of a collection starts from (the source base depends on its kind/adapter). */
@@ -236,7 +246,15 @@ export function singletonFromRow<K extends ConfigSingletonName>(k: K, row: Objec
   const base = singletonDefaults()[k];
   if (!row) return base;
   const { id: _id, ...rest } = row;
-  return fromRow(rest, base);
+  const value = fromRow(rest, base);
+  if (k !== 'settings') {
+    return value;
+  }
+
+  // a settings row saved before tariffs existed holds NULL in that column
+  const settings = value as ConfigSingletons['settings'];
+
+  return { ...settings, tariffs: withDefaults(settings.tariffs, defaultTariffs()) } as ConfigSingletons[K];
 }
 
 /** One database table: how to compute its rows from the graph. */

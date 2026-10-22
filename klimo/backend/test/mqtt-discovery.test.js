@@ -118,6 +118,7 @@ test('per-room entities appear only when the room has what they report', () => {
     'button.klimo_vitalnia_boost',
     'button.klimo_vitalnia_resume_schedule',
     'climate.klimo_vitalnia',
+    'select.klimo_vitalnia_control',
     'sensor.klimo_vitalnia_card',
     'sensor.klimo_vitalnia_dew_point',
     'sensor.klimo_vitalnia_humidity',
@@ -163,9 +164,10 @@ test('house and plant entities: one device, documented ids, names in the notific
   ]) {
     assert.ok(ids.has(id), id);
   }
-  // a circuit without pumps has no pump sensor; config entities are opt-in
+  // a circuit without pumps has no pump sensor; config entities are opt-in (the schedule switch is
+  // everyday control and always there)
   assert.ok(!ids.has('binary_sensor.klimo_pump_c_spare'));
-  assert.ok(![...ids].some((id) => id.startsWith('switch.') || id.startsWith('number.')));
+  assert.ok(![...ids].some((id) => (id.startsWith('switch.') && id !== 'switch.klimo_schedule') || id.startsWith('number.')));
   for (const e of entities) {
     assert.deepEqual(e.config.device.identifiers, ['klimo']);
     assert.equal(e.config.availability_topic, 'klimo/status');
@@ -210,4 +212,43 @@ test('a monitor-only room can neither heat nor cool', () => {
   assert.deepEqual(roomCapabilities(cfg, cfg.rooms[0]), { heat: true, cool: true });
   // the bathroom floor is excluded from cooling
   assert.deepEqual(roomCapabilities(cfg, cfg.rooms[5]), { heat: true, cool: false });
+});
+
+test('manual control is reachable from HA by default: room control select, schedule switch, resume buttons', () => {
+  for (const configEntities of [false, true]) {
+    const entities = discover({ cfg: houseConfig({ configEntities }) });
+    const select = byId(entities, 'klimo_r_9f2a1c_control');
+    assert.equal(select.entityId, 'select.klimo_vitalnia_control');
+    assert.equal(select.component, 'select');
+    assert.equal(select.config.name, 'Вітальня керування');
+    assert.deepEqual(select.config.options, ['Schedule', 'Manual', 'Off']);
+    assert.equal(select.config.state_topic, 'klimo/room/r_9f2a1c/state');
+    assert.equal(select.config.value_template, '{{ value_json.control }}');
+    assert.equal(select.config.command_topic, 'klimo/room/r_9f2a1c/control/set');
+    assert.equal(select.config.json_attributes_template, '{{ value_json.control_attrs | tojson }}');
+    assert.deepEqual(select.read.attrs({ control_attrs: { mode: 'temporary' } }), { mode: 'temporary' });
+    const sw = byId(entities, 'klimo_schedule');
+    assert.equal(sw.entityId, 'switch.klimo_schedule');
+    assert.equal(sw.config.name, 'За розкладом');
+    assert.equal(sw.config.state_topic, 'klimo/house/state');
+    assert.equal(sw.config.value_template, '{{ value_json.schedule }}');
+    assert.equal(sw.config.command_topic, 'klimo/house/schedule/set');
+    const house = byId(entities, 'klimo_resume_schedule');
+    const room = byId(entities, 'klimo_r_9f2a1c_resume_schedule');
+    assert.equal(house.entityId, 'button.klimo_resume_schedule');
+    assert.equal(room.entityId, 'button.klimo_vitalnia_resume_schedule');
+    assert.equal(house.config.name, 'Повернути розклад');
+    assert.equal(room.config.name, 'Вітальня повернути розклад');
+    // everyday control: enabled, not tucked away as configuration or diagnostics
+    for (const e of [select, sw, house, room]) {
+      assert.equal(e.config.enabled_by_default, undefined, e.entityId);
+      assert.equal(e.config.entity_category, undefined, e.entityId);
+    }
+  }
+  // the topics they command are subscribed with or without the configuration entities
+  for (const topic of ['klimo/room/+/+/set', 'klimo/house/+/set', 'klimo/house/+/press', 'klimo/room/+/+/press']) assert.ok(commandSubscriptions(false).includes(topic), topic);
+  // in English
+  const en = discover({ cfg: houseConfig({ lang: 'en' }), lang: 'en' });
+  assert.equal(byId(en, 'klimo_schedule').config.name, 'Follow schedule');
+  assert.equal(byId(en, 'klimo_r_9f2a1c_control').config.name.endsWith(' control'), true);
 });

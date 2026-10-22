@@ -4,7 +4,7 @@ import { api } from '@api/endpoints';
 import { useAutosave, useMutation } from '@data';
 import { Button, CheckboxRow, FallbackNote, RadioCardList, Row, Section, SegmentedControl, Stack, TrvCard, type Tone } from '@ui';
 import { brand } from '@brand';
-import { fmtAgo, fmtDelta, fmtPct, fmtTemp, fmtUntil, t, trvActivityLabel, trvManualPolicyLabel } from '@i18n';
+import { fmtAgo, fmtDelta, fmtPct, fmtTemp, fmtUntil, t, trvActivityLabel, trvManualPolicyLabel, trvStrategiesHint } from '@i18n';
 import { AddEntityDialog } from '../AddEntityDialog';
 import { closeDialog, openDialog, useOpenDialog } from '../dialogs';
 import { deltaToRoom, lqiWord, trvSyncChip } from '../texts';
@@ -181,7 +181,13 @@ function Body(p: SectionProps) {
         <FallbackNote icon="radiator" text={t('No radiator valves in this room yet.')} />
       )}
       <Stack gap="sm">
-        <Section variant="plain" level={3} title={t('How {product} controls the valves', { product: brand.productName })} />
+        {/* the phone list drops the per-option explanations; the «i» brings them back */}
+        <Section
+          variant="plain"
+          level={3}
+          title={t('How {product} controls the valves', { product: brand.productName })}
+          hint={p.phone ? trvStrategiesHint(brand.productName) : undefined}
+        />
         <RadioCardList<TrvStrategy>
           value={v.strategy}
           options={options}

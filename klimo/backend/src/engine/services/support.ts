@@ -204,9 +204,9 @@ export class ActionSupport {
   }
 
   /** Journal lines of user actions never fail the action itself. */
-  async record(d: Decision): Promise<void> {
+  async record(d: Decision, opts?: { dedup?: boolean }): Promise<void> {
     try {
-      await this.journal.add(d, this.clock.now());
+      await this.journal.add(d, this.clock.now(), opts);
     } catch (e) {
       this.log.warn(`journal ${d.code} failed: ${errorText(e)}`);
     }

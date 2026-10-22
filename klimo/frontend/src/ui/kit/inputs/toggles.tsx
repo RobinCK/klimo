@@ -2,6 +2,7 @@ import { useId, type CSSProperties, type ReactNode } from 'react';
 import type { IconName, Tone } from '../../types';
 import { toneVar } from '../../tokens/vars';
 import { Icon } from '../../basic/Icon';
+import { InfoHint, type InfoHintContent } from '../../basic/InfoHint';
 import s from './choice.module.css';
 
 /* ---------------- ToggleCard ---------------- */
@@ -70,10 +71,12 @@ export interface CheckboxRowProps {
   variant?: 'plain' | 'well' | 'divided' | 'list';
   /** Leading mark for list rows (a tone dot, an icon). */
   leading?: ReactNode;
+  /** A longer explanation behind an «i» after the text (`hint` is the caption under the title). */
+  info?: InfoHintContent;
 }
 
 /** A native checkbox with a title and a hint; the whole text is the label. */
-export function CheckboxRow({ checked, title, hint, trailing, disabled, locked, onChange, variant = 'plain', leading }: CheckboxRowProps) {
+export function CheckboxRow({ checked, title, hint, trailing, disabled, locked, onChange, variant = 'plain', leading, info }: CheckboxRowProps) {
   const id = useId();
   const hintId = `${id}-hint`;
   const inert = Boolean(disabled || locked);
@@ -90,7 +93,7 @@ export function CheckboxRow({ checked, title, hint, trailing, disabled, locked, 
         aria-describedby={described}
         onChange={(e) => onChange(e.currentTarget.checked)}
       />
-      <label htmlFor={id} className={s.checkLabel}>
+      <label htmlFor={id} className={s.checkLabel} data-info={info ? '' : undefined}>
         <span className={s.checkTitle}>{title}</span>
         {hint ? (
           <span id={hintId} className={s.checkHint}>
@@ -104,6 +107,12 @@ export function CheckboxRow({ checked, title, hint, trailing, disabled, locked, 
           </span>
         ) : null}
       </label>
+      {/* outside the label: a button inside it would join the checkbox's name */}
+      {info ? (
+        <span className={s.checkInfo}>
+          <InfoHint content={info} subject={typeof title === 'string' ? title : undefined} />
+        </span>
+      ) : null}
       {trailing != null ? <span className={s.checkTrailing}>{trailing}</span> : null}
     </div>
   );

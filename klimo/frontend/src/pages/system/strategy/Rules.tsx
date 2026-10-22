@@ -41,6 +41,30 @@ const EFFECTS: readonly EffectType[] = [
   'pumps_demand_only',
 ];
 
+/** What each effect does while the action is active, for the «i» of «Що змінюється». */
+function effectMeaning(type: EffectType): string {
+  switch (type) {
+    case 'target_offset':
+      return t('raises or lowers the targets of the chosen rooms, e.g. +1° on cheap power; when several actions shift a room, the strongest wins — shifts do not add up.');
+    case 'allow_sources':
+      return t('lets these sources run even when their own conditions say no, e.g. the heat pump on solar surplus.');
+    case 'only_sources':
+      return t('every other source stays off.');
+    case 'forbid_sources':
+      return t('these sources stay off.');
+    case 'disable_carrier':
+      return t('every source on that energy (electricity, gas…) stays off.');
+    case 'power_cap':
+      return t('while the energy restrictions are on, electric heat and cold together stay under this power.');
+    case 'preheat_to_next_slot':
+      return t('the rooms these sources serve warm up now to the target of their next schedule slot (up to a day ahead), e.g. while power is cheap.');
+    case 'source_requires':
+      return t('the source runs only while that trigger is active as well.');
+    case 'pumps_demand_only':
+      return t('circulation pumps run only while rooms ask for heat; no anti-seize runs.');
+  }
+}
+
 function effectLabel(type: EffectType): string {
   switch (type) {
     case 'target_offset':
@@ -240,7 +264,15 @@ function RuleDrawer({ d, s, dto, onClose }: { d: SystemData; s: StrategyData; dt
         <Section variant="plain" level={3} title={t('When')}>
           <ConditionEditor value={when} onChange={setWhen} preview={preview} search={search} triggers={triggers} rooms={rooms} sources={sources} />
         </Section>
-        <Section variant="plain" level={3} title={t('What changes')}>
+        <Section
+          variant="plain"
+          level={3}
+          title={t('What changes')}
+          hint={{
+            title: t('While the trigger is active; afterwards everything returns to the schedule.'),
+            bullets: EFFECTS.map((x) => `«${effectLabel(x)}» — ${effectMeaning(x)}`),
+          }}
+        >
           <Stack gap="md">
             {effects.map((e, i) => (
               <EffectEditor

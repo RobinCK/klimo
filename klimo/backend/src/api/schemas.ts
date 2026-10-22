@@ -23,16 +23,21 @@ import {
   ADAPTER_TYPES,
   AGGREGATION_METHODS,
   CHANNEL_KINDS,
+  CONSUMPTION_RANGES,
   EMITTER_KINDS,
   EMITTER_ROLES,
   EVENT_KINDS,
+  GAS_PRICE_UNITS,
+  HOUSE_CONTROL_MODES,
   HOUSE_DURATIONS,
   HOUSE_MODES,
   LOCK_DURATIONS,
+  METER_KINDS,
   OUTDOOR_AGGREGATIONS,
   PRIORITY_DEFAULT,
   PRIORITY_LOCKED,
   PUMP_RULES,
+  ROOM_CONTROL_CHOICES,
   ROOM_TARGET_DURATIONS,
   SEASONS,
   SEVERITIES,
@@ -54,6 +59,7 @@ import type {
   ConditionNode,
   ConditionPreviewRequest,
   ConfirmSpec,
+  ConsumptionQuery,
   ContactKind,
   CoolStrategyPatch,
   CopyDayRequest,
@@ -75,6 +81,7 @@ import type {
   EntityRolePreset,
   GeneralSettingsPatch,
   HeatStrategyPatch,
+  HouseControlRequest,
   HouseModeRequest,
   HouseProfileRequest,
   HpModeSelection,
@@ -99,6 +106,7 @@ import type {
   ProfileTargetRequest,
   PumpGroupMode,
   PumpPatch,
+  RoomControlRequest,
   RoomOffRequest,
   RoomPatch,
   RoomProfileRequest,
@@ -124,6 +132,7 @@ import type {
   SourceDemandPolicy,
   SourceDuplicateRequest,
   SourceLockRequest,
+  SourceMeter,
   SourceMode,
   SourcePatch,
   SourceScope,
@@ -414,7 +423,8 @@ export const generalSettingsPatch: Schema<DeepPartial<GeneralSettingsPatch>> = p
   defaultProfileId: id(),
   ecoProfileId: id(),
   targetLimits: patch({ heatMinC: celsius, heatMaxC: celsius, coolMinC: celsius, coolMaxC: celsius, stepC: num(0.1, 1) }),
-  haTargetChangeDuration: oneOf(ROOM_TARGET_DURATIONS),
+  // a change from Home Assistant is temporary or written into the profile; manual control is chosen as a mode
+  haTargetChangeDuration: oneOf(['slot', '1h', '2h', '3h', 'morning', 'until', 'forever'] as const),
   adminOnlyConfig: bool(),
   mqttConfigEntities: bool(),
   glassCoefficient: num(0, 1),
@@ -427,6 +437,13 @@ export const generalSettingsPatch: Schema<DeepPartial<GeneralSettingsPatch>> = p
     approachKm: num(0, 1000),
   }),
   defaults: roomDefaultsPatch,
+  tariffs: patch({
+    currency: str(8, { trim: true }),
+    electricityPerKwh: nullable(num(0, 100)),
+    gasPrice: nullable(num(0, 10_000)),
+    gasPriceUnit: oneOf(GAS_PRICE_UNITS),
+    gasKwhPerM3: num(5, 15),
+  }),
   onboardingDismissed: bool(),
 });
 
@@ -683,6 +700,16 @@ export const roomProfileRequest: Schema<RoomProfileRequest & { reqId?: string }>
 /** Body-less control actions (DELETE) may still carry a `reqId`. */
 export const reqIdOnly = obj({ reqId });
 
+/** Room control mode; a value goes with 'manual' only (without one the room holds its current target). */
+export const roomControlRequest: Schema<RoomControlRequest> = checked(
+  obj({ mode: oneOf(ROOM_CONTROL_CHOICES), heatC: opt(num(5, 30)), coolC: opt(num(16, 32)), reqId }),
+  (v, add) => {
+    if (v.mode === 'manual') return;
+    if (v.heatC !== undefined) add('heatC', 'not_allowed', { mode: v.mode });
+    if (v.coolC !== undefined) add('coolC', 'not_allowed', { mode: v.mode });
+  },
+);
+
 export const releaseQuery = obj({ releaseTrvs: opt(bool({ coerce: true })) });
 
 /* ── Home Assistant lookups and history ───────────────────────────────────────────────────────── */
@@ -724,6 +751,8 @@ export const statisticsQuery = rangeRules(
   }),
 );
 export const outdoorHistoryQuery = obj({ days: opt(int(1, 31, { coerce: true })) });
+export const consumptionQuery: Schema<Partial<ConsumptionQuery>> = obj({ range: opt(oneOf(CONSUMPTION_RANGES)), date: opt(localDate) });
+export const houseConsumptionQuery = obj({ date: opt(localDate) });
 export const rangeQuery = obj({ from: opt(epoch(true)), to: opt(epoch(true)) });
 
 /* ── profiles, priority, house ────────────────────────────────────────────────────────────────── */
@@ -766,6 +795,7 @@ export const houseProfileRequest: Schema<HouseProfileRequest> = untilWhenNeeded(
   obj({ profileId: id(), duration: oneOf(HOUSE_DURATIONS), until: opt(epoch()), reqId }),
 );
 export const houseModeRequest: Schema<HouseModeRequest & { reqId?: string }> = obj({ mode: oneOf(HOUSE_MODES), reqId });
+export const houseControlRequest: Schema<HouseControlRequest> = obj({ mode: oneOf(HOUSE_CONTROL_MODES), reqId });
 
 /* ── schedules ────────────────────────────────────────────────────────────────────────────────── */
 
@@ -902,6 +932,12 @@ export const sourceCreateRequest: Schema<SourceCreateRequest> = obj({
   adapterType: opt(oneOf(ADAPTER_TYPES)),
 });
 
+const sourceMeter: Schema<SourceMeter> = obj({
+  kind: oneOf(METER_KINDS),
+  entityId: entityId(['sensor', 'input_number', 'number']),
+  unit: nullable(str(16, { min: 1, trim: true })),
+});
+
 export const sourcePatch: Schema<DeepPartial<SourcePatch>> = patch({
   name: name(40),
   kind: oneOf(SOURCE_KINDS),
@@ -921,6 +957,7 @@ export const sourcePatch: Schema<DeepPartial<SourcePatch>> = patch({
     minBatteryPct: nullable(pct),
     staggerSec: nullable(int(0, 600)),
   }),
+  meters: arr(sourceMeter, { max: METER_KINDS.length }),
   adapter: sourceAdapterPatch,
   curves: patch({ heat: nullable(weatherCurve), cool: nullable(obj({ flowC: num(0, 40), maxFlowC: num(0, 40) })) }),
   outdoorLimits: patch({ heat: nullable(outdoorLimit), cool: nullable(outdoorLimit) }),

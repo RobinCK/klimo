@@ -347,6 +347,19 @@ test('wizard search: every entity with the room role it most likely has, ambiguo
   assert.equal(search.search({ q: 'climate.zig_thermostat_office' })[0].wizard, undefined);
 });
 
+test('wizard search: a word naming the kind brings that kind first; a combined sensor leads with its temperature', () => {
+  const { search, ha } = house();
+  // a thermometer named after its place by the window outranked the window contact itself
+  ha.set(state('sensor.sill_temperature', '17.5', { device_class: 'temperature', unit_of_measurement: '°C', state_class: 'measurement', friendly_name: 'By the window' }));
+  const ids = (q) => search.search({ q, wizard: 'any' }).map((e) => e.entityId);
+  assert.deepEqual(ids('window').slice(0, 2), ['binary_sensor.living_window', 'sensor.sill_temperature']);
+  // «Вітальня вологість» sorts before «Вітальня температура», but Enter has to add the pair
+  const living = ids('вітальня');
+  assert.ok(living.indexOf('sensor.living_temperature') < living.indexOf('sensor.living_humidity'), living.join(', '));
+  // ordinary pickers keep their plain text ranking
+  assert.equal(search.search({ q: 'window' })[0].entityId, 'sensor.sill_temperature');
+});
+
 test('wizard search for a role: what can take it, the likeliest first, the room’s area before the rest', () => {
   const { search, ha } = house();
   ha.set(state('climate.zig_thermostat_office', 'heat', { hvac_modes: ['off', 'heat'], current_temperature: 21.5, friendly_name: 'Office thermostat' }));

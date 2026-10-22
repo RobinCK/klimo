@@ -195,6 +195,8 @@ export class SourcesController {
       enabled: false,
       adapter: unboundAdapter(source.adapter),
       energy: { ...settings.energy, powerEntityId: null },
+      // meters count the original device
+      meters: [],
       // a copy of a linked source follows the same template (links are one level deep)
       linkedTo: req.linked ? source.linkedTo ?? source.id : null,
       ownFields: [],

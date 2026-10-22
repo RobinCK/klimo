@@ -123,9 +123,11 @@ test('buttons, house selects and resync', async () => {
   const h = openMqtt();
   await handle(h, 'klimo/room/r_9f2a1c/boost/press', 'PRESS');
   await handle(h, 'klimo/room/r_9f2a1c/resume/press', 'PRESS');
-  assert.deepEqual(h.roomActions.calls.map((x) => x.name), ['boost', 'resume']);
+  assert.deepEqual(h.roomActions.calls.map((x) => x.name), ['boost', 'setControl']);
   assert.deepEqual(h.roomActions.calls[0].args.slice(0, 2), ['r_9f2a1c', {}]);
-  assert.equal(h.roomActions.calls[1].args[0], 'r_9f2a1c');
+  // the room button resumes the schedule exactly like «Повернути розклад», and the journal names the button
+  assert.deepEqual(h.roomActions.calls[1].args.slice(0, 2), ['r_9f2a1c', { mode: 'schedule' }]);
+  assert.deepEqual(h.roomActions.calls[1].args[3], { entityId: 'button.klimo_vitalnia_resume_schedule' });
   await handle(h, 'klimo/house/profile/set', 'Ніч');
   await handle(h, 'klimo/house/profile/set', 'away');
   await handle(h, 'klimo/house/season_mode/set', 'cool');
@@ -138,8 +140,11 @@ test('buttons, house selects and resync', async () => {
       ['setMode', 'cool'],
     ],
   );
-  assert.equal(h.houseActions.calls[3].name, 'clearProfile');
-  assert.equal(h.houseActions.calls[3].args[0].via, 'mqtt');
+  // the house button resumes the whole house (house override and every room's own change)
+  assert.equal(h.houseActions.calls[3].name, 'setControl');
+  assert.deepEqual(h.houseActions.calls[3].args[0], { mode: 'schedule' });
+  assert.equal(h.houseActions.calls[3].args[1].via, 'mqtt');
+  assert.deepEqual(h.houseActions.calls[3].args[2], { entityId: 'button.klimo_resume_schedule' });
   assert.equal((await handle(h, 'klimo/house/profile/set', 'Невідомий')).code, 'not_found');
   assert.equal((await handle(h, 'klimo/resync/press', 'PRESS')).ok, true);
   assert.deepEqual(h.engine.resends, [{ all: true }]);
@@ -224,4 +229,67 @@ test('incident and house commands from the cards', async () => {
   assert.deepEqual(h.roomActions.calls[0].args[1], { duration: 'none' });
   await handle(h, 'klimo/command', JSON.stringify({ action: 'resync', reqId: 'x-1' }));
   assert.deepEqual(h.engine.resends, [{ all: true }]);
+});
+
+test('the control select: Schedule / Manual / Off in any letter case, open to everybody, attributed', async () => {
+  const h = openMqtt();
+  h.attribution.record('select.klimo_vitalnia_control', 'u_olia');
+  for (const option of ['Manual', 'off', 'SCHEDULE']) {
+    const out = await handle(h, 'klimo/room/r_9f2a1c/control/set', option);
+    assert.equal(out.ok, true, option);
+    assert.equal(out.changed, true);
+    assert.equal(out.roomId, 'r_9f2a1c');
+  }
+  assert.deepEqual(
+    h.roomActions.calls.map((c) => [c.name, c.args[0], c.args[1], c.args[3]]),
+    [
+      ['setControl', 'r_9f2a1c', { mode: 'manual' }, { entityId: 'select.klimo_vitalnia_control' }],
+      ['setControl', 'r_9f2a1c', { mode: 'off' }, { entityId: 'select.klimo_vitalnia_control' }],
+      ['setControl', 'r_9f2a1c', { mode: 'schedule' }, { entityId: 'select.klimo_vitalnia_control' }],
+    ],
+  );
+  assert.deepEqual(h.roomActions.calls[0].args[2], { via: 'ha', userId: 'u_olia', userName: 'Оля', contextId: 'ctx_select.klimo_vitalnia_control' });
+  // «Temporary» is a state, not something to pick
+  assert.equal((await handle(h, 'klimo/room/r_9f2a1c/control/set', 'Temporary')).code, 'validation');
+  assert.equal((await handle(h, 'klimo/room/r_nope/control/set', 'Manual')).code, 'not_found');
+  assert.equal(h.roomActions.calls.length, 3);
+});
+
+test('the schedule switch: ON follows the schedule (resumes everything), OFF holds the house by hand', async () => {
+  const h = openMqtt();
+  h.attribution.record('switch.klimo_schedule', 'u_admin');
+  await handle(h, 'klimo/house/schedule/set', 'OFF');
+  await handle(h, 'klimo/house/schedule/set', 'ON');
+  assert.deepEqual(
+    h.houseActions.calls.map((c) => [c.name, c.args[0], c.args[2]]),
+    [
+      ['setControl', { mode: 'manual' }, { entityId: 'switch.klimo_schedule' }],
+      ['setControl', { mode: 'schedule' }, { entityId: 'switch.klimo_schedule' }],
+    ],
+  );
+  assert.equal(h.houseActions.calls[0].args[1].userName, 'Ігор');
+  assert.equal((await handle(h, 'klimo/house/schedule/set', 'maybe')).code, 'validation');
+});
+
+test('the climate entity carries its id to the journal; a renamed entity is named as HA knows it', async () => {
+  const h = openMqtt();
+  h.ha.regs.entities.push({ entity_id: 'climate.living_room', platform: 'mqtt', unique_id: 'klimo_r_9f2a1c_climate' });
+  await handle(h, 'klimo/room/r_9f2a1c/mode/set', 'heat');
+  assert.deepEqual(h.roomActions.calls[0].args.slice(1), [{ mode: 'heat' }, { via: 'mqtt', userId: null, userName: null, contextId: null }, { entityId: 'climate.living_room' }]);
+});
+
+test('card control commands: room.set_control and house.set_control', async () => {
+  const h = openMqtt();
+  h.attribution.record('mqtt.publish:c-1', 'u_olia');
+  let out = await handle(h, 'klimo/command', JSON.stringify({ action: 'room.set_control', roomId: 'r_9f2a1c', mode: 'manual', heatC: 22, reqId: 'c-1' }));
+  assert.equal(out.ok, true);
+  assert.equal(out.via, 'card');
+  assert.equal(out.reply.action, 'room.set_control');
+  assert.deepEqual(h.roomActions.calls[0].args.slice(0, 2), ['r_9f2a1c', { mode: 'manual', heatC: 22, reqId: 'c-1' }]);
+  out = await handle(h, 'klimo/command', JSON.stringify({ action: 'house.set_control', mode: 'schedule', reqId: 'c-2' }));
+  assert.equal(out.ok, true);
+  assert.deepEqual(h.houseActions.calls[0].args[0], { mode: 'schedule', reqId: 'c-2' });
+  out = await handle(h, 'klimo/command', JSON.stringify({ action: 'room.set_control', roomId: 'r_9f2a1c', mode: 'temporary', reqId: 'c-3' }));
+  assert.equal(out.ok, false);
+  assert.equal(out.code, 'validation');
 });

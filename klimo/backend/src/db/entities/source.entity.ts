@@ -14,6 +14,7 @@ export class SourceRow {
   @BoolCol() enabled: boolean;
   @JsonCol() capabilities: SourceConfig['capabilities'];
   @JsonCol() energy: SourceConfig['energy'];
+  @JsonCol() meters: SourceConfig['meters'];
   @JsonCol() adapter: SourceConfig['adapter'];
   @JsonCol() curves: SourceConfig['curves'];
   @JsonCol() outdoorLimits: SourceConfig['outdoorLimits'];

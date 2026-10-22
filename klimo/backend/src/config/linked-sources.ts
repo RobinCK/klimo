@@ -117,6 +117,7 @@ export function duplicateSource(src: SourceConfig, opts: { id: Id; name: string;
     enabled: false,
     adapter: unbindAdapter(copy.adapter),
     energy: { ...copy.energy, powerEntityId: null },
+    meters: [],
     linkedTo: opts.linked ? src.linkedTo ?? src.id : null,
     ownFields: [],
     createdAt: opts.now,

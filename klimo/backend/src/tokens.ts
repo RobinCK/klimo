@@ -21,6 +21,7 @@ export const SPAN_STORE = 'SPAN_STORE'; // ISpanStore
 export const HA_PORT = 'HA_PORT'; // HaPort
 export const ENTITY_SEARCH = 'ENTITY_SEARCH'; // IEntitySearch
 export const HISTORY = 'HISTORY'; // IHistory
+export const CONSUMPTION = 'CONSUMPTION'; // IConsumption
 export const HA_INPUTS = 'HA_INPUTS'; // IHaInputs
 export const ATTRIBUTION = 'ATTRIBUTION'; // IAttribution
 export const SUPERVISOR = 'SUPERVISOR'; // ISupervisor

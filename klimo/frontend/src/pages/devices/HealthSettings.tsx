@@ -65,6 +65,11 @@ export function HealthSettings({ health, onSaved, canEdit }: { health: DeviceHea
         <CheckboxRow
           checked={v.offline.enabled}
           title={t('No connection for longer than')}
+          info={t('Battery devices report rarely while nothing changes, so silence is what counts: a battery sensor or valve silent for longer than this is offline; a window contact, which speaks only when it opens or closes, after {contacts}. A mains Zigbee device counts as offline after {mains} unavailable, a device of another integration after {integrations}.', {
+            mains: fmtDur(v.offline.mainsMin),
+            contacts: fmtDur(v.offline.contactMin),
+            integrations: fmtDur(v.offline.integrationMin),
+          })}
           hint={t('mains devices {mains} · contacts {contacts} · integrations {integrations}', {
             mains: fmtDur(v.offline.mainsMin),
             contacts: fmtDur(v.offline.contactMin),
@@ -109,6 +114,9 @@ export function HealthSettings({ health, onSaved, canEdit }: { health: DeviceHea
           checked={v.weakSignal.enabled}
           title={t('Signal steadily below')}
           hint={t('median over {h} h; clears at LQI {clear}', { h: v.weakSignal.windowH, clear: v.weakSignal.clearAt })}
+          info={t('LQI is the Zigbee link quality, from 0 to 255, as the nearest router hears the device; about 100 and above is fine. A single low reading is normal — the median over {h} h counts. A plug or relay on mains between the device and the coordinator usually helps.', {
+            h: v.weakSignal.windowH,
+          })}
           disabled={!canEdit}
           onChange={(enabled) => set({ weakSignal: { ...v.weakSignal, enabled } })}
           trailing={

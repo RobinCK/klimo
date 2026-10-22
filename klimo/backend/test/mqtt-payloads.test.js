@@ -179,18 +179,55 @@ test('room climate payload: HA mode, targets, demand and window as the entities 
     window: 'OFF',
     state: 'heat',
     attrs: { room_id: 'r_9f2a1c', state: 'heat', target_source: 'schedule', until: AT_2300, profile_id: 'home', next_profile_id: 'night', serving_source_id: 's_hp' },
+    control: 'Schedule',
+    control_attrs: { mode: 'schedule', since: null, until: null, set_by: null },
   });
   assert.equal(P.roomStatePayload(ix, bedroom, ix.stateById.get(bedroom.id)).window, 'ON');
-  assert.equal(P.roomStatePayload(ix, study, ix.stateById.get(study.id)).mode, 'heat');
+  // Кабінет has a manual value until 20:30: a temporary change, so the thermostat still reads «auto»
+  assert.equal(P.roomStatePayload(ix, study, ix.stateById.get(study.id)).mode, 'auto');
 
   const modes = ['off', 'auto', 'heat'];
   const state = (target) => H.roomState(living, { target });
   assert.equal(P.reportedMode(state({ display: 'off', layer: 'room_off' }), modes), 'off');
-  assert.equal(P.reportedMode(state({ display: 'boost', layer: 'manual' }), modes), 'heat');
+  assert.equal(P.reportedMode(state({ display: 'boost', layer: 'manual' }), modes), 'auto');
+  assert.equal(P.reportedMode(state({ display: 'boost', layer: 'manual' }), modes, 'temporary'), 'auto');
+  assert.equal(P.reportedMode(state({ display: 'manual', layer: 'manual', mode: 'heat' }), modes, 'manual'), 'heat');
   assert.equal(P.reportedMode(state({ display: 'profile_updated' }), modes), 'auto');
-  // a manual cooling target while only heating is offered reads as «auto» rather than an invalid mode
-  assert.equal(P.reportedMode(state({ display: 'manual', layer: 'manual', mode: 'cool' }), modes), 'auto');
-  assert.equal(P.reportedMode(state({ display: 'range', layer: 'manual', mode: 'dual' }), ['off', 'auto', 'heat_cool']), 'heat_cool');
+  assert.equal(P.reportedMode(state({ display: 'schedule', mode: 'heat' }), modes, 'off'), 'off');
+  // manual control in a mode the entity does not offer now reads as one it offers: still not «auto»
+  assert.equal(P.reportedMode(state({ display: 'manual', layer: 'manual', mode: 'cool' }), modes, 'manual'), 'heat');
+  assert.equal(P.reportedMode(state({ display: 'manual', layer: 'manual', mode: 'cool' }), ['off', 'auto'], 'manual'), 'auto');
+  assert.equal(P.reportedMode(state({ display: 'range', layer: 'manual', mode: 'dual' }), ['off', 'auto', 'heat_cool'], 'manual'), 'heat_cool');
+});
+
+test('the control select and the schedule switch read Klimo\'s control modes', () => {
+  const v = view();
+  const [living, bedroom, kids] = v.cfg.rooms;
+  const manual = { id: 'o1', scope: 'room', subjectId: living.id, kind: 'room_target', group: 'target', value: { kind: 'room_target', mode: 'heat', heatC: 22, coolC: null }, duration: 'manual', createdAt: WED_1910 - HOUR, until: null, by: { via: 'ha', userId: 'u_olia', userName: 'Оля', contextId: null }, previous: null, revertToken: null, revertUntil: null, reqId: null };
+  const off = { ...manual, id: 'o2', subjectId: bedroom.id, kind: 'room_off', value: { kind: 'room_off' }, duration: 'none', by: { via: 'event', userId: null, userName: null, contextId: null } };
+  const temp = { ...manual, id: 'o3', subjectId: kids.id, duration: '1h', until: WED_1910 + HOUR, by: { via: 'card', userId: null, userName: null, contextId: null } };
+  const house = { ...manual, id: 'o4', scope: 'house', subjectId: 'house', kind: 'house_profile', group: 'house_profile', value: { kind: 'house_profile', profileId: 'night' }, duration: 'none' };
+  v.cfg.overrides = [manual, off, temp, house];
+  v.house = { ...v.house, control: undefined };
+  const ix = new P.ViewIndex(v);
+  const p = (room) => P.roomStatePayload(ix, room, ix.stateById.get(room.id));
+  assert.equal(p(living).control, 'Manual');
+  assert.deepEqual(p(living).control_attrs, { mode: 'manual', since: WED_1910 - HOUR, until: null, set_by: 'ha' });
+  assert.equal(p(living).mode, 'heat');
+  assert.equal(p(bedroom).control, 'Off');
+  assert.equal(p(bedroom).mode, 'off');
+  assert.equal(p(bedroom).control_attrs.set_by, 'event');
+  // a temporary change reads «Schedule» on the select (it ends by itself); the attributes say what it is
+  assert.equal(p(kids).control, 'Schedule');
+  assert.deepEqual(p(kids).control_attrs, { mode: 'temporary', since: WED_1910 - HOUR, until: WED_1910 + HOUR, set_by: 'card' });
+  assert.equal(p(kids).mode, 'auto');
+  const doc = P.houseStateDoc(ix);
+  assert.equal(doc.schedule, 'OFF');
+  assert.deepEqual(doc.schedule_attrs, { mode: 'manual', since: WED_1910 - HOUR, profile_id: 'home' });
+  assert.equal(P.hubAttrs(ix).house.ctl, 'manual');
+  assert.equal(P.roomCardAttrs(ix, living).ctl, 'manual');
+  assert.equal(P.roomCardAttrs(ix, kids).ctl, 'temporary');
+  assert.equal(P.controlOption('temporary'), 'Schedule');
 });
 
 test('house state document feeds the house selects and sensors', () => {
@@ -208,6 +245,8 @@ test('house state document feeds the house selects and sensors', () => {
   assert.deepEqual(doc.problem_attrs.kinds, ['sensor_offline', 'trv_not_confirmed', 'battery_low']);
   assert.equal(doc.power_kw, 2.13);
   assert.equal(doc.bivalent_point, -10);
+  assert.equal(doc.schedule, 'ON');
+  assert.deepEqual(doc.schedule_attrs, { mode: 'schedule', since: null, profile_id: 'home' });
 });
 
 test('the reply ring keeps the last 8 replies, newest last, one per request id', () => {

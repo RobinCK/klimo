@@ -10,7 +10,21 @@ import { api } from '@api/endpoints';
 import { useAutosave, useEntitySearch, useLayout, useNow, useResource } from '@data';
 import { applyPanelLanguage, languagePref, setLanguagePref, useColorScheme, type LangPref, type SchemePref } from '@app';
 import { AutosaveStatus, CheckboxRow, EntityPicker, FallbackNote, KeyValueList, Section, SegmentedControl, Select, SensorRow, Stack, TextField, ValuePill } from '@ui';
-import { LANG_NAMES, aggregationLabel, fmtAgo, fmtDur, fmtTemp, outdoorAggregationHint, roomDurationLabel, t, windowReactionLabel } from '@i18n';
+import {
+  LANG_NAMES,
+  aggregationLabel,
+  fmtAgo,
+  fmtDur,
+  fmtTemp,
+  minRequestHint,
+  outdoorAggregationHint,
+  roomDurationLabel,
+  sensorStaleHint,
+  t,
+  toleranceHint,
+  windowDelayHints,
+  windowReactionLabel,
+} from '@i18n';
 
 type Save = (bundle: SettingsBundle) => void;
 
@@ -138,6 +152,7 @@ export function HouseSection({ bundle, onSaved, canEdit }: { bundle: SettingsBun
               { key: t('Outdoor temperature'), value: <ValuePill text={outdoorNowText(readout)} ariaLabel={t('Outdoor temperature')} /> },
               {
                 key: t('Stale without updates for'),
+                hint: t('An outdoor sensor that sends nothing for {dur} is left out; the others still count. Default: 30 min.', { dur: fmtDur(v.outdoor.staleAfterMin) }),
                 value: (
                   <NumPill
                     canEdit={canEdit}
@@ -154,6 +169,9 @@ export function HouseSection({ bundle, onSaved, canEdit }: { bundle: SettingsBun
               },
               {
                 key: t('Hold the last value for'),
+                hint: t('When every outdoor sensor is silent, the last combined value is kept for {dur}, so the season and the heat pump’s bivalence do not jump. Then the weather entity’s temperature is used; without one the outdoor temperature is unknown. Default: 30 min.', {
+                  dur: fmtDur(v.outdoor.holdMin),
+                }),
                 value: (
                   <NumPill
                     canEdit={canEdit}
@@ -265,6 +283,7 @@ export function BehaviourSection({ bundle, onSaved, canEdit }: { bundle: Setting
   const v = auto.value;
   const d = v.defaults;
   const setD = (p: Partial<RoomDefaults>) => auto.set((prev) => ({ ...prev, defaults: { ...prev.defaults, ...p } }));
+  const delays = windowDelayHints({ openDelaySec: d.windowOpenDelaySec, resumeDelaySec: d.windowResumeDelaySec, remindAfterMin: d.windowRemindAfterMin });
   const band = (b: { below: number; above: number }) => `−${b.below.toFixed(1)} / +${b.above.toFixed(1)}°`;
   const bandPill = (mode: 'heat' | 'cool', side: 'below' | 'above', label: string) => (
     <NumPill
@@ -289,6 +308,7 @@ export function BehaviourSection({ bundle, onSaved, canEdit }: { bundle: Setting
           options={ROOM_TARGET_DURATIONS.filter((x) => x !== 'until').map((x) => ({ value: x, label: roomDurationLabel(x) }))}
           disabled={!canEdit}
           fullWidth
+          hint={t('A target changed from Home Assistant — the climate card, HomeKit, a voice assistant, an automation — is a manual change of the room. It lasts this long, then the schedule takes over again.')}
           onChange={(haTargetChangeDuration) => auto.set((prev) => ({ ...prev, haTargetChangeDuration }))}
         />
         <Stack gap="xs">
@@ -309,7 +329,13 @@ export function BehaviourSection({ bundle, onSaved, canEdit }: { bundle: Setting
             onChange={(mqttConfigEntities) => auto.set((prev) => ({ ...prev, mqttConfigEntities }))}
           />
         </Stack>
-        <Section title={t('Defaults for new rooms')} variant="plain" level={3} subtitle={t('Heating {heat} · cooling {cool}', { heat: band(d.tolerance.heat), cool: band(d.tolerance.cool) })}>
+        <Section
+          title={t('Defaults for new rooms')}
+          variant="plain"
+          level={3}
+          subtitle={t('Heating {heat} · cooling {cool}', { heat: band(d.tolerance.heat), cool: band(d.tolerance.cool) })}
+          hint={toleranceHint(d.tolerance.heat)}
+        >
           <KeyValueList
             rows={[
               { key: t('Heating: switch on below the target by'), value: bandPill('heat', 'below', t('Heating: switch on below the target by')) },
@@ -318,6 +344,7 @@ export function BehaviourSection({ bundle, onSaved, canEdit }: { bundle: Setting
               { key: t('Cooling: switch on above the target by'), value: bandPill('cool', 'above', t('Cooling: switch on above the target by')) },
               {
                 key: t('Shortest request'),
+                hint: minRequestHint(d.minRequestMin),
                 value: (
                   <NumPill
                     canEdit={canEdit}
@@ -334,6 +361,7 @@ export function BehaviourSection({ bundle, onSaved, canEdit }: { bundle: Setting
               },
               {
                 key: t('A sensor is offline without updates for'),
+                hint: sensorStaleHint(d.staleAfterMin),
                 value: (
                   <NumPill
                     canEdit={canEdit}
@@ -364,6 +392,7 @@ export function BehaviourSection({ bundle, onSaved, canEdit }: { bundle: Setting
               },
               {
                 key: t('React after the window is open for'),
+                hint: delays.open,
                 value: (
                   <NumPill
                     canEdit={canEdit}
@@ -380,6 +409,7 @@ export function BehaviourSection({ bundle, onSaved, canEdit }: { bundle: Setting
               },
               {
                 key: t('Resume after it is closed for'),
+                hint: delays.resume,
                 value: (
                   <NumPill
                     canEdit={canEdit}
@@ -396,6 +426,7 @@ export function BehaviourSection({ bundle, onSaved, canEdit }: { bundle: Setting
               },
               {
                 key: t('Remind if still open after'),
+                hint: delays.remind,
                 value: (
                   <NumPill
                     canEdit={canEdit}

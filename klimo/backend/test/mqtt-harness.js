@@ -571,6 +571,7 @@ class FakeEngine {
       houseName: 'Дім',
       season: this.seasonState,
       profile: this.profileState,
+      control: this.houseControl ?? { mode: 'schedule', since: null },
       counts: { total: states.length, capable: states.length, active: states.filter((r) => r.state === 'heat').length, attention: states.filter((r) => r.issues.length || r.state === 'window').length, monitorOnly: 0 },
       verb: 'heat',
       leadSourceId: 's_hp',
@@ -743,6 +744,7 @@ function publishView({ rooms = 12, texts, real = null, mutate } = {}) {
     houseName: 'Дім',
     season: seasonState(),
     profile: houseProfileState(),
+    control: { mode: 'schedule', since: null },
     counts: { total: states.length, capable: states.length, active: states.filter((r) => r.state === 'heat').length, attention: states.filter((r) => r.issues.length || r.state === 'window').length, monitorOnly: 0 },
     verb: 'heat',
     leadSourceId: 's_hp',
@@ -944,6 +946,13 @@ class FakeRoomActions {
     this.rec('clearRoomProfile', a);
     return {};
   }
+  async setControl(...a) {
+    this.rec('setControl', a);
+    return { roomId: a[0], control: { mode: a[1].mode, since: null, until: null, setBy: null }, state: {}, reqId: a[1].reqId ?? null };
+  }
+  control() {
+    return { mode: 'schedule', since: null, until: null, setBy: null };
+  }
   durations() {
     return [];
   }
@@ -982,6 +991,13 @@ class FakeHouseActions {
   async setMode(mode, actor) {
     this.calls.push({ name: 'setMode', args: [mode, actor] });
     return seasonState({ houseMode: mode });
+  }
+  async setControl(req, actor, origin) {
+    this.calls.push({ name: 'setControl', args: [req, actor, origin] });
+    return { control: { mode: req.mode, since: null }, profile: houseProfileState(), resumedRoomIds: [], offRoomIds: [], reqId: req.reqId ?? null };
+  }
+  control() {
+    return { mode: 'schedule', since: null };
   }
 }
 

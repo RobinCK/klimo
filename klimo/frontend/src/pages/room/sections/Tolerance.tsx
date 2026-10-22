@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { SourceDemandPolicy } from '@api/model';
 import { useAutosave } from '@data';
 import { AutoGrid, RadioCardList, Section, SegmentedControl, Stack, Stepper, ToleranceBar } from '@ui';
-import { demandPolicyLabel, fmtDelta, fmtDur, fmtTemp, t } from '@i18n';
+import { demandPolicyLabel, fmtDelta, fmtDur, fmtTemp, minRequestHint, t, toleranceHint } from '@i18n';
 import { lockable, SettingPill } from './readonly';
 import type { SectionDef, SectionProps } from './types';
 
@@ -91,7 +91,7 @@ function Body(p: SectionProps) {
         full={p.phone}
         ariaLabel={t('Which tolerance to edit')}
       />
-      <Section variant="well" level={3} title={sentence} />
+      <Section variant="well" level={3} title={sentence} hint={toleranceHint(tol.value.heat, targetOf(p, 'heat'))} />
       <AutoGrid min={220} gap="md">
         {mode === 'heat' ? [below, above] : [above, below]}
       </AutoGrid>
@@ -128,6 +128,7 @@ function Body(p: SectionProps) {
           variant="plain"
           level={3}
           subtitle={t('The shortest request, so a source is not switched on and off: {dur}.', { dur: fmtDur(demand.value.minRequestMin) })}
+          hint={minRequestHint(demand.value.minRequestMin)}
           action={
             <SettingPill
               readOnly={!p.canEdit}

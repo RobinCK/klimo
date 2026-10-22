@@ -198,6 +198,8 @@ export function withAmount(c: WatchCondition, n: number): WatchCondition {
 /** A threshold of an alert kind: what it means, how it is shown, its range. */
 export interface ParamSpec {
   label: string;
+  /** What the threshold does, behind an «i» after the label. */
+  hint?: string;
   min: number;
   max: number;
   step: number;
@@ -207,9 +209,23 @@ export interface ParamSpec {
 export function paramSpec(key: string): ParamSpec | null {
   switch (key) {
     case 'openAfterSec':
-      return { label: t('Wait before raising it'), min: 0, max: 3600, step: 30, unit: t('s') };
+      return {
+        label: t('Wait before raising it'),
+        hint: t('The problem has to last this long before the alert is raised, so a short Zigbee glitch or a restart wakes nobody.'),
+        min: 0,
+        max: 3600,
+        step: 30,
+        unit: t('s'),
+      };
     case 'resolveAfterSec':
-      return { label: t('Calm for this long to clear'), min: 0, max: 3600, step: 30, unit: t('s') };
+      return {
+        label: t('Calm for this long to clear'),
+        hint: t('Once the problem is gone, it has to stay gone this long before the alert clears, so a flapping device does not raise it again and again.'),
+        min: 0,
+        max: 3600,
+        step: 30,
+        unit: t('s'),
+      };
     case 'forMin':
       return { label: t('For longer than'), min: 1, max: 1440, step: 1, unit: t('min') };
     case 'pumpForMin':

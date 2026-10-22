@@ -33,6 +33,7 @@ import {
   isCommandAction,
   parseBivalentPoint,
   parseClimateMode,
+  parseControlOption,
   parseHouseMode,
   parseName,
   parseOnOff,
@@ -56,9 +57,9 @@ export interface CommandOutcome {
   via: ActorVia;
 }
 
-const ROOM_SET = /^klimo\/room\/([^/]+)\/(mode|temp|temp_low|temp_high|preset)\/set$/;
+const ROOM_SET = /^klimo\/room\/([^/]+)\/(mode|temp|temp_low|temp_high|preset|control)\/set$/;
 const ROOM_PRESS = /^klimo\/room\/([^/]+)\/(resume|boost)\/press$/;
-const HOUSE_SET = /^klimo\/house\/(profile|season_mode)\/set$/;
+const HOUSE_SET = /^klimo\/house\/(profile|season_mode|schedule)\/set$/;
 const HOUSE_PRESS = /^klimo\/house\/resume\/press$/;
 const SOURCE_ALLOWED = /^klimo\/source\/([^/]+)\/allowed\/set$/;
 const RULE_SET = /^klimo\/rule\/([^/]+)\/set$/;
@@ -253,6 +254,9 @@ export class CommandsService {
       case 'room.on':
         await this.rooms().on(cmd.roomId, actor);
         return done(cmd.roomId);
+      case 'room.set_control':
+        await this.rooms().setControl(cmd.roomId, compact({ mode: cmd.mode, heatC: cmd.heatC, coolC: cmd.coolC, reqId: cmd.reqId }), actor);
+        return done(cmd.roomId);
       case 'house.preview_profile': {
         const p = this.houseActions().preview(compact({ profileId: cmd.profileId, duration: cmd.duration, until: cmd.until }));
         return { roomId: null, preview: this.housePreview(p), revertToken: null, changed: false };
@@ -273,6 +277,9 @@ export class CommandsService {
         return done(null);
       case 'house.set_mode':
         await this.houseActions().setMode(cmd.mode, actor);
+        return done(null);
+      case 'house.set_control':
+        await this.houseActions().setControl({ mode: cmd.mode, reqId: cmd.reqId }, actor);
         return done(null);
       case 'incident.ack':
       case 'incident.dismiss':
@@ -322,24 +329,39 @@ export class CommandsService {
 
   private async handleTopic(topic: string, payload: string, receivedAt: EpochMs): Promise<CommandOutcome | null> {
     let m = ROOM_SET.exec(topic);
+    if (m && m[2] === 'control') {
+      const room = this.room(m[1]);
+      const entityId = this.entityOf(`klimo_${room.id}_control`, `select.klimo_${objectId(room.slug)}_control`);
+      const actor = await this.entityActor(`klimo_${room.id}_control`, `select.klimo_${objectId(room.slug)}_control`, receivedAt);
+      await this.rooms().setControl(room.id, { mode: valueOf(parseControlOption(payload), 'option') }, actor, { entityId });
+      return this.ok(room.id, actor);
+    }
     if (m) {
       const room = this.room(m[1]);
+      const entityId = this.entityOf(`klimo_${room.id}_climate`, `climate.klimo_${objectId(room.slug)}`);
       const actor = await this.entityActor(`klimo_${room.id}_climate`, `climate.klimo_${objectId(room.slug)}`, receivedAt);
       // HA puts «none» in front of the presets: no profile of the room's own, it follows the house again
       if (m[2] === 'preset' && payload.trim().toLowerCase() === 'none') await this.rooms().clearRoomProfile(room.id, actor);
-      else await this.rooms().applyClimateCommand(room.id, this.climateCommand(m[2], payload), actor);
+      else await this.rooms().applyClimateCommand(room.id, this.climateCommand(m[2], payload), actor, { entityId });
       return this.ok(room.id, actor);
     }
     m = ROOM_PRESS.exec(topic);
     if (m) {
       const room = this.room(m[1]);
       const what = m[2] === 'boost' ? 'boost' : 'resume_schedule';
-      const actor = await this.entityActor(`klimo_${room.id}_${what}`, `button.klimo_${objectId(room.slug)}_${what}`, receivedAt);
+      const documented = `button.klimo_${objectId(room.slug)}_${what}`;
+      const actor = await this.entityActor(`klimo_${room.id}_${what}`, documented, receivedAt);
       if (what === 'boost') await this.rooms().boost(room.id, {}, actor);
-      else await this.rooms().resume(room.id, actor);
+      else await this.rooms().setControl(room.id, { mode: 'schedule' }, actor, { entityId: this.entityOf(`klimo_${room.id}_${what}`, documented) });
       return this.ok(room.id, actor);
     }
     m = HOUSE_SET.exec(topic);
+    if (m && m[1] === 'schedule') {
+      const actor = await this.entityActor('klimo_schedule', 'switch.klimo_schedule', receivedAt);
+      const on = valueOf(parseOnOff(payload), 'state') === 'ON';
+      await this.houseActions().setControl({ mode: on ? 'schedule' : 'manual' }, actor, { entityId: this.entityOf('klimo_schedule', 'switch.klimo_schedule') });
+      return this.ok(null, actor);
+    }
     if (m) {
       if (m[1] === 'profile') {
         const actor = await this.entityActor('klimo_house_profile', 'select.klimo_house_profile', receivedAt);
@@ -355,8 +377,9 @@ export class CommandsService {
       return this.ok(null, actor);
     }
     if (HOUSE_PRESS.test(topic)) {
+      // the house button resumes everything: the house schedule and every room's manual or temporary change
       const actor = await this.entityActor('klimo_resume_schedule', 'button.klimo_resume_schedule', receivedAt);
-      await this.houseActions().clearProfile(actor);
+      await this.houseActions().setControl({ mode: 'schedule' }, actor, { entityId: this.entityOf('klimo_resume_schedule', 'button.klimo_resume_schedule') });
       return this.ok(null, actor);
     }
     if (topic === TOPIC.resync) {
@@ -494,6 +517,11 @@ export class CommandsService {
     if (first || this.attributionWaitMs <= 0) return first;
     await sleep(this.attributionWaitMs);
     return find();
+  }
+
+  /** The entity's id in HA now (renamed ones included), for the journal. */
+  private entityOf(uniqueId: string, documentedId: EntityId): EntityId {
+    return this.registryId(uniqueId) ?? documentedId;
   }
 
   private registryId(uniqueId: string): EntityId | null {

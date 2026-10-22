@@ -447,3 +447,32 @@ test('settings carry the outdoor readout; the house section refreshes it on its 
     assert.equal(api.calls.count('inputs.outdoorReadout'), 2);
   });
 });
+
+test('control modes over REST: any panel user, by id or slug, validated, idempotent per reqId', async () => {
+  await withApi({}, async (api) => {
+    let res = await api.request('PUT', '/api/rooms/vitalnia/control', { body: { mode: 'manual', heatC: 22, reqId: 'ctl-1' }, headers: MEMBER });
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.control, { mode: 'manual', since: NOW, until: null, setBy: 'ui' });
+    const [[roomId, req, actor]] = api.calls.of('roomActions.setControl');
+    assert.equal(roomId, 'r_living');
+    assert.deepEqual(req, { mode: 'manual', heatC: 22, reqId: 'ctl-1' });
+    assert.equal(actor.via, 'ui');
+    await api.request('PUT', '/api/rooms/r_living/control', { body: { mode: 'manual', heatC: 22, reqId: 'ctl-1' } });
+    assert.equal(api.calls.count('roomActions.setControl'), 1);
+    res = await api.request('PUT', '/api/rooms/r_living/control', { body: { mode: 'off', heatC: 22 } });
+    assert.equal(res.status, 400);
+    assert.equal(res.body.code, 'validation');
+    assert.ok(res.body.issues.some((i) => i.path === 'heatC' && i.code === 'not_allowed'));
+    res = await api.request('GET', '/api/rooms/vitalnia/control');
+    assert.deepEqual(res.body, { mode: 'schedule', since: null, until: null, setBy: null });
+    assert.equal((await api.request('PUT', '/api/rooms/nope/control', { body: { mode: 'manual' } })).status, 404);
+
+    res = await api.request('PUT', '/api/house/control', { body: { mode: 'manual' }, headers: MEMBER });
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.control, { mode: 'manual', since: NOW });
+    res = await api.request('PUT', '/api/house/control', { body: { mode: 'off' } });
+    assert.equal(res.status, 400);
+    res = await api.request('GET', '/api/house/control');
+    assert.deepEqual(res.body, { mode: 'schedule', since: null });
+  });
+});

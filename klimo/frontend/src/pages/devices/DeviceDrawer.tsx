@@ -348,7 +348,15 @@ export function DeviceDrawer({
                 ? t('mains')
                 : [t('battery'), device.power.batteryType, device.batteryPct != null ? `${Math.round(device.batteryPct)}%` : null].filter(Boolean).join(' · '),
           },
-          { key: t('Last seen'), value: device.lastSeenAt ? `${seenView(device, now).text} · ${fmtDateTime(device.lastSeenAt)}` : t('never') },
+          {
+            key: t('Last seen'),
+            value: device.lastSeenAt ? `${seenView(device, now).text} · ${fmtDateTime(device.lastSeenAt)}` : t('never'),
+            hint: t('When the device last sent anything — a reading, its battery, a heartbeat — as Home Assistant or Zigbee2MQTT saw it; a report that repeats the same value counts too. A battery device silent for {battery} (a window contact {contact}) counts as offline; a mains device only once it is unavailable for {mains}.', {
+              battery: fmtDur(health?.offline.batteryMin ?? 90),
+              contact: fmtDur(health?.offline.contactMin ?? 120),
+              mains: fmtDur(health?.offline.mainsMin ?? 10),
+            }),
+          },
           {
             key: t('Entities'),
             value: (

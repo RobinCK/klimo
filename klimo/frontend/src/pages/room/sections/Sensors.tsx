@@ -4,7 +4,7 @@ import { AGGREGATION_METHODS } from '@api/model';
 import { api } from '@api/endpoints';
 import { useAutosave, useMutation } from '@data';
 import { Button, CheckboxRow, Dialog, FallbackNote, KeyValueList, RadioValueGrid, SensorRow, Stack, Stepper, TextField } from '@ui';
-import { aggregationHint, aggregationLabel, fmtAgo, fmtDelta, fmtDur, fmtNum, fmtTemp, t } from '@i18n';
+import { aggregationHint, aggregationLabel, fmtAgo, fmtDelta, fmtDur, fmtNum, fmtTemp, sensorStaleHint, t } from '@i18n';
 import { AddEntityDialog, SENSOR_FIELDS } from '../AddEntityDialog';
 import { closeDialog, openDialog, useOpenDialog } from '../dialogs';
 import { SettingPill } from './readonly';
@@ -200,6 +200,7 @@ function Body(p: SectionProps) {
         rows={[
           {
             key: t('Unavailable without updates for'),
+            hint: sensorStaleHint(temp.value.staleAfterMin),
             value: (
               <SettingPill
                 readOnly={!p.canEdit}
@@ -213,6 +214,7 @@ function Body(p: SectionProps) {
           },
           {
             key: t('Smoothing of jumps'),
+            hint: t('Each sensor’s reading is smoothed over the chosen minutes, so a jump — a door opened next to it, a sunbeam — does not start or stop the heating by itself. Longer — calmer, but slower to react; off — the raw reading. Default: 5 min.'),
             value: (
               <SettingPill
                 readOnly={!p.canEdit}

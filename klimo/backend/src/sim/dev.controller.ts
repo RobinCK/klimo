@@ -6,7 +6,7 @@ import * as path from 'path';
 import { ApiException } from '../common/http';
 import { env } from '../env';
 import { lazyRef } from '../common/refs';
-import { any, obj, opt, parse, str } from '../common/validate';
+import { any, bool, obj, opt, parse, str } from '../common/validate';
 import type { HaServiceResult, HaStateObj, IMqtt } from '../shared/model';
 import { MQTT } from '../tokens';
 import { USERS } from './devices';
@@ -14,6 +14,7 @@ import { FakeHaService } from './fake-ha.service';
 import { simText } from './language';
 
 const ServiceBody = obj({ domain: str(64, { min: 1, pattern: /^[a-z_][a-z0-9_]*$/ }), service: str(64, { min: 1, pattern: /^[a-z_][a-z0-9_]*$/ }), data: opt(any()) });
+const EventBody = obj({ event_type: str(64, { min: 1, pattern: /^[a-z_][a-z0-9_]*$/ }), data: opt(any()), automation: opt(bool()) });
 
 /** Where the harness page lives: next to dist/ in the image, in the source tree during development. */
 function harnessFile(): string | null {
@@ -55,6 +56,21 @@ export class DevController {
     const known = new Set(states.map((s) => s.entity_id));
     for (const s of this.mqtt()?.asHaStates() ?? []) if (!known.has(s.entity_id)) states.push(s);
     return { states, user: userOf(user), themes: { darkMode: theme !== 'light' }, language: env.sim.lang };
+  }
+
+  /** Fires an HA bus event as a user's script (or, with `automation`, as an automation) — `klimo_command`. */
+  @Post('event')
+  async event(@Body() body: unknown, @Query('user') user?: string): Promise<{ contextId: string }> {
+    const req = parse(body, EventBody);
+    const data = req.data === undefined ? {} : req.data;
+    if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+      throw new ApiException(HttpStatus.BAD_REQUEST, 'validation', 'data must be an object', [{ path: 'data', code: 'type', params: { expected: 'object' } }]);
+    }
+    try {
+      return await this.ha.fireEventAs(userOf(user).id, req.event_type, data as Record<string, unknown>, req.automation === true);
+    } catch (e) {
+      throw new ApiException(HttpStatus.BAD_REQUEST, 'validation', e instanceof Error ? e.message : String(e));
+    }
   }
 
   @Post('service')

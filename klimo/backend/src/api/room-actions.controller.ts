@@ -1,13 +1,14 @@
-import { Body, Controller, Delete, HttpCode, HttpStatus, Inject, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Inject, Param, Post, Put, Query } from '@nestjs/common';
 import { notFound } from '../common/http';
 import { CurrentActor } from '../common/user.middleware';
 import { parse } from '../common/validate';
-import type { Actor, IConfigStore, IRoomActions, RoomConfig, RoomState, TargetCommandResult, TargetPreview } from '../shared/model';
+import type { Actor, IConfigStore, IRoomActions, RoomConfig, RoomControl, RoomControlResult, RoomState, TargetCommandResult, TargetPreview } from '../shared/model';
 import { CONFIG_STORE, ROOM_ACTIONS } from '../tokens';
 import {
   airingRequest,
   boostRequest,
   reqIdOnly,
+  roomControlRequest,
   roomOffRequest,
   roomProfileRequest,
   setTargetRequest,
@@ -71,6 +72,22 @@ export class RoomActionsController {
     const room = this.room(idOrSlug);
     const { revertToken } = parse(body, undoRequest);
     return this.once.run(`undo:${room.id}`, revertToken, () => this.actions.undo(room.id, revertToken, actor));
+  }
+
+  @Get('control')
+  control(@Param('id') idOrSlug: string): RoomControl {
+    return this.actions.control(this.room(idOrSlug).id);
+  }
+
+  /**
+   * schedule / manual / off. Manual holds the room's target with no end (or the heatC/coolC given) until
+   * the schedule is resumed; off keeps frost protection; schedule clears the room's own changes.
+   */
+  @Put('control')
+  setControl(@Param('id') idOrSlug: string, @Body() body: unknown, @CurrentActor() actor: Actor): Promise<RoomControlResult> {
+    const room = this.room(idOrSlug);
+    const req = parse(body, roomControlRequest);
+    return this.once.run(`control:${room.id}`, req.reqId, () => this.actions.setControl(room.id, req, actor), actor.via);
   }
 
   /** «Повернути розклад»: drops the room's target override (manual value, boost, off or profile). */

@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useUiText } from '../../UiTextContext';
 import { Icon } from '../../basic/Icon';
+import { InfoHint, type InfoHintContent } from '../../basic/InfoHint';
 import { clamp, cx, hhmmToMinutes, minutesToHhmm, snap } from '../internal/util';
 import s from './fields.module.css';
 
@@ -19,6 +20,22 @@ function Messages({ id, error, help }: { id: string; error?: ReactNode; help?: R
         </span>
       ) : null}
     </>
+  );
+}
+
+/** A field's label; with a hint, the «i» follows it outside the <label> (a button inside would join the field's name). */
+function FieldLabel({ id, label, hint }: { id: string; label: string; hint?: InfoHintContent }) {
+  const text = (
+    <label htmlFor={id} className={s.label}>
+      {label}
+    </label>
+  );
+  if (!hint) return text;
+  return (
+    <span className={s.labelRow}>
+      {text}
+      <InfoHint content={hint} subject={label} />
+    </span>
   );
 }
 
@@ -51,10 +68,12 @@ export interface SelectProps<T> {
   fullWidth?: boolean;
   /** A line under the control: what the choice affects. */
   help?: ReactNode;
+  /** What the options mean, behind an «i» after the label. */
+  hint?: InfoHintContent;
 }
 
 /** Native select in the kit look: the OS list is the most usable one on phones. */
-export function Select<T>({ value, options, onChange, size = 'md', ariaLabel, onFocusChange, label, disabled, fullWidth, help }: SelectProps<T>) {
+export function Select<T>({ value, options, onChange, size = 'md', ariaLabel, onFocusChange, label, disabled, fullWidth, help, hint }: SelectProps<T>) {
   const id = useId();
   const index = options.findIndex((o) => Object.is(o.value, value) || o.value === value);
   const inline = !(fullWidth ?? size !== 'sm');
@@ -90,11 +109,7 @@ export function Select<T>({ value, options, onChange, size = 'md', ariaLabel, on
   if (!label && !help) return control;
   return (
     <div className={s.field}>
-      {label ? (
-        <label htmlFor={id} className={s.label}>
-          {label}
-        </label>
-      ) : null}
+      {label ? <FieldLabel id={id} label={label} hint={hint} /> : null}
       {control}
       <Messages id={id} help={help} />
     </div>
@@ -247,12 +262,14 @@ export interface NumberFieldProps {
   ariaLabel?: string;
   error?: string;
   disabled?: boolean;
+  /** What the value does, behind an «i» after the label. */
+  hint?: InfoHintContent;
 }
 
 const fmt = (v: number | null) => (v == null ? '' : String(v));
 
 /** Free numeric entry that never leaves an out-of-range value behind. */
-export function NumberField({ value, onChange, min, max, step, unit, label, ariaLabel, error, disabled }: NumberFieldProps) {
+export function NumberField({ value, onChange, min, max, step, unit, label, ariaLabel, error, disabled, hint }: NumberFieldProps) {
   const ut = useUiText();
   const id = useId();
   const [text, setText] = useState(fmt(value));
@@ -290,11 +307,7 @@ export function NumberField({ value, onChange, min, max, step, unit, label, aria
   const message = error ?? (invalid ? ut('Enter a number from {min} to {max}', { min, max }) : undefined);
   return (
     <div className={s.field}>
-      {label ? (
-        <label htmlFor={id} className={s.label}>
-          {label}
-        </label>
-      ) : null}
+      {label ? <FieldLabel id={id} label={label} hint={hint} /> : null}
       <span className={s.inputWrap}>
         <input
           id={id}

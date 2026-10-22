@@ -189,6 +189,24 @@
   .side {
     max-width: 40%;
   }
+  /* a long role name would be cut short on the side: it goes under the name instead */
+  .row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 6px;
+  }
+  .row .side {
+    display: contents;
+  }
+  .row .value {
+    grid-column: 2;
+    grid-row: 1;
+    max-width: 40vw;
+  }
+  .row .tag {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
 }
 
 .row[data-blocked] {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { AggregationMethod, DiscoveryCandidate, HaEntityDto, ProfileDto, TrvStrategy, WindowReaction, WizardDeviceRole } from '@api/model';
+import type { AggregationMethod, ApiErrorIssue, DiscoveryCandidate, HaEntityDto, ProfileDto, TrvStrategy, WindowReaction, WizardDeviceRole } from '@api/model';
 import { AGGREGATION_METHODS, TRV_STRATEGIES } from '@api/model';
 import { useEntitySearch, useLayout } from '@data';
 import {
@@ -29,12 +29,13 @@ import {
   type DeviceRowRole,
   type EntityFinderChoice,
 } from '@ui';
-import { aggregationHint, aggregationLabel, fmtDelta, fmtTemp, integrationName, t, type CodeContext } from '@i18n';
+import { brand } from '@brand';
+import { aggregationHint, aggregationLabel, fmtDelta, fmtTemp, integrationName, t, toleranceHint, trvStrategiesHint, type CodeContext } from '@i18n';
 import { candidateMeta, candidateValue, extraMeta, resultValue, ROLE_ICON, roleLabel, sectionWords, stepWords, wizardIssue } from './texts';
-import { SECTION_ROLES, type ExtraDevice, type SectionKey, type Wizard } from './useWizard';
+import { SECTION_ROLES, sectionOf, type ExtraDevice, type SectionKey, type Wizard } from './useWizard';
 
-function Issues({ w, paths }: { w: Wizard; paths?: (path: string) => boolean }) {
-  const list = w.issues.filter((i) => (paths ? paths(i.path) : true));
+function Issues({ w, only }: { w: Wizard; only?: (issue: ApiErrorIssue) => boolean }) {
+  const list = w.issues.filter((i) => (only ? only(i) : true));
   if (!list.length) return null;
   return (
     <Stack gap="xs">
@@ -58,6 +59,7 @@ export function StepName({ w }: { w: Wizard }) {
         onChange={w.setName}
         maxLength={40}
         autoFocus
+        onEnter={w.next}
         error={nameIssue ? wizardIssue(nameIssue, w.request) : undefined}
       />
       <AreaSelect label={t('Home Assistant area')} value={w.areaId} areas={w.areas} onChange={w.setArea} noneLabel={t('No area')} />
@@ -69,7 +71,7 @@ export function StepName({ w }: { w: Wizard }) {
         onChange={(on) => w.setDemand(on ? 'call' : 'piggyback')}
       />
       <Text>{t('Next come the devices: what the area holds is offered, anything else is one search away.')}</Text>
-      <Issues w={w} paths={(p) => p !== 'name'} />
+      <Issues w={w} only={(i) => i.path !== 'name'} />
     </Stack>
   );
 }
@@ -77,6 +79,18 @@ export function StepName({ w }: { w: Wizard }) {
 /* ------------------------------------ step 2 ------------------------------------ */
 
 const SECTION_ORDER: readonly SectionKey[] = ['trv', 'temp', 'window', 'ac', 'heater', 'floor', 'dehum'];
+/** What heats or cools: one of these the room cannot do without. */
+const HEAT_KEYS: readonly SectionKey[] = ['trv', 'ac', 'heater', 'floor'];
+const CHIP_ORDER: readonly SectionKey[] = [...HEAT_KEYS, 'window', 'dehum'];
+
+/** Where a device-step problem is read: in its block, under the heat chips, or in the list at the end. */
+function issueHome(i: ApiErrorIssue): SectionKey | 'heat' | null {
+  if (i.path === 'emitterKinds') return 'heat';
+  if (i.path.startsWith('circuits')) return 'floor';
+  if (i.path === 'devices' && i.code === 'needs_temperature') return 'temp';
+  if (i.path === 'devices' && i.code === 'required' && typeof i.params?.role === 'string') return sectionOf(i.params.role as WizardDeviceRole);
+  return null;
+}
 
 /** What a block's own search looks for. */
 const SECTION_SEARCH: Record<SectionKey, WizardDeviceRole> = {
@@ -214,22 +228,9 @@ function DeviceSection({ w, k, cands, extras, roomName, rowIssue, focus }: Secti
             error={rowIssue(x.entityId, x.role)}
           />
         ))}
-        {empty ? <Text variant="caption">{words.hint}</Text> : null}
-        {empty || adding ? (
-          <EntityFinder
-            search={search}
-            choices={(e) => [choice(roleIn(e, k))]}
-            blocked={sourceBlock}
-            onPick={(e, role) => {
-              w.addDevice(e, role as WizardDeviceRole);
-              setAdding(false);
-            }}
-            placeholder={words.find}
-            valueText={resultValue}
-            autoFocus={focus || adding}
-          />
-        ) : null}
+        {empty && !ownOffer ? <Text variant="caption">{words.hint}</Text> : null}
         {ownOffer ? (
+          // the quickest way for a room with only a thermostat; the search below stays the better one
           <Stack gap="xs">
             <Row gap="sm" wrap>
               {heads.map((h) => (
@@ -246,7 +247,22 @@ function DeviceSection({ w, k, cands, extras, roomName, rowIssue, focus }: Secti
             </Text>
           </Stack>
         ) : null}
+        {empty || adding ? (
+          <EntityFinder
+            search={search}
+            choices={(e) => [choice(roleIn(e, k))]}
+            blocked={sourceBlock}
+            onPick={(e, role) => {
+              w.addDevice(e, role as WizardDeviceRole);
+              setAdding(false);
+            }}
+            placeholder={words.find}
+            valueText={resultValue}
+            autoFocus={focus || adding}
+          />
+        ) : null}
         {k === 'floor' ? <FloorCircuit w={w} /> : null}
+        <Issues w={w} only={(i) => issueHome(i) === k} />
       </Stack>
     </Section>
   );
@@ -277,7 +293,26 @@ export function StepDevices({ w, ctx }: { w: Wizard; ctx: CodeContext }) {
     const extras = w.extras.filter((x) => SECTION_ROLES[k].includes(x.role));
     return { k, cands, extras, shown: k === 'temp' || cands.length > 0 || extras.length > 0 || w.opened.includes(k) };
   });
-  const hidden = sections.filter((s) => !s.shown);
+  const hidden = CHIP_ORDER.map((k) => sections.find((s) => s.k === k && !s.shown)).filter((s) => s !== undefined);
+  // until something heats or cools, those chips are the question of the step, not extras
+  const asksHeat = !w.kinds.length && hidden.some((s) => HEAT_KEYS.includes(s.k));
+  const extraChips = asksHeat ? hidden.filter((s) => !HEAT_KEYS.includes(s.k)) : hidden;
+  const shownKeys = new Set(sections.filter((s) => s.shown).map((s) => s.k));
+  const placed = (i: ApiErrorIssue) => {
+    const home = issueHome(i);
+    return home === 'heat' ? asksHeat : home !== null && shownKeys.has(home);
+  };
+  const chip = (k: SectionKey) => (
+    <QuickActionPill
+      key={k}
+      icon="plus"
+      label={sectionWords(k).chip}
+      onClick={() => {
+        setFocusKey(k);
+        w.openSection(k);
+      }}
+    />
+  );
 
   const banner = !w.areaId ? null : w.discovering ? (
     <StatusBanner tone="event" icon="search" text={t('Looking for devices in «{area}»…', { area: w.areaName ?? '' })} />
@@ -322,24 +357,24 @@ export function StepDevices({ w, ctx }: { w: Wizard; ctx: CodeContext }) {
         .map((s) => (
           <DeviceSection key={s.k} w={w} k={s.k} cands={s.cands} extras={s.extras} roomName={roomName} rowIssue={rowIssue} focus={focusKey === s.k} />
         ))}
-      {hidden.length ? (
+      {asksHeat ? (
+        <Section variant="plain" level={3} title={t('What heats or cools the room?')}>
+          <Stack gap="sm">
+            <Row gap="sm" wrap>
+              {hidden.filter((s) => HEAT_KEYS.includes(s.k)).map((s) => chip(s.k))}
+            </Row>
+            <Issues w={w} only={(i) => issueHome(i) === 'heat'} />
+          </Stack>
+        </Section>
+      ) : null}
+      {extraChips.length ? (
         <Section variant="plain" level={3} title={t('Also in this room?')}>
           <Row gap="sm" wrap>
-            {hidden.map((s) => (
-              <QuickActionPill
-                key={s.k}
-                icon="plus"
-                label={sectionWords(s.k).chip}
-                onClick={() => {
-                  setFocusKey(s.k);
-                  w.openSection(s.k);
-                }}
-              />
-            ))}
+            {extraChips.map((s) => chip(s.k))}
           </Row>
         </Section>
       ) : null}
-      <Issues w={w} paths={(p) => !/^devices\.\d+/.test(p) || rowIssueHidden(w, p)} />
+      <Issues w={w} only={(i) => !placed(i) && (!/^devices\.\d+/.test(i.path) || rowIssueHidden(w, i.path))} />
     </Stack>
   );
 }
@@ -353,6 +388,15 @@ function rowIssueHidden(w: Wizard, path: string): boolean {
 }
 
 /* ------------------------------------ step 3 ------------------------------------ */
+
+/** What the later steps ask about depends on it: the temperature sensors, and whether a window reports. */
+function roomShape(w: Wizard) {
+  const d = w.request.devices;
+  return {
+    temps: d.filter((x) => x.role === 'temperature' || x.role === 'temp_humidity'),
+    hasWindow: d.some((x) => x.role === 'window' || x.role === 'door'),
+  };
+}
 
 function strategyTitle(s: TrvStrategy): string {
   switch (s) {
@@ -370,6 +414,7 @@ function strategyTitle(s: TrvStrategy): string {
 export function StepControl({ w, profiles, defaultProfileId }: { w: Wizard; profiles: readonly ProfileDto[] | undefined; defaultProfileId: string }) {
   const home = profiles?.find((p) => p.id === defaultProfileId) ?? profiles?.[0];
   const hasTrv = w.request.devices.some((d) => d.role === 'trv');
+  const { temps, hasWindow } = roomShape(w);
   const strategy = w.strategy ?? w.autoStrategy ?? 'external';
   const reactions: { value: WindowReaction; title: string }[] = [
     { value: 'pause', title: t('Do not heat') },
@@ -412,20 +457,24 @@ export function StepControl({ w, profiles, defaultProfileId }: { w: Wizard; prof
   };
   return (
     <Stack gap="lg">
-      <Section variant="plain" level={3} title={t('The current temperature is')}>
-        <RadioValueGrid<AggregationMethod>
-          value={w.method}
-          columns={3}
-          options={AGGREGATION_METHODS.map((m) => ({ value: m, label: aggregationLabel(m), valueText: fmtTemp(w.methodValues?.[m] ?? null) }))}
-          onChange={w.setMethod}
-          hint={aggregationHint(w.method)}
-          ariaLabel={t('The current temperature is')}
-        />
-      </Section>
+      {/* one sensor or none leaves nothing to combine */}
+      {temps.length >= 2 ? (
+        <Section variant="plain" level={3} title={t('The current temperature is')}>
+          <RadioValueGrid<AggregationMethod>
+            value={w.method}
+            columns={3}
+            options={AGGREGATION_METHODS.map((m) => ({ value: m, label: aggregationLabel(m), valueText: fmtTemp(w.methodValues?.[m] ?? null) }))}
+            onChange={w.setMethod}
+            hint={aggregationHint(w.method)}
+            ariaLabel={t('The current temperature is')}
+          />
+        </Section>
+      ) : null}
       <Section
         variant="well"
         level={3}
         title={t('Tolerance')}
+        hint={toleranceHint(w.heatTol, home?.heatC ?? null)}
         subtitle={
           home
             ? t('With «{profile}» ({t}): heats from {on}, stops at {off}.', {
@@ -442,11 +491,13 @@ export function StepControl({ w, profiles, defaultProfileId }: { w: Wizard; prof
           {w.needsCool ? tolRow('cool') : null}
         </Stack>
       </Section>
-      <Section variant="plain" level={3} title={t('When a window is open')}>
-        <RadioCardList<WindowReaction> value={w.reaction} compact options={reactions} onChange={w.setReaction} ariaLabel={t('When a window is open')} />
-      </Section>
+      {hasWindow ? (
+        <Section variant="plain" level={3} title={t('When a window is open')}>
+          <RadioCardList<WindowReaction> value={w.reaction} compact options={reactions} onChange={w.setReaction} ariaLabel={t('When a window is open')} />
+        </Section>
+      ) : null}
       {hasTrv ? (
-        <Section variant="plain" level={3} title={t('How the valves are controlled')}>
+        <Section variant="plain" level={3} title={t('How the valves are controlled')} hint={trvStrategiesHint(brand.productName)}>
           <RadioCardList<TrvStrategy>
             value={strategy}
             compact
@@ -487,8 +538,17 @@ function devicesLine(w: Wizard): string {
 }
 
 export function StepReview({ w, profiles }: { w: Wizard; profiles: readonly ProfileDto[] | undefined }) {
-  const temps = w.request.devices.filter((d) => d.role === 'temperature' || d.role === 'temp_humidity').length;
+  const { temps, hasWindow } = roomShape(w);
   const value = w.methodValues?.[w.method] ?? null;
+  const sensor = temps.length === 1 ? temps[0] : null;
+  const current =
+    temps.length >= 2
+      ? t('{method} of {count} · now {t}', { method: aggregationLabel(w.method).toLowerCase(), count: temps.length, t: fmtTemp(value) })
+      : sensor && w.extras.some((x) => x.ownTemperature && x.entityId === sensor.entityId)
+        ? t('the thermostat’s own reading · now {t}', { t: fmtTemp(value) })
+        : sensor
+          ? t('«{name}» · now {t}', { name: sensor.name || sensor.entityId, t: fmtTemp(value) })
+          : t('from the radiator valves');
   const reaction = w.reaction === 'pause' ? t('do not heat') : w.reaction === 'eco' ? t('switch to eco') : t('only notify');
   const hasTrv = w.request.devices.some((d) => d.role === 'trv');
   const change = (s: 1 | 2 | 3) => ({ label: t('Change'), onClick: () => w.goTo(s) });
@@ -503,15 +563,10 @@ export function StepReview({ w, profiles }: { w: Wizard; profiles: readonly Prof
             action: change(1),
           },
           { key: t('Devices'), value: devicesLine(w), action: change(2) },
-          {
-            key: t('Current temperature'),
-            value: temps
-              ? t('{method} of {count} · now {t}', { method: aggregationLabel(w.method).toLowerCase(), count: temps, t: fmtTemp(value) })
-              : t('from the radiator valves'),
-            action: change(3),
-          },
+          // with a single sensor there is nothing to change about it on step 3
+          { key: t('Current temperature'), value: current, action: temps.length >= 2 ? change(3) : change(2) },
           { key: t('Tolerance'), value: `−${fmtDelta(w.heatTol.below)} / +${fmtDelta(w.heatTol.above)}`, action: change(3) },
-          { key: t('Window open'), value: reaction, action: change(3) },
+          ...(hasWindow ? [{ key: t('Window open'), value: reaction, action: change(3) }] : []),
           ...(hasTrv ? [{ key: t('Valve'), value: strategyTitle(w.strategy ?? w.autoStrategy ?? 'external'), action: change(3) }] : []),
         ]}
       />

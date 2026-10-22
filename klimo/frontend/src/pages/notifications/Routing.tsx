@@ -6,7 +6,7 @@
 import { useMemo, useState } from 'react';
 import type { EventCatalogueEntry, EventKind, NotificationsDto, Severity } from '@api/model';
 import { Button, CheckboxRow, Dialog, EmptyState, NumberField, Row, RoutingMatrix, Section, Select, Stack, Text, type MatrixCell } from '@ui';
-import { eventKindLabel, severityLabel, t } from '@i18n';
+import { eventKindLabel, fmtDur, severityLabel, t } from '@i18n';
 import { columnLabel, kindSub, paramSpec, severityGroup, type Target } from './texts';
 import type { NotificationsModel } from './useNotifications';
 
@@ -72,6 +72,7 @@ function EventParamsDialog({ dto, model, initial, onClose }: { dto: Notification
               <NumberField
                 key={key}
                 label={spec.label}
+                hint={spec.hint}
                 value={value}
                 min={spec.min}
                 max={spec.max}
@@ -121,10 +122,18 @@ export function RoutingSection({ dto, model, canEdit }: { dto: NotificationsDto;
     void model.setRoute(kind, colId, !on.get(`${kind}|${colId}`));
   };
 
+  const st = dto.settings;
+  const how: string[] = [t('Critical — sent at once, even in quiet hours.')];
+  if (st.repeatCritical.enabled)
+    how.push(t('Repeated every {every}, up to {n} times, until someone presses «I see it» or the problem is gone.', { every: fmtDur(st.repeatCritical.everyMin), n: st.repeatCritical.maxTimes }));
+  if (st.escalation.enabled) how.push(t('Nobody reacted within {after} — it also goes to the escalation chat.', { after: fmtDur(st.escalation.afterMin) }));
+  if (st.quietHours.enabled) how.push(t('Warnings, events and reports wait for the end of quiet hours ({from}–{to}).', { from: st.quietHours.from, to: st.quietHours.to }));
+
   return (
     <Section
       title={t('What goes where')}
       subtitle={t('Critical alerts always go to at least one phone — that cell cannot be switched off.')}
+      hint={{ title: t('A tick sends that kind of alert to that phone or chat.'), bullets: how }}
       action={
         canEdit ? (
           <Button variant="secondary" size="sm" icon="settings" onClick={() => setParams('sensor_offline')}>

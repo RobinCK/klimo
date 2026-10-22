@@ -1,9 +1,9 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Inject, Post, Put, Query } from '@nestjs/common';
 import { CurrentActor } from '../common/user.middleware';
 import { parse } from '../common/validate';
-import type { Actor, HouseModePreview, HouseProfileDto, HouseProfilePreview, IHouseActions, SeasonState } from '../shared/model';
+import type { Actor, HouseControl, HouseControlResult, HouseModePreview, HouseProfileDto, HouseProfilePreview, IHouseActions, SeasonState } from '../shared/model';
 import { HOUSE_ACTIONS } from '../tokens';
-import { houseModeRequest, houseProfileRequest, reqIdOnly, undoRequest } from './schemas';
+import { houseControlRequest, houseModeRequest, houseProfileRequest, reqIdOnly, undoRequest } from './schemas';
 import { ApiRefs, ReqIdCache } from './support';
 
 /**
@@ -47,6 +47,21 @@ export class HouseController {
   undo(@Body() body: unknown, @CurrentActor() actor: Actor): Promise<HouseProfileDto> {
     const { revertToken } = parse(body, undoRequest);
     return this.once.run('house-undo', revertToken, () => this.house.undo(revertToken, actor));
+  }
+
+  @Get('control')
+  control(): HouseControl {
+    return this.house.control();
+  }
+
+  /**
+   * manual pauses the house schedule on the current profile; schedule resumes the whole house — the
+   * house override and every room's manual or temporary change (rooms switched off stay off).
+   */
+  @Put('control')
+  setControl(@Body() body: unknown, @CurrentActor() actor: Actor): Promise<HouseControlResult> {
+    const req = parse(body, houseControlRequest);
+    return this.once.run('house-control', req.reqId, () => this.house.setControl(req, actor), actor.via);
   }
 
   @Get('mode')

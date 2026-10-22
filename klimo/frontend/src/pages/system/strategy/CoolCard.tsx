@@ -72,6 +72,9 @@ export function CoolCard({ d, s, embedded }: { d: SystemData; s: StrategyData; e
             variant="tile"
             label={t('Margin above the dew point')}
             sub={t('so no condensation forms on the floor')}
+            hint={t('Floor cooling keeps its water at least this much above the dew point of the most humid room it cools: the flow target is the circuit’s cooling flow or the dew point plus this margin, whichever is higher. If the measured flow still comes closer for 2 minutes, cooling stops and the floor rests 30 min. Default: {def}.', {
+              def: fmtDelta(2, { sign: false, decimals: 0 }),
+            })}
             value={c.dewMarginC}
             text={fmtDelta(c.dewMarginC, { sign: true, decimals: 0 })}
             min={1}
@@ -86,6 +89,7 @@ export function CoolCard({ d, s, embedded }: { d: SystemData; s: StrategyData; e
             variant="tile"
             label={t('The heat pump changes mode')}
             sub={t('not more often than once per')}
+            hint={t('A heat pump that both heats and cools switches between the two at most once in this time, so a cool morning and a warm afternoon do not toggle it back and forth — every switch strains the compressor. Default: 3 h.')}
             value={c.changeoverMinH}
             text={t('{h} h', { h: c.changeoverMinH })}
             min={1}
@@ -100,6 +104,11 @@ export function CoolCard({ d, s, embedded }: { d: SystemData; s: StrategyData; e
             variant="tile"
             label={t('Gap between targets in «Auto»')}
             sub={t('between «not colder» and «not warmer»')}
+            hint={t('A room in «Auto» has two targets: it heats below one and cools above the other. They stay at least this far apart — a cooling target set closer is moved up — so the room is never heated and cooled in turn. With {heat} for heating, cooling starts no lower than {cool}. Default: {def}.', {
+              heat: deg(21),
+              cool: deg(21 + c.autoMinGapC),
+              def: fmtDelta(2, { sign: false, decimals: 0 }),
+            })}
             value={c.autoMinGapC}
             text={t('from {d}', { d: fmtDelta(c.autoMinGapC, { sign: false, decimals: 0 }) })}
             min={1}
@@ -169,11 +178,12 @@ export function SeasonCard({ d, s, embedded }: { d: SystemData; s: StrategyData;
   const cutoff = useAutosave(dto.heat.heatingCutoffOutdoorC, (v) => api.strategy.patchHeat({ heatingCutoffOutdoorC: v }).then(setData));
   const v = season.value;
   const set = (p: Partial<SeasonConfig>) => season.set((x) => ({ ...x, ...p }));
-  const tile = (key: keyof SeasonConfig, label: string, sub: string, text: string, min: number, max: number, step: number) => (
+  const tile = (key: keyof SeasonConfig, label: string, sub: string, text: string, min: number, max: number, step: number, hint?: string) => (
     <Stepper
       variant="tile"
       label={label}
       sub={sub}
+      hint={hint}
       value={v[key] as number}
       text={text}
       min={min}
@@ -196,10 +206,50 @@ export function SeasonCard({ d, s, embedded }: { d: SystemData; s: StrategyData;
         <AutoGrid min={200} gap="sm">
           {tile('heatBelowC', t('Heating season'), t('when the average is below'), deg(v.heatBelowC), 5, 20, 1)}
           {tile('coolAboveC', t('Cooling season'), t('when the average is above'), deg(v.coolAboveC), Math.max(16, v.heatBelowC + 2), 30, 1)}
-          {tile('avgDays', t('Average over'), t('days of outdoor temperature'), t('{count} days', { count: v.avgDays }), 1, 7, 1)}
-          {tile('hysteresisC', t('Hysteresis'), t('to leave a season'), fmtDelta(v.hysteresisC, { sign: false }), 0.5, 3, 0.5)}
-          {tile('minDwellH', t('Stays at least'), t('before the season can change'), fmtDur(v.minDwellH * 60), 6, 72, 6)}
-          {tile('confirmH', t('Must hold for'), t('before the change counts'), fmtDur(v.confirmH * 60), 1, 24, 1)}
+          {tile(
+            'avgDays',
+            t('Average over'),
+            t('days of outdoor temperature'),
+            t('{count} days', { count: v.avgDays }),
+            1,
+            7,
+            1,
+            t('The season follows an average, so one warm day in October does not end the heating. More days — steadier, but later. Default: 3 days.'),
+          )}
+          {tile(
+            'hysteresisC',
+            t('Hysteresis'),
+            t('to leave a season'),
+            fmtDelta(v.hysteresisC, { sign: false }),
+            0.5,
+            3,
+            0.5,
+            t('To leave a season the average has to go this far past its threshold: heating ends only at {heatOff}, cooling only at {coolOff}. Default: {def}.', {
+              heatOff: deg(v.heatBelowC + v.hysteresisC),
+              coolOff: deg(v.coolAboveC - v.hysteresisC),
+              def: fmtDelta(1, { sign: false, decimals: 0 }),
+            }),
+          )}
+          {tile(
+            'minDwellH',
+            t('Stays at least'),
+            t('before the season can change'),
+            fmtDur(v.minDwellH * 60),
+            6,
+            72,
+            6,
+            t('A season that has just begun holds at least this long before it can change again. Default: 24 h.'),
+          )}
+          {tile(
+            'confirmH',
+            t('Must hold for'),
+            t('before the change counts'),
+            fmtDur(v.confirmH * 60),
+            1,
+            24,
+            1,
+            t('The average has to stay past the threshold this long before the season changes. Default: 6 h.'),
+          )}
           {tile(
             'neutralColdGuardC',
             t('Between seasons'),
@@ -208,11 +258,20 @@ export function SeasonCard({ d, s, embedded }: { d: SystemData; s: StrategyData;
             0.5,
             3,
             0.5,
+            t('Between the seasons (average from {heat} to {cool}) the boiler and the heat pump rest and rooms use their own devices. A room without one that is this much below its switch-on point still starts central heating. Default: {def}.', {
+              heat: deg(v.heatBelowC),
+              cool: deg(v.coolAboveC),
+              def: fmtDelta(1, { sign: false, decimals: 0 }),
+            }),
           )}
           <Stepper
             variant="tile"
             label={t('Heating not needed')}
             sub={t('above this outdoors (10-minute average)')}
+            hint={t('Even in the heating season, central heating does not start for comfort while it is warmer than this outside, and may again at {back} or colder. Frost protection and a room far below its target (see «Between seasons») still work. Default: {def}.', {
+              back: cutoff.value == null ? '—' : deg(cutoff.value - 1),
+              def: deg(15),
+            })}
             value={cutoff.value ?? 15}
             text={cutoff.value == null ? t('never') : deg(cutoff.value)}
             min={8}

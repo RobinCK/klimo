@@ -76,10 +76,11 @@ export type IconName =
   | 'zigbee' | 'gauge' | 'grid_power' | 'battery_storage' | 'solar';
 
 /** Who caused a change. userId/userName come from the ingress headers (REST) or from the HA
- *  `call_service` event context (MQTT/voice/automations, see AttributionService). */
+ *  `call_service` event context (MQTT/voice/automations, see AttributionService). 'event' = the HA bus
+ *  event `klimo_command` (scripts and automations), attributed through the event's own context. */
 export type ActorVia =
   | 'ui' | 'card' | 'ha' | 'voice' | 'automation' | 'mqtt' | 'trv' | 'engine' | 'rule' | 'schedule'
-  | 'notification' | 'telegram' | 'import' | 'system';
+  | 'notification' | 'telegram' | 'import' | 'system' | 'event';
 
 export interface Actor {
   via: ActorVia;
@@ -144,8 +145,10 @@ export type RoomProfileMode = 'inherit' | 'own' | 'off';
 /** Priority layers. 'frost' and 'window' are locked at ranks 1–2; the rest is reorderable. */
 export type PriorityKey = 'frost' | 'window' | 'manual' | 'calendar' | 'presence' | 'room_schedule' | 'house_schedule';
 
-/** Room target change durations. 'forever' is not an override: it writes the active profile's room value. */
-export type RoomTargetDuration = 'slot' | '1h' | '2h' | '3h' | 'morning' | 'until' | 'forever';
+/** Room target change durations. 'forever' is not an override: it writes the active profile's room value.
+ *  'manual' = manual control: the value holds with no end, schedules and profile changes do not touch it,
+ *  until the schedule is resumed. */
+export type RoomTargetDuration = 'slot' | '1h' | '2h' | '3h' | 'morning' | 'until' | 'forever' | 'manual';
 /** House profile durations. 'none' = «Без обмеження» (until cleared). */
 export type HouseDuration = 'slot' | '1h' | '2h' | '3h' | 'morning' | 'until' | 'none';
 /** Durations of time-boxed room/source states (room off, source off/forced). 'none' = until cleared. */
@@ -300,7 +303,7 @@ export type JournalCode =
   | 'room.window_reaction' | 'room.window_resume' | 'room.window_virtual' | 'room.override' | 'room.override_cleared'
   | 'room.override_expired' | 'room.frost_on' | 'room.frost_off' | 'room.overheat_on' | 'room.overheat_off'
   | 'room.no_data' | 'room.data_back' | 'room.trv_fallback' | 'room.profile_written' | 'room.created'
-  | 'room.deleted' | 'room.humidity_unknown' | 'room.humidity_back'
+  | 'room.deleted' | 'room.humidity_unknown' | 'room.humidity_back' | 'room.control'
   // dev
   | 'trv.retry' | 'trv.failed' | 'trv.confirmed' | 'trv.manual' | 'trv.manual_reverted' | 'trv.handback'
   | 'sensor.stale' | 'sensor.back' | 'sensor.excluded' | 'sensor.included' | 'sensor.suggest_weight'
@@ -310,7 +313,8 @@ export type JournalCode =
   | 'season.changed' | 'house_mode.changed' | 'house_profile.changed' | 'house_profile.cleared'
   | 'house_profile.expired' | 'trigger.on' | 'trigger.off' | 'rule.on' | 'rule.off' | 'restart.boot'
   | 'restart.adopted' | 'restart.source_off' | 'restart.reconciled' | 'ha.disconnected' | 'ha.reconnected'
-  | 'mqtt.disconnected' | 'mqtt.connected' | 'config.changed' | 'config.imported' | 'unsupported_units';
+  | 'mqtt.disconnected' | 'mqtt.connected' | 'config.changed' | 'config.imported' | 'unsupported_units'
+  | 'house.control' | 'ha.command_rejected';
 
 /* ───────────────────────────── 3 Conditions: one AST for everything ───────────────────────────── */
 
@@ -1260,6 +1264,39 @@ export interface Override {
   reqId: string | null;
 }
 
+/* Control modes (derived from the overrides above, never stored on their own) -------------------- */
+
+/**
+ * How a room is controlled. schedule = follows its profiles and schedules; manual = holds its own target
+ * with no end — schedules and profile changes do not touch it — until the schedule is resumed; off = off
+ * with no end (frost protection stays); temporary = a time-limited change is active and the room goes back
+ * by itself (to manual or off when it was in one of them). Window reactions and frost protection act in
+ * every mode.
+ */
+export type RoomControlMode = 'schedule' | 'manual' | 'temporary' | 'off';
+/** The modes a user picks ('temporary' comes from a time-limited change). */
+export type RoomControlChoice = Exclude<RoomControlMode, 'temporary'>;
+/** Coarse origin of the current mode; the journal names the person and the entity. */
+export type ControlSetBy = 'ui' | 'ha' | 'card' | 'event' | 'automation';
+export interface RoomControl {
+  mode: RoomControlMode;
+  since: EpochMs | null;
+  /** End of a temporary change (null otherwise, or when its end is not known). */
+  until: EpochMs | null;
+  setBy: ControlSetBy | null;
+}
+/** House control: manual = the house schedule is paused and the current house profile holds (rooms keep
+ *  their own modes). */
+export type HouseControlMode = 'schedule' | 'manual';
+export interface HouseControl {
+  mode: HouseControlMode;
+  since: EpochMs | null;
+}
+/** Which of Klimo's own HA entities carried a change, for the journal (null: panel, card, HA event). */
+export interface ControlOrigin {
+  entityId: EntityId | null;
+}
+
 /* 5.2 Control memory (written by the engine only; write-behind 5 s, awaited flush before any
  *     source/pump ON/OFF edge) ------------------------------------------------------------------- */
 
@@ -1949,6 +1986,7 @@ export interface HouseState {
   houseName: string;
   season: SeasonState;
   profile: HouseProfileState;
+  control: HouseControl;
   counts: { total: number; capable: number; active: number; attention: number; monitorOnly: number };
   verb: ModeOrNone; // headline «Гріють 3 з 7» (heat) / «Охолоджують» (cool)
   leadSourceId: Id | null;
@@ -2201,6 +2239,7 @@ export interface RoomSummary {
     deltaC: DeltaC | null;
     since: EpochMs | null; // window open since
   };
+  control: RoomControl;
   issue: RoomIssue | null;
   issuesCount: number;
   canHeat: boolean;
@@ -2306,9 +2345,10 @@ export interface RoomDetailDto {
   state: RoomState;
   summary: RoomSummary;
   thermostat: ThermostatModel;
+  control: RoomControl;
   overrides: Override[]; // active for this room
   /** Klimo's own MQTT entities for this room (actual ids read back from the HA entity registry). */
-  haEntities: { entityId: EntityId; role: 'climate' | 'temperature' | 'humidity' | 'target' | 'heat_demand' | 'cool_demand' | 'window' | 'card' }[];
+  haEntities: { entityId: EntityId; role: 'climate' | 'control' | 'temperature' | 'humidity' | 'target' | 'heat_demand' | 'cool_demand' | 'window' | 'card' }[];
   /** «Чим гріти й охолоджувати» rows. */
   servedBy: { mode: Mode; emitterId: Id; role: EmitterRole; circuitId: Id | null; sourceIds: Id[] }[];
 }
@@ -2440,6 +2480,38 @@ export interface TargetCommandResult {
 }
 export interface UndoRequest {
   revertToken: string;
+}
+/** PUT /api/rooms/:id/control. 'manual' without heatC/coolC holds the room's current target; with one of
+ *  them the room holds that value (the active mode's bound), with both the dual band. 'schedule' is
+ *  «Повернути розклад» for the room: its manual, temporary, boost and off changes are cleared (window
+ *  reactions and frost protection are not changes and stay). */
+export interface RoomControlRequest {
+  mode: RoomControlChoice;
+  heatC?: Celsius;
+  coolC?: Celsius;
+  reqId?: string;
+}
+export interface RoomControlResult {
+  roomId: Id;
+  control: RoomControl;
+  state: RoomState;
+  reqId: string | null;
+}
+/** PUT /api/house/control. 'manual' pauses the house schedule on the current house profile; 'schedule' is
+ *  «Повернути розклад» for the whole house: the house override and every room's manual or temporary change
+ *  are cleared, rooms switched off stay off until they are resumed one by one. */
+export interface HouseControlRequest {
+  mode: HouseControlMode;
+  reqId?: string;
+}
+export interface HouseControlResult {
+  control: HouseControl;
+  profile: HouseProfileState;
+  /** Rooms whose own change was cleared ('schedule'). */
+  resumedRoomIds: Id[];
+  /** Rooms left switched off ('schedule'). */
+  offRoomIds: Id[];
+  reqId: string | null;
 }
 export interface BoostRequest {
   deltaC?: DeltaC; // default room.quick.boostDeltaC (sign by active mode)
@@ -3072,6 +3144,7 @@ export interface HubAttrs {
     hum: number | null;
     profile: { id: Id; layer: HouseProfileState['layer']; until: EpochMs | null; next: Id | null; t: string };
     tiles: { key: 'source' | 'pumps' | 'humidity' | 'outdoor'; label: string; value: string; sub: string; tone: Tone; at: EpochMs | null; wide: boolean }[];
+    ctl: HouseControlMode;
   };
   profiles: { id: Id; n: string; c: string; k: string; i: IconName; h: Celsius; cl: Celsius; frost: boolean }[];
   durations: { id: HouseDuration; u: EpochMs | null }[];
@@ -3135,6 +3208,7 @@ export interface RoomCardAttrs {
   why: string | null; // main «Чому» sentence
   th: ThermostatModel;
   sync: RoomSyncState;
+  ctl: RoomControlMode;
 }
 
 /** A card-ready preview (rendered texts). */
@@ -3184,7 +3258,25 @@ export interface RoomClimateStatePayload {
   window: 'ON' | 'OFF';
   state: RoomStateKind;
   attrs: { room_id: Id; state: RoomStateKind; target_source: TargetDisplayKind; until: EpochMs | null; profile_id: Id | null; next_profile_id: Id | null; serving_source_id: Id | null };
+  /** select.klimo_<slug>_control; a temporary change reads «Schedule» (the room goes back by itself). */
+  control: RoomControlOption;
+  control_attrs: { mode: RoomControlMode; since: EpochMs | null; until: EpochMs | null; set_by: ControlSetBy | null };
 }
+/** Options of select.klimo_<slug>_control (fixed English words: automations compare them). */
+export type RoomControlOption = 'Schedule' | 'Manual' | 'Off';
+
+/** HA bus event `klimo_command`, fired from a script or an automation (Klimo cannot register HA services).
+ *  `room` = room id, slug or name; without it resume_schedule / set_schedule / set_manual act on the whole
+ *  house. set_target takes `target` and an optional `duration` (default: settings.haTargetChangeDuration,
+ *  or 'manual' while the room is in manual control). Rejected commands are journaled with the reason. */
+export interface HaCommandEventData {
+  command: HaCommandName;
+  room?: string;
+  target?: Celsius;
+  duration?: RoomTargetDuration;
+  until?: EpochMs | string;
+}
+export type HaCommandName = 'resume_schedule' | 'set_manual' | 'set_schedule' | 'set_off' | 'set_target';
 
 /** Commands on topic `klimo/command` (JSON), published by the cards with
  *  hass.callService('mqtt','publish',{topic:'klimo/command', payload}). `user` (hass.user.id) is used for
@@ -3201,11 +3293,13 @@ export type KlimoCommand = (
   | { action: 'room.window_ignore'; roomId: Id; minutes?: number }
   | { action: 'room.off'; roomId: Id; duration?: LockDuration }
   | { action: 'room.on'; roomId: Id }
+  | { action: 'room.set_control'; roomId: Id; mode: RoomControlChoice; heatC?: Celsius; coolC?: Celsius }
   | { action: 'house.preview_profile'; profileId: Id; duration: HouseDuration; until?: EpochMs }
   | { action: 'house.set_profile'; profileId: Id; duration: HouseDuration; until?: EpochMs }
   | { action: 'house.clear_profile' }
   | { action: 'house.undo'; revertToken: string }
   | { action: 'house.set_mode'; mode: HouseMode }
+  | { action: 'house.set_control'; mode: HouseControlMode }
   | { action: 'incident.ack' | 'incident.dismiss' | 'incident.unsnooze'; incidentId: Id }
   | { action: 'incident.snooze'; incidentId: Id; minutes?: number; until?: EpochMs }
   | { action: 'resync' }
@@ -3781,7 +3875,9 @@ export interface JournalQuery {
 }
 /** journal/journal.service.ts — persists decisions (dedup: same code+subject within 60 s), WS 'journal'. */
 export interface IJournal {
-  add(entry: Decision, ts: EpochMs): Promise<JournalEntry | null>;
+  /** Repeats of the same decision about the same subject within 60 s are dropped; `dedup: false` keeps
+   *  every line (a person switching a room off and back again within a minute did two things). */
+  add(entry: Decision, ts: EpochMs, opts?: { dedup?: boolean }): Promise<JournalEntry | null>;
   page(q: JournalQuery): Promise<JournalPageDto>;
 }
 
@@ -3907,8 +4003,11 @@ export interface IRoomActions {
   setRoomProfile(roomId: Id, req: RoomProfileRequest, actor: Actor): Promise<RoomState>;
   clearRoomProfile(roomId: Id, actor: Actor): Promise<RoomState>;
   durations(roomId: Id): DurationOption[];
-  /** HA climate entity commands (MQTT): mode/temp/low/high/preset. */
-  applyClimateCommand(roomId: Id, cmd: { mode?: RoomClimateStatePayload['mode']; temp?: Celsius; low?: Celsius; high?: Celsius; preset?: string }, actor: Actor): Promise<RoomState>;
+  /** HA climate entity commands (MQTT): mode/temp/low/high/preset. auto = resume the schedule, heat/cool/
+   *  heat_cool = manual control, off = room off; a temperature keeps manual control manual. */
+  applyClimateCommand(roomId: Id, cmd: { mode?: RoomClimateStatePayload['mode']; temp?: Celsius; low?: Celsius; high?: Celsius; preset?: string }, actor: Actor, origin?: ControlOrigin): Promise<RoomState>;
+  control(roomId: Id): RoomControl;
+  setControl(roomId: Id, req: RoomControlRequest, actor: Actor, origin?: ControlOrigin): Promise<RoomControlResult>;
 }
 
 export interface IHouseActions {
@@ -3920,6 +4019,8 @@ export interface IHouseActions {
   setMode(mode: HouseMode, actor: Actor): Promise<SeasonState>;
   previewMode(mode: HouseMode): HouseModePreview;
   durations(): DurationOption[];
+  control(): HouseControl;
+  setControl(req: HouseControlRequest, actor: Actor, origin?: ControlOrigin): Promise<HouseControlResult>;
   /** Dry-run of one activation rule («Перевірити»). */
   activationRuleTest(ruleId: Id): { wouldActivate: boolean; reason: Reason | null };
 }
@@ -4077,7 +4178,14 @@ export const PUMP_RULES = ['rooms', 'source', 'both'] as const;
 export const SYSTEM_PROFILE_IDS = ['home', 'away', 'eco'] as const;
 export const PRIORITY_LOCKED = ['frost', 'window'] as const;
 export const PRIORITY_DEFAULT = ['frost', 'window', 'manual', 'calendar', 'presence', 'room_schedule', 'house_schedule'] as const;
-export const ROOM_TARGET_DURATIONS = ['slot', '1h', '2h', '3h', 'morning', 'until', 'forever'] as const;
+export const ROOM_TARGET_DURATIONS = ['slot', '1h', '2h', '3h', 'morning', 'until', 'forever', 'manual'] as const;
+export const ROOM_CONTROL_CHOICES = ['schedule', 'manual', 'off'] as const satisfies readonly RoomControlChoice[];
+export const HOUSE_CONTROL_MODES = ['schedule', 'manual'] as const satisfies readonly HouseControlMode[];
+/** Same order as ROOM_CONTROL_CHOICES. */
+export const ROOM_CONTROL_OPTIONS = ['Schedule', 'Manual', 'Off'] as const satisfies readonly RoomControlOption[];
+/** HA event type of the script/automation command channel (see HaCommandEventData). */
+export const HA_COMMAND_EVENT = 'klimo_command';
+export const HA_COMMANDS = ['resume_schedule', 'set_manual', 'set_schedule', 'set_off', 'set_target'] as const satisfies readonly HaCommandName[];
 export const HOUSE_DURATIONS = ['slot', '1h', '2h', '3h', 'morning', 'until', 'none'] as const;
 export const LOCK_DURATIONS = ['1h', '2h', '3h', '4h', 'morning', 'slot', 'until', 'none'] as const;
 export const SOURCE_LINKABLE_FIELDS = ['guards', 'energy', 'outdoorLimits', 'seasonPolicy', 'conditions', 'failsafe', 'curves'] as const;
@@ -4157,6 +4265,15 @@ export function overrideGroupOf(kind: OverrideKind): OverrideGroup {
     case 'source_force': return 'source_lock';
     default: return 'target';
   }
+}
+
+/**
+ * A room change with no end: manual control ('manual'), room off or a room profile «until cleared»
+ * ('none'), or a change whose end could not be placed (a slot while nothing is scheduled). It holds until
+ * the schedule is resumed, so no profile layer outranks it; frost protection and window reactions still do.
+ */
+export function isHeldOverride(o: Pick<Override, 'duration' | 'until'>): boolean {
+  return o.duration === 'manual' || o.duration === 'none' || o.until === null;
 }
 
 /** Round half away from zero to 0.1 (the value every comparison uses: «19.8° ≤ 19.8°»). */

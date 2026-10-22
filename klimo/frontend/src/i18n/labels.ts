@@ -308,6 +308,7 @@ export const roomDurationLabel = table<RoomTargetDuration>(() => ({
   morning: t('Until morning'),
   until: t('Until…'),
   forever: t('Permanently, into the profile'),
+  manual: t('Manual control, no end'),
 }));
 
 export const houseDurationLabel = table<HouseDuration>(() => ({
@@ -816,6 +817,7 @@ export const actorViaLabel = table<ActorVia>(() => ({
   telegram: t('Telegram'),
   import: t('import'),
   system: t('system'),
+  event: t('Home Assistant event'),
 }));
 
 export const configEntityLabel = table<ConfigEntityName>(() => ({

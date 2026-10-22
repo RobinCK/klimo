@@ -622,7 +622,7 @@ export class RoomActionsService implements IRoomActions {
         entityId: origin?.entityId ?? null,
       },
       roomId: room.id,
-    });
+    }, { dedup: false });
   }
 
   private async journalOverride(room: RoomConfig, kind: Override['kind'], values: JournalValues, until: EpochMs | null, actor: Actor): Promise<void> {

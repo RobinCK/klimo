@@ -100,7 +100,24 @@ export function HeatCard({ d, s, embedded }: { d: SystemData; s: StrategyData; e
 
         {pair ? (
           <Stack gap="lg">
-            <Section variant="plain" level={3} title={t('How the heat pump and the boiler work together')}>
+            <Section
+              variant="plain"
+              level={3}
+              title={t('How the heat pump and the boiler work together')}
+              // the phone list already explains every mode; the desktop control only the chosen one
+              hint={
+                embedded
+                  ? undefined
+                  : {
+                      text: t('Decided by the outdoor temperature, averaged over 10 minutes.'),
+                      bullets: [
+                        `${t('Alternately')} — ${modeHint('alt', b.pointC, b.hysteresisC, b.hpLimitC)}`,
+                        `${t('In parallel')} — ${modeHint('parallel', b.pointC, b.hysteresisC, b.hpLimitC)}`,
+                        `${t('Partly in parallel')} — ${modeHint('partial', b.pointC, b.hysteresisC, b.hpLimitC)}`,
+                      ],
+                    }
+              }
+            >
               {embedded ? (
                 // three long labels do not fit a phone row: a list of choices with their meaning
                 <RadioCardList<BivalentMode>
@@ -149,6 +166,9 @@ export function HeatCard({ d, s, embedded }: { d: SystemData; s: StrategyData; e
                 variant="tile"
                 label={t('Bivalence point')}
                 sub={t('below it the boiler joins')}
+                hint={t('The outdoor temperature (10-minute average) below which the heat pump alone no longer keeps the house warm, or no longer pays off — where its output falls below the house’s heat loss (see its datasheet). Default: {def}.', {
+                  def: deg(-10),
+                })}
                 value={b.pointC}
                 text={deg(b.pointC)}
                 min={-20}
@@ -163,6 +183,11 @@ export function HeatCard({ d, s, embedded }: { d: SystemData; s: StrategyData; e
                 variant="tile"
                 label={t('Return hysteresis')}
                 sub={t('back to the heat pump at {t}', { t: deg(b.pointC + b.hysteresisC) })}
+                hint={t('So the sources do not swap back and forth while it hovers around the point: below {p} the boiler steps in, and the heat pump gets the house back only at {back}. The heat pump limit uses the same margin. Default: {def}.', {
+                  p: deg(b.pointC),
+                  back: deg(b.pointC + b.hysteresisC),
+                  def: fmtDelta(2, { sign: false, decimals: 0 }),
+                })}
                 value={b.hysteresisC}
                 text={fmtDelta(b.hysteresisC, { sign: false, decimals: 0 })}
                 min={1}
@@ -177,6 +202,10 @@ export function HeatCard({ d, s, embedded }: { d: SystemData; s: StrategyData; e
                 variant="tile"
                 label={t('Heat pump limit')}
                 sub={b.mode === 'partial' ? t('below it the heat pump stops') : t('only for «Partly in parallel»')}
+                hint={t('Only in «Partly in parallel»: below this the heat pump stops altogether and the boiler heats alone — in deep frost many heat pumps barely give heat. It comes back at {back}. Default: {def}.', {
+                  back: deg(b.hpLimitC + b.hysteresisC),
+                  def: deg(-15),
+                })}
                 value={b.hpLimitC}
                 text={deg(b.hpLimitC)}
                 min={-25}
@@ -191,6 +220,10 @@ export function HeatCard({ d, s, embedded }: { d: SystemData; s: StrategyData; e
                 variant="tile"
                 label={t('Heat pump not keeping up')}
                 sub={t('rooms lack {delta} for longer than', { delta: fmtDelta(lag.value.deficitC, { sign: false, decimals: 0 }) })}
+                hint={t('While the heat pump runs, a room more than {delta} short of its target for {dur} brings the boiler in to help — whatever the outdoor temperature — until every such room is back in its band. Default: 45 min.', {
+                  delta: fmtDelta(lag.value.deficitC, { sign: false, decimals: 0 }),
+                  dur: fmtDur(lag.value.forMin),
+                })}
                 value={lag.value.forMin}
                 text={fmtDur(lag.value.forMin)}
                 min={15}

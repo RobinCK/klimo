@@ -61,8 +61,22 @@ function Body(p: SectionProps) {
               title={count > 1 ? t('{method} of {count} sensors', { method: humidityMethodLabel(v.method), count }) : t('Humidity')}
               value={fmtPct(h.valuePct)}
             />
-            <StatTile variant="well" title={t('Dew point')} value={fmtTemp(h.dewPointC)} />
-            <StatTile variant="well" title={t('Absolute')} value={h.absGm3 != null ? t('{v} g/m³', { v: fmtNum(h.absGm3, 1) }) : '—'} />
+            <StatTile
+              variant="well"
+              title={t('Dew point')}
+              value={fmtTemp(h.dewPointC)}
+              hint={t('The temperature at which this air starts to leave water on a surface. Anything colder than {dew} — a window pane, a cold wall corner, a floor cooled from below — gets damp. It rises with humidity: at {t} and 60% it is about {dew60}.', {
+                dew: fmtTemp(h.dewPointC),
+                t: fmtTemp(21, { decimals: 0 }),
+                dew60: fmtTemp(13, { decimals: 0 }),
+              })}
+            />
+            <StatTile
+              variant="well"
+              title={t('Absolute')}
+              value={h.absGm3 != null ? t('{v} g/m³', { v: fmtNum(h.absGm3, 1) }) : '—'}
+              hint={t('How many grams of water a cubic metre of this air holds, whatever its temperature. Cold outdoor air holds far less, so in the heating season airing dries the room even when it rains outside.')}
+            />
           </AutoGrid>
           <ComfortBar
             valuePct={h.valuePct}
@@ -109,6 +123,11 @@ function Body(p: SectionProps) {
           },
           {
             key: t('or when the glass is this close to the dew point'),
+            hint: t('In the heating season the window glass is the coldest surface. Its temperature is estimated from the room and outdoor temperatures (or read from a glass sensor, if the room has one); when it comes closer than this to the dew point, a condensation warning is raised. Now: glass ≈ {glass}, dew point {dew}. Default: {def}.', {
+              glass: fmtTemp(h.glassC),
+              dew: fmtTemp(h.dewPointC),
+              def: fmtDelta(3, { decimals: 0 }),
+            }),
             value: (
               <SettingPill
                 readOnly={!p.canEdit}

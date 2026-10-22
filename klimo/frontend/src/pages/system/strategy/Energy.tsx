@@ -72,6 +72,10 @@ export function EnergySection({ d, s, embedded }: { d: SystemData; s: StrategyDa
           <Stepper
             variant="tile"
             label={t('Budget for heat and cold')}
+            hint={t('While the energy restrictions are on — during a blackout, by default — all electric heat and cold together (heat pump, electric boiler, heaters, air conditioners) may draw at most this much. A start that does not fit waits; when the load stays over it by {over} for 30 s, the first source of the list below is switched off. A gas boiler counts only its electronics. Default: {def}.', {
+              over: fmtKw(0.2),
+              def: fmtKw(4),
+            })}
             value={p.budgetKw}
             text={fmtKw(p.budgetKw)}
             min={1}
@@ -85,6 +89,7 @@ export function EnergySection({ d, s, embedded }: { d: SystemData; s: StrategyDa
           <Stepper
             variant="tile"
             label={t('Start one by one, pause')}
+            hint={t('Sources start one at a time with this pause between them, the most important first, so an inverter never sees two compressors start together. Default: 30 s.')}
             value={p.staggerSec}
             text={fmtDurSec(p.staggerSec)}
             min={0}
@@ -96,7 +101,14 @@ export function EnergySection({ d, s, embedded }: { d: SystemData; s: StrategyDa
             ariaInc={t('Longer pause')}
           />
         </AutoGrid>
-        <Section variant="plain" level={3} title={t('What to switch off first when power runs short')}>
+        <Section
+          variant="plain"
+          level={3}
+          title={t('What to switch off first when power runs short')}
+          hint={t('The top of the list goes first; the bottom is the most important and also starts first. Over {em} of the budget a source is switched off at once, even before its minimum run time is over.', {
+            em: fmtPct(125),
+          })}
+        >
           <Stack gap="sm">
             <SortableList
               numbered

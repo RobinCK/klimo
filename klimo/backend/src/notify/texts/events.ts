@@ -173,7 +173,7 @@ function trvBody(v: Vars, lang: 0 | 1): string {
     return ['Target[ {targetC}] not confirmed yet, retry {attempt} of {of}. If the last one fails too, I will let you know.', 'Ціль[ {targetC}] ще не підтверджено, повтор {attempt} з {of}. Якщо й остання спроба не пройде — повідомлю.'][lang];
   }
   return [
-    'Target[ {targetC}] not confirmed[ after {attempt|attempt|attempts}][ for {duration}]. Klimo keeps retrying in the background.',
+    'Target[ {targetC}] not confirmed[ after {attempt|attempt|attempts}][ — {duration} so far]. Klimo keeps retrying in the background.',
     'Ціль[ {targetC}] не підтверджено[ після {attempt|спроби|спроб|спроб}][, уже {duration}]. Klimo повторює у фоні.',
   ][lang];
 }
@@ -497,7 +497,7 @@ export const EVENTS: Record<EventKind, EventTexts> = {
       (v) => (has(v, 'device') ? '{room} · {device}: {valueC} вручну' : '{room}: ціль {valueC} вручну'),
     ],
     body: [
-      (v) => (has(v, 'device') ? `Turned on the device itself to {valueC}[ · {by}]. ${manualAction(v, 0)[0]}` : 'The target was changed to {valueC}[ until {until}][ · {by}].'),
+      (v) => (has(v, 'device') ? `Set to {valueC} on the device itself[ · {by}]. ${manualAction(v, 0)[0]}` : 'The target was changed to {valueC}[ until {until}][ · {by}].'),
       (v) => (has(v, 'device') ? `Ціль змінили на самому пристрої: {valueC}[ · {by}]. ${manualAction(v, 1)[0]}` : 'Ціль змінили на {valueC}[ до {until}][ · {by}].'),
     ],
     short: ['Manual target {valueC}', 'Вручну {valueC}'],

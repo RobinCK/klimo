@@ -221,7 +221,7 @@ test('every device alert names the device, the place, how long and what Klimo do
     {
       i: inc('trv_not_confirmed', { roomId: 'r_office', entityId: 'climate.office_trv', facts: { name: 'Radiator', showEntity: true, targetC: 21, attempt: 3, of: 3 }, progress: { attempt: 3, of: 3 } }),
       uk: ['Office · Radiator (climate.office_trv): без підтвердження', 'Ціль 21.0° не підтверджено після 3 спроб, уже 3 хв. Klimo повторює у фоні.', 'Office · Radiator (climate.office_trv): ціль 21.0° не підтверджено — повторюю у фоні'],
-      en: ['Office · Radiator (climate.office_trv): not confirmed', 'Target 21.0° not confirmed after 3 attempts for 3 min. Klimo keeps retrying in the background.', 'Office · Radiator (climate.office_trv): target 21.0° not confirmed — retrying in the background'],
+      en: ['Office · Radiator (climate.office_trv): not confirmed', 'Target 21.0° not confirmed after 3 attempts — 3 min so far. Klimo keeps retrying in the background.', 'Office · Radiator (climate.office_trv): target 21.0° not confirmed — retrying in the background'],
     },
     {
       i: inc('signal_weak', { roomId: 'r_office', entityId: 'climate.office_trv', facts: { name: 'Radiator under the window', lqi: 38 } }),
@@ -261,7 +261,7 @@ test('every device alert names the device, the place, how long and what Klimo do
     {
       i: inc('manual_override', { roomId: 'r_office', entityId: 'climate.office_trv', facts: { name: 'Radiator', showEntity: true, valueC: 23, by: 'Оля', policy: 'revert' } }),
       uk: ['Office · Radiator (climate.office_trv): 23.0° вручну', 'Ціль змінили на самому пристрої: 23.0° · Оля. Klimo повертає ціль розкладу.', 'Office · Radiator (climate.office_trv): 23.0° вручну — повертаю ціль розкладу'],
-      en: ['Office · Radiator (climate.office_trv): 23.0° by hand', 'Turned on the device itself to 23.0° · Оля. Klimo puts the schedule target back.', 'Office · Radiator (climate.office_trv): 23.0° by hand — the schedule target is put back'],
+      en: ['Office · Radiator (climate.office_trv): 23.0° by hand', 'Set to 23.0° on the device itself · Оля. Klimo puts the schedule target back.', 'Office · Radiator (climate.office_trv): 23.0° by hand — the schedule target is put back'],
     },
     {
       i: inc('source_unavailable', { sourceId: 's_hp', entityId: 'climate.heat_pump', facts: { minutes: 3, fallbackId: 's_boiler' } }),

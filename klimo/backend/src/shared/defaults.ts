@@ -11,6 +11,7 @@ import type {
   Emitter,
   EmitterDevice,
   EnergyPolicy,
+  EnergyTariffs,
   EpochMs,
   EventCatalogueEntry,
   EventKind,
@@ -44,6 +45,7 @@ import type {
   SourceConfig,
   SourceKind,
   SourceMemory,
+  SourceMeter,
   SourceScope,
   SourceTemplate,
   Trigger,
@@ -54,7 +56,7 @@ import type {
   WatchRule,
   Z2mInstance,
 } from './model';
-import { EVENT_KINDS, EVENT_SEVERITY, OUTDOOR_AGGREGATIONS, outdoorSensorIds, PRIORITY_DEFAULT } from './model';
+import { EVENT_KINDS, EVENT_SEVERITY, METER_KINDS, OUTDOOR_AGGREGATIONS, outdoorSensorIds, PRIORITY_DEFAULT } from './model';
 
 /* =====================================================================================================
  * Every default of Klimo in one place: configuration defaults, the first-boot seed, source templates,
@@ -173,9 +175,19 @@ export function defaultSettings(lang: Lang = 'en'): GeneralSettings {
       approachKm: 3,
     },
     defaults: deepClone(DEFAULT_ROOM_DEFAULTS),
+    tariffs: defaultTariffs(),
     onboardingDismissed: false,
     updatedAt: 0,
   };
+}
+
+/** Calorific value of natural gas, kWh per m³ (the usual billing value in Europe). */
+export const DEFAULT_GAS_KWH_PER_M3 = 10.5;
+/** Base of the heating degree-days on the consumption charts. */
+export const HDD_BASE_C = 18;
+
+export function defaultTariffs(): EnergyTariffs {
+  return { currency: '', electricityPerKwh: null, gasPrice: null, gasPriceUnit: 'm³', gasKwhPerM3: DEFAULT_GAS_KWH_PER_M3 };
 }
 
 /**
@@ -604,13 +616,14 @@ function template(kind: SourceKind, scope: SourceScope, icon: IconName, defaults
   };
 }
 
-const base = (kind: SourceKind, scope: SourceScope, rest: Omit<SourceDefaults, 'kind' | 'scope' | 'subtype' | 'enabled' | 'conditions' | 'seasonPolicy'>): SourceDefaults => ({
+const base = (kind: SourceKind, scope: SourceScope, rest: Omit<SourceDefaults, 'kind' | 'scope' | 'subtype' | 'enabled' | 'conditions' | 'seasonPolicy' | 'meters'>): SourceDefaults => ({
   kind,
   subtype: '',
   scope,
   enabled: false,
   conditions: NO_CONDITIONS(),
   seasonPolicy: SEASONAL(),
+  meters: [],
   ...rest,
 });
 
@@ -740,6 +753,35 @@ export function sourceMergeBase(kind: SourceKind, adapterType: AdapterType | und
   const t = sourceTemplate(kind);
   const s = newSourceConfig(kind, { id: '', name: '', now: 0 });
   return { ...s, scope: t.scope, adapter: adapterDefaults(adapterType ?? t.defaults.adapter.type), curves: { heat: null, cool: null }, outdoorLimits: { heat: null, cool: null }, hydronic: null };
+}
+
+/**
+ * The meters of a stored or imported source. A source saved before meters existed has no list: the
+ * power sensor it had becomes its electricity meter, so its consumption shows without binding it
+ * again. Malformed entries and a second meter of one kind are dropped.
+ */
+export function storedMeters(stored: unknown, energy: Pick<SourceConfig['energy'], 'powerEntityId'>): SourceMeter[] {
+  if (!Array.isArray(stored)) {
+    return energy.powerEntityId ? [{ kind: 'electricity', entityId: energy.powerEntityId, unit: null }] : [];
+  }
+
+  const kinds = new Set<string>();
+  const out: SourceMeter[] = [];
+  for (const m of stored) {
+    if (!isPlainObject(m) || typeof m.entityId !== 'string' || !m.entityId) {
+      continue;
+    }
+
+    const kind = METER_KINDS.find((k) => k === m.kind);
+    if (!kind || kinds.has(kind)) {
+      continue;
+    }
+
+    kinds.add(kind);
+    out.push({ kind, entityId: m.entityId, unit: typeof m.unit === 'string' && m.unit.trim() ? m.unit : null });
+  }
+
+  return out;
 }
 
 /* ── profiles ─────────────────────────────────────────────────────────────────────────────────── */

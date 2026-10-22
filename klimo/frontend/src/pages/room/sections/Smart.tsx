@@ -3,7 +3,7 @@ import { api } from '@api/endpoints';
 import { useAutosave, useMutation, useResource } from '@data';
 import { CheckboxRow, Link, Stack, ValuePill } from '@ui';
 import { paths } from '@app';
-import { fmtDelta, fmtRate, fmtTemp, t, weekdayLong } from '@i18n';
+import { fmtDelta, fmtDur, fmtRate, fmtTemp, t, weekdayLong } from '@i18n';
 import type { SectionDef, SectionProps } from './types';
 
 function useSafety() {
@@ -21,6 +21,11 @@ function SmartBody(p: SectionProps) {
   const roomFrost = frost.value ?? houseFrost;
   const rate = room.thermostat.rate.heat;
   const ex = safety?.valveExercise;
+  const release = roomFrost != null && safety ? roomFrost + Math.max(0, safety.frostReleaseC - safety.frostC) : null;
+  // the weather-compensation example: −10° outside, a 21° target, this room's own tolerance
+  const tol = room.config.tolerance.heat;
+  const shift = s.weatherComp.perFrostC > 0 ? Math.floor(10 / s.weatherComp.perFrostC) * s.weatherComp.shiftC : 0;
+  const compOn = Math.min(21 - tol.below + shift, 21 + tol.above - 0.1);
   return (
     <Stack gap="xs">
       <CheckboxRow
@@ -30,6 +35,13 @@ function SmartBody(p: SectionProps) {
         title={t('Optimal start')}
         hint={t('Learns how fast the room warms up (now ≈ {rate}) and starts early, so the target is reached on time.', {
           rate: fmtRate(rate, { sign: false }),
+        })}
+        info={t('Before a schedule slot with a higher target, the room starts as early as it needs: the missing degrees divided by how fast it warms. From {from} to {to} at {rate} — {lead} ahead. At most {max} early; until it has learned, 1°/h is assumed.', {
+          from: fmtTemp(18, { decimals: 0 }),
+          to: fmtTemp(21, { decimals: 0 }),
+          rate: fmtRate(1, { sign: false }),
+          lead: fmtDur(180),
+          max: fmtDur(s.optimalStart.maxLeadMin),
         })}
         onChange={(on) => smart.set((x) => ({ ...x, optimalStart: { ...x.optimalStart, enabled: on } }))}
       />
@@ -47,6 +59,11 @@ function SmartBody(p: SectionProps) {
         locked={{ reason: t('Always on') }}
         title={t('Frost protection')}
         hint={t('Even when the room is off, keep at least {t}.', { t: fmtTemp(roomFrost) })}
+        info={t('Below {t} the room heats whatever the mode — the room off in its profile, the whole house off — with the first source that can, and stops at {release}. The value for the whole house is in the system protections ({house}); here a room can only raise it.', {
+          t: fmtTemp(roomFrost),
+          release: fmtTemp(release),
+          house: fmtTemp(houseFrost),
+        })}
         trailing={
           houseFrost != null && roomFrost != null && p.canEdit ? (
             <ValuePill
@@ -80,6 +97,13 @@ function SmartBody(p: SectionProps) {
         hint={t('In frost start earlier: for every {per} of frost the threshold rises by {shift}.', {
           per: fmtDelta(s.weatherComp.perFrostC),
           shift: fmtDelta(s.weatherComp.shiftC),
+        })}
+        info={t('The threshold is the temperature at which heating switches on. In frost the room cools faster, so it starts a little sooner. With {target} and a tolerance of −{below}, at {out} outside heating starts at {on} instead of {plain}.', {
+          target: fmtTemp(21, { decimals: 0 }),
+          below: fmtDelta(tol.below),
+          out: fmtTemp(-10, { decimals: 0 }),
+          on: fmtTemp(compOn),
+          plain: fmtTemp(21 - tol.below),
         })}
         onChange={(on) => smart.set((x) => ({ ...x, weatherComp: { ...x.weatherComp, enabled: on } }))}
       />

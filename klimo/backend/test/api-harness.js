@@ -278,6 +278,8 @@ function makeFakes(opts = {}) {
     clearRoomProfile: async (roomId) => roomState(roomId),
     durations: () => [{ id: 'slot', until: NOW + 3_600_000 }],
     applyClimateCommand: async (roomId) => roomState(roomId),
+    control: () => ({ mode: 'schedule', since: null, until: null, setBy: null }),
+    setControl: async (roomId, req) => ({ roomId, control: { mode: req.mode, since: NOW, until: null, setBy: 'ui' }, state: roomState(roomId), reqId: req.reqId ?? null }),
   });
   const houseActions = recorder(calls, 'houseActions', {
     profile: () => ({ state: { activeProfileId: 'home' }, durations: [], revertToken: null, revertUntil: null }),
@@ -289,6 +291,8 @@ function makeFakes(opts = {}) {
     previewMode: (mode) => ({ mode, changesNow: true }),
     durations: () => [],
     activationRuleTest: () => ({ wouldActivate: true, reason: null }),
+    control: () => ({ mode: 'schedule', since: null }),
+    setControl: async (req) => ({ control: { mode: req.mode, since: req.mode === 'manual' ? NOW : null }, profile: { activeProfileId: 'home' }, resumedRoomIds: [], offRoomIds: [], reqId: req.reqId ?? null }),
   });
   const setup = recorder(calls, 'setup', {
     validate: () => ({ ok: true, issues: [] }),

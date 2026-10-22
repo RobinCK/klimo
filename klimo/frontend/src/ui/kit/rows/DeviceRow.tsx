@@ -39,9 +39,15 @@ export function DeviceRow({ title, meta, value, checked, onCheck, disabled, role
   const id = useId();
   const box = checked !== undefined;
   const taken = !box || checked;
-  const actions = taken && (role || onRemove);
+  const remove = taken && onRemove;
   return (
-    <div className={s.row} data-check={box ? '' : undefined} data-disabled={disabled ? '' : undefined} data-error={error ? '' : undefined}>
+    <div
+      className={s.row}
+      data-check={box ? '' : undefined}
+      data-remove={remove ? '' : undefined}
+      data-disabled={disabled ? '' : undefined}
+      data-error={error ? '' : undefined}
+    >
       {box ? (
         <input
           id={id}
@@ -63,16 +69,21 @@ export function DeviceRow({ title, meta, value, checked, onCheck, disabled, role
         ) : null}
       </label>
       {value ? <span className={s.value}>{value}</span> : null}
+      {/* beside the value, so a row without a role menu needs no second line just for it */}
+      {remove ? (
+        <span className={s.remove}>
+          <IconButton icon="close" label={ut('Remove «{name}»', { name: title })} size={36} variant="ghost" onClick={onRemove} />
+        </span>
+      ) : null}
       {error ? (
         <span id={`${id}-err`} className={s.error} role="alert">
           <Icon name="alert" size={14} />
           {error}
         </span>
       ) : null}
-      {actions ? (
+      {taken && role ? (
         <span className={s.actions}>
-          {role ? <RoleMenu role={role} device={title} /> : <span />}
-          {onRemove ? <IconButton icon="close" label={ut('Remove «{name}»', { name: title })} size={36} variant="ghost" onClick={onRemove} /> : null}
+          <RoleMenu role={role} device={title} />
         </span>
       ) : null}
     </div>

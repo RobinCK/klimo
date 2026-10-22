@@ -271,6 +271,7 @@ function TriggerDrawer({ d, s, dto, kind, onClose }: { d: SystemData; s: Strateg
             <Select<Trigger['whenUnknown']>
               label={t('While an input is unavailable')}
               ariaLabel={t('While an input is unavailable')}
+              hint={t('What the trigger says while an entity it reads is unavailable — a Zigbee dropout, a Home Assistant restart. «Keep the last state» holds its last answer for the time below (default 30 min), then turns inactive or active; «at once» does not wait. Pick the side that is safe for what uses the trigger.')}
               value={whenUnknown}
               options={[
                 { value: 'hold_false', label: t('keep the last state for a while, then inactive') },

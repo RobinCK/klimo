@@ -211,10 +211,11 @@ test('duration options carry their resolved end times', () =>
     const now = s.clock.now();
     s.t.slotEnd = now + 3 * HOUR + 50 * MIN;
     const d = Object.fromEntries(s.roomActions.durations(room.id).map((x) => [x.id, x.until]));
-    assert.deepEqual(Object.keys(d), ['slot', '1h', '2h', '3h', 'morning', 'until', 'forever']);
+    assert.deepEqual(Object.keys(d), ['slot', '1h', '2h', '3h', 'morning', 'until', 'forever', 'manual']);
     assert.equal(d.slot, s.t.slotEnd);
     assert.equal(d['1h'], now + HOUR);
     assert.equal(d.until, null);
     assert.equal(d.forever, null);
+    assert.equal(d.manual, null);
     assert.equal((await rejection(async () => s.roomActions.durations('r_missing'))).code, 'not_found');
   }));

@@ -30,7 +30,7 @@ export interface HaSocket {
 }
 
 type EventContext = { id: string | null; user_id: string | null; parent_id: string | null };
-type StatRow = { start: number; mean?: number | null; min?: number | null; max?: number | null; state?: number | null; sum?: number | null };
+type StatRow = { start: number; mean?: number | null; min?: number | null; max?: number | null; state?: number | null; sum?: number | null; change?: number | null };
 type HistoryRow = { s: string; lu: number; a?: Record<string, unknown> };
 export type AuthUser = { id: string; name: string; is_admin: boolean; system_generated: boolean };
 
@@ -688,7 +688,7 @@ export class HaService implements HaPort, OnModuleInit, OnApplicationShutdown {
     statIds: string[],
     start: EpochMs,
     end: EpochMs,
-    period: '5minute' | 'hour' | 'day' | 'week',
+    period: '5minute' | 'hour' | 'day' | 'week' | 'month',
     types: ('mean' | 'min' | 'max' | 'state' | 'sum' | 'change')[],
   ): Promise<Record<string, StatRow[]>> {
     if (!statIds.length) return {};
@@ -713,7 +713,7 @@ export class HaService implements HaPort, OnModuleInit, OnApplicationShutdown {
         // HA ≥ 2023.3 sends epoch ms; older versions ISO strings
         const start = num(r.start) ?? (typeof r.start === 'string' ? Date.parse(r.start) : NaN);
         if (!Number.isFinite(start)) return [];
-        return [{ start, mean: num(r.mean), min: num(r.min), max: num(r.max), state: num(r.state), sum: num(r.sum) }];
+        return [{ start, mean: num(r.mean), min: num(r.min), max: num(r.max), state: num(r.state), sum: num(r.sum), change: num(r.change) }];
       });
     }
     return out;

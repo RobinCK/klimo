@@ -48,10 +48,10 @@ export class JournalService implements IJournal, Rewindable {
     @Inject(BUS) private readonly bus: IBus,
   ) {}
 
-  async add(d: Decision, ts: EpochMs): Promise<JournalEntry | null> {
+  async add(d: Decision, ts: EpochMs, opts: { dedup?: boolean } = {}): Promise<JournalEntry | null> {
     const key = subjectKey(d);
     const last = this.lastSeen.get(key);
-    if (last !== undefined && ts - last < DEDUP_MS && ts >= last) return null;
+    if (opts.dedup !== false && last !== undefined && ts - last < DEDUP_MS && ts >= last) return null;
     this.lastSeen.set(key, ts);
     if (this.lastSeen.size > 5_000) this.prune(ts);
 

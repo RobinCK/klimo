@@ -12,6 +12,7 @@ import type {
   EngineHealth,
   EpochMs,
   EventKind,
+  HouseControl,
   HouseControlMode,
   HouseMode,
   HouseProfileState,
@@ -147,8 +148,8 @@ export class ViewIndex {
     return this.summaryById.get(roomId)?.control ?? roomControlOf(this.view.cfg.overrides, roomId, this.view.now);
   }
 
-  houseControl(): HouseControlMode {
-    return this.view.house.control?.mode ?? houseControlOf(this.view.cfg.overrides, this.view.now).mode;
+  houseControl(): HouseControl {
+    return this.view.house.control ?? houseControlOf(this.view.cfg.overrides, this.view.now);
   }
 
   profileName(id: Id | null | undefined): string | null {
@@ -342,8 +343,8 @@ export function houseStateDoc(ix: ViewIndex): HouseStateDoc {
     alerts: view.alerts,
     power_kw: r2(plant.energy.usedKw),
     bivalent_point: cfg.heat.bivalence.pointC,
-    schedule: onOff(ix.houseControl() === 'schedule'),
-    schedule_attrs: { mode: ix.houseControl(), since: view.house.control?.since ?? null, profile_id: profile.activeProfileId },
+    schedule: onOff(ix.houseControl().mode === 'schedule'),
+    schedule_attrs: { mode: ix.houseControl().mode, since: ix.houseControl().since, profile_id: profile.activeProfileId },
   };
 }
 
@@ -912,7 +913,7 @@ export function hubAttrs(ix: ViewIndex): HubAttrs {
             : ix.tx('card.house.profile', { profile: null, layer: profile.layer }),
       },
       tiles: houseTiles(ix),
-      ctl: ix.houseControl(),
+      ctl: ix.houseControl().mode,
     },
     profiles: profiles.map((p) => ({ id: p.id, n: p.name, c: p.color, k: p.ink, i: p.icon, h: p.heatC, cl: p.coolC, frost: p.frostOnly })),
     durations: stableDurations(view.durations),

@@ -71,7 +71,7 @@ export function sectionWords(k: SectionKey): { title: string; tag: string; hint:
     case 'trv':
       return {
         title: t('Radiator valve'),
-        tag: t('controlled'),
+        tag: t('a head or a thermostat'),
         hint: t('The thermostatic head on the radiator, or the thermostat that drives it.'),
         find: t('Find a radiator valve or a thermostat'),
         chip: t('Radiator valve'),

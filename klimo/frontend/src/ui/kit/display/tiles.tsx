@@ -4,6 +4,7 @@ import { useUiNav } from '../../UiNavContext';
 import { useRouteClick } from '../../shell/Link';
 import { Icon } from '../../basic/Icon';
 import { StatusDot } from '../../basic/Badges';
+import { InfoHint, type InfoHintContent } from '../../basic/InfoHint';
 import { toneVars } from '../internal/util';
 import s from './display.module.css';
 
@@ -25,10 +26,12 @@ export interface StatTileProps {
   emphasis?: 'warn';
   /** card: overview tiles · summary: big number (devices) · well: small stats inside a card. */
   variant?: 'card' | 'summary' | 'well';
+  /** What the title means, behind an «i» after it (not on a linked tile: a button cannot sit inside a link). */
+  hint?: InfoHintContent;
 }
 
 /** A headline number or state with its context. */
-export function StatTile({ title, icon, dot, value, sub, others, footer, to, emphasis, variant = 'card' }: StatTileProps) {
+export function StatTile({ title, icon, dot, value, sub, others, footer, to, emphasis, variant = 'card', hint }: StatTileProps) {
   const nav = useUiNav();
   const onClick = useRouteClick(to);
   const content = (
@@ -37,6 +40,7 @@ export function StatTile({ title, icon, dot, value, sub, others, footer, to, emp
         <span className={s.tileTitle}>
           {icon ? <Icon name={icon} size={18} /> : null}
           {title}
+          {hint && !to ? <InfoHint content={hint} subject={title} /> : null}
         </span>
         {dot ? <StatusDot tone={dot.tone} size={10} glow={dot.glow} /> : null}
       </span>

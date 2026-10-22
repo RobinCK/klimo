@@ -112,17 +112,48 @@ function ForSeconds({ value, onChange }: { value?: number; onChange: (v: number 
   const ut = useUiText();
   return (
     <div data-narrow="">
-      <NumberField label={ut('for at least')} value={value ?? 0} min={0} max={86400} step={10} unit={ut('s')} onChange={(v) => onChange(v > 0 ? v : undefined)} />
+      <NumberField
+        label={ut('for at least')}
+        value={value ?? 0}
+        min={0}
+        max={86400}
+        step={10}
+        unit={ut('s')}
+        onChange={(v) => onChange(v > 0 ? v : undefined)}
+        hint={ut('It counts as true only after holding this long without a break, and turns false at once. 0 — at once; e.g. 120 s, so a short spike or a Zigbee glitch changes nothing.')}
+      />
     </div>
   );
 }
 
-function OptionalNumber({ label, value, onChange, min, max, step, unit }: { label: string; value?: number; onChange: (v: number | undefined) => void; min: number; max: number; step: number; unit?: string }) {
+function exitAtHint(ut: UiTextFn): string {
+  return ut('Once true, it stays true until the value comes back across this second number. E.g. «battery below 30» with 40 here: on at 29 %, off only at 40 %, so a value hovering around 30 % does not flip it.');
+}
+
+function OptionalNumber({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step,
+  unit,
+  info,
+}: {
+  label: string;
+  value?: number;
+  onChange: (v: number | undefined) => void;
+  min: number;
+  max: number;
+  step: number;
+  unit?: string;
+  info?: string;
+}) {
   const ut = useUiText();
   const on = value != null;
   return (
     <div className={s.labelled}>
-      <CheckboxRow checked={on} title={label} onChange={(c) => onChange(c ? Math.max(min, Math.min(max, 0)) : undefined)} />
+      <CheckboxRow checked={on} title={label} info={info} onChange={(c) => onChange(c ? Math.max(min, Math.min(max, 0)) : undefined)} />
       {on ? <NumberField ariaLabel={label} value={value ?? 0} min={min} max={max} step={step} unit={unit} onChange={onChange} /> : <span className={s.fieldLabel}>{ut('off')}</span>}
     </div>
   );
@@ -173,6 +204,7 @@ function LeafFields({ node, onChange, search, ctx }: LeafProps) {
           <NumberField label={ut('Value')} value={node.value} min={-100000} max={100000} step={0.1} onChange={(value) => onChange({ ...node, value })} />
           <OptionalNumber
             label={ut('Hysteresis: stays true until')}
+            info={exitAtHint(ut)}
             value={node.exitAt}
             min={-100000}
             max={100000}
@@ -341,7 +373,16 @@ function LeafFields({ node, onChange, search, ctx }: LeafProps) {
           <Labelled label={ut('Measured as')}>
             <Select value={node.basis ?? 'now'} options={basis} onChange={(b) => onChange({ ...node, basis: b })} ariaLabel={ut('Measured as')} />
           </Labelled>
-          <OptionalNumber label={ut('Hysteresis: stays true until')} value={node.exitAt} min={-40} max={45} step={0.5} unit="°" onChange={(exitAt) => onChange({ ...node, exitAt })} />
+          <OptionalNumber
+            label={ut('Hysteresis: stays true until')}
+            info={exitAtHint(ut)}
+            value={node.exitAt}
+            min={-40}
+            max={45}
+            step={0.5}
+            unit="°"
+            onChange={(exitAt) => onChange({ ...node, exitAt })}
+          />
           <ForSeconds value={node.forSec} onChange={(forSec) => onChange({ ...node, forSec })} />
         </div>
       );

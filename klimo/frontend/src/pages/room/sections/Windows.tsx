@@ -3,7 +3,7 @@ import type { ContactKind, WindowReaction } from '@api/model';
 import { api } from '@api/endpoints';
 import { useAutosave, useMutation, useResource } from '@data';
 import { AutoGrid, Button, CheckboxRow, ContactRow, FallbackNote, RadioCardList, SegmentedControl, Stack, StatTile } from '@ui';
-import { fmtDelta, fmtDur, fmtDurSec, fmtPct, fmtSince, fmtTemp, t, windowReactionLabel } from '@i18n';
+import { fmtDelta, fmtDur, fmtDurSec, fmtPct, fmtSince, fmtTemp, t, windowDelayHints, windowReactionLabel } from '@i18n';
 import { AddEntityDialog } from '../AddEntityDialog';
 import { closeDialog, openDialog, useOpenDialog } from '../dialogs';
 import { lockable, SettingPill } from './readonly';
@@ -48,6 +48,7 @@ function Body(p: SectionProps) {
   );
   const contacts = room.sensors.filter((s) => s.role === 'contact').sort((a, b) => a.order - b.order);
   const w = win.value;
+  const delays = windowDelayHints(w);
   const cooling = state.activeModes.cool && !state.activeModes.heat;
   const reactions: { value: WindowReaction; title: string; hint: string }[] = [
     { value: 'pause', title: cooling ? t('Do not cool') : t('Do not heat'), hint: t('Close the valves; the room does not ask for heat.') },
@@ -101,6 +102,7 @@ function Body(p: SectionProps) {
         <StatTile
           variant="well"
           title={t('React if open longer than')}
+          hint={delays.open}
           value={
             <SettingPill
               readOnly={!p.canEdit}
@@ -115,6 +117,7 @@ function Body(p: SectionProps) {
         <StatTile
           variant="well"
           title={t('Resume after closing in')}
+          hint={delays.resume}
           value={
             <SettingPill
               readOnly={!p.canEdit}
@@ -129,6 +132,7 @@ function Body(p: SectionProps) {
         <StatTile
           variant="well"
           title={t('Remind if open for')}
+          hint={delays.remind}
           value={
             <SettingPill
               readOnly={!p.canEdit}

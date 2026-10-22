@@ -165,7 +165,8 @@ export function worstSeverity(d: DeviceHealth): 0 | 1 | 2 {
 export function stateChip(d: DeviceHealth, ctx: Names, now: EpochMs): { tone: Tone; label: string } {
   if (d.ignored) return { tone: 'off', label: t('Not watched') };
   if (isOffline(d)) {
-    return { tone: 'err', label: d.lastSeenAt ? t('Offline for {dur}', { dur: fmtSince(d.lastSeenAt, now) }) : t('Offline') };
+    // the first minute of an outage has no length worth showing («Немає зв’язку 0 хв»)
+    return { tone: 'err', label: d.lastSeenAt && now - d.lastSeenAt >= 60_000 ? t('Offline for {dur}', { dur: fmtSince(d.lastSeenAt, now) }) : t('Offline') };
   }
   const trv = d.problems.find((p) => p.type === 'trv_unconfirmed' || p.type === 'trv_failed');
   if (trv) {
@@ -231,7 +232,7 @@ export function seenView(d: DeviceHealth, now: EpochMs): { text: string; title: 
   const offline = isOffline(d);
   return {
     // an outage is measured exactly («1 год 40 хв тому»); a live device only needs «4 хв тому»
-    text: !d.lastSeenAt ? t('never') : offline ? t('{dur} ago', { dur: fmtSince(d.lastSeenAt, now) }) : fmtAgo(d.lastSeenAt, now),
+    text: !d.lastSeenAt ? t('never') : offline && now - d.lastSeenAt >= 60_000 ? t('{dur} ago', { dur: fmtSince(d.lastSeenAt, now) }) : fmtAgo(d.lastSeenAt, now),
     title: d.lastSeenAt ? fmtDateTime(d.lastSeenAt) : t('No reports yet'),
     tone: offline ? 'err' : undefined,
   };

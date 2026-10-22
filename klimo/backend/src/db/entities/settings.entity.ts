@@ -33,6 +33,7 @@ export class SettingsRow {
   @FloatCol() glassCoefficient: number;
   @JsonCol() presence: GeneralSettings['presence'];
   @JsonCol() defaults: GeneralSettings['defaults'];
+  @JsonCol() tariffs: GeneralSettings['tariffs'];
   @BoolCol() onboardingDismissed: boolean;
   @TsCol() updatedAt: number;
 }

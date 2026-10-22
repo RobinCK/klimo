@@ -9,7 +9,11 @@ import {
   EMITTER_KINDS,
   EMITTER_ROLES,
   EVENT_KINDS,
+  GAS_PRICE_UNITS,
   HOUSE_MODES,
+  METER_KINDS,
+  METER_UNITS,
+  meterUnitFits,
   OUTDOOR_AGGREGATIONS,
   PRIORITY_DEFAULT,
   PRIORITY_LOCKED,
@@ -54,7 +58,7 @@ import type {
   Z2mInstance,
 } from '../shared/model';
 import type { ConfigGraph } from './graph';
-import { conditionTriggers } from './refs';
+import { conditionTriggers, sourceEntities } from './refs';
 import { dayIssues, weekIssues } from './schedule-ops';
 
 /* =====================================================================================================
@@ -474,6 +478,38 @@ function curveInto(v: V, s: SourceConfig): void {
   }
 }
 
+const METER_DOMAINS = ['sensor', 'input_number', 'number'];
+
+/** One meter per kind, in a unit that fits it (a temperature sensor bound as the gas meter is refused). */
+function metersInto(v: V, s: SourceConfig): void {
+  if (!v.arr('meters', s.meters, METER_KINDS.length)) {
+    return;
+  }
+
+  const kinds = new Set<unknown>();
+  s.meters.forEach((m, i) => {
+    const p = `meters.${i}`;
+    if (!v.obj(p, m)) {
+      return;
+    }
+
+    if (v.oneOf(`${p}.kind`, m.kind, METER_KINDS) && kinds.has(m.kind)) {
+      v.push(`${p}.kind`, 'unique');
+    }
+
+    kinds.add(m.kind);
+    v.entity(`${p}.entityId`, m.entityId, METER_DOMAINS, { required: true, checkExists: s.enabled });
+    if (m.unit === null || !v.str(`${p}.unit`, m.unit, 1, 16) || !METER_KINDS.includes(m.kind)) {
+      return;
+    }
+
+    if (!meterUnitFits(m.kind, m.unit)) {
+      const expected = Object.keys(METER_UNITS).filter((u) => meterUnitFits(m.kind, u));
+      v.push(`${p}.unit`, 'unit', { expected: expected.join('|') });
+    }
+  });
+}
+
 export function validateSource(s: SourceConfig, g: ConfigGraph, env: ValidationEnv = {}): Issues {
   const v = new V(env);
   v.str('name', s.name, 1, 40);
@@ -496,6 +532,7 @@ export function validateSource(s: SourceConfig, g: ConfigGraph, env: ValidationE
     v.numOrNull('energy.minBatteryPct', s.energy.minBatteryPct, 0, 100);
     v.numOrNull('energy.staggerSec', s.energy.staggerSec, 0, 120);
   }
+  metersInto(v, s);
   const gd = s.guards;
   if (v.obj('guards', gd)) {
     v.num('guards.minRunMin', gd.minRunMin, 0, 60);
@@ -575,6 +612,26 @@ function bandInto(v: V, path: string, band: unknown): void {
   v.num(`${path}.above`, band.above, 0.1, 1.0, 0.1);
 }
 
+/**
+ * Who else switches `entityId`: a source, a pump, a mixing valve, a radiator valve (or one of its
+ * switches) or another room's dehumidifier. A dehumidifier bound to any of them would switch it by the
+ * humidity — the boiler relay, a pump — so it is refused.
+ */
+function switchedElsewhere(g: ConfigGraph, entityId: string, roomId: Id): { code: string; params: Record<string, string> } | null {
+  for (const s of g.sources.values()) if (sourceEntities(s).includes(entityId)) return { code: 'in_use', params: { sourceId: s.id, source: s.name } };
+  for (const p of g.pumps.values()) if (p.entityId === entityId || p.speed?.entityId === entityId) return { code: 'in_use', params: { by: p.name } };
+  for (const c of g.circuits.values()) if (c.mixingValve?.entityId === entityId) return { code: 'in_use', params: { by: c.name } };
+  for (const d of g.emitterDevices.values()) {
+    if (d.entityId !== entityId && !Object.values(d.siblings ?? {}).includes(entityId)) continue;
+    if (d.roomId !== roomId) return { code: 'bound_elsewhere', params: { roomId: d.roomId, room: g.rooms.get(d.roomId)?.name ?? '' } };
+    return { code: 'in_use', params: { by: d.name } };
+  }
+  for (const o of g.rooms.values()) {
+    if (o.id !== roomId && o.humidity?.dehumidifier?.entityId === entityId) return { code: 'bound_elsewhere', params: { roomId: o.id, room: o.name } };
+  }
+  return null;
+}
+
 function roomTrvs(g: ConfigGraph, roomId: Id): EmitterDevice[] {
   return [...g.emitterDevices.values()].filter((d) => d.roomId === roomId && d.kind === 'trv');
 }
@@ -636,6 +693,8 @@ export function validateRoom(r: RoomConfig, g: ConfigGraph): Issues {
     v.num('humidity.dewGlassMarginC', h.dewGlassMarginC, 0.5, 10);
     if (h.dehumidifier) {
       v.entity('humidity.dehumidifier.entityId', h.dehumidifier.entityId, [...SWITCHABLE, 'humidifier'], { required: true });
+      const taken = isStr(h.dehumidifier.entityId) ? switchedElsewhere(g, h.dehumidifier.entityId, r.id) : null;
+      if (taken) v.push('humidity.dehumidifier.entityId', taken.code, taken.params);
       if (v.num('humidity.dehumidifier.onAbovePct', h.dehumidifier.onAbovePct, 30, 95) && v.num('humidity.dehumidifier.offBelowPct', h.dehumidifier.offBelowPct, 20, 95) && h.dehumidifier.offBelowPct >= h.dehumidifier.onAbovePct) {
         v.push('humidity.dehumidifier.offBelowPct', 'order', { max: h.dehumidifier.onAbovePct });
       }
@@ -1338,6 +1397,14 @@ export function validateSettings(s: ConfigGraph['settings'], g: ConfigGraph): Is
     v.num('defaults.windowOpenDelaySec', d.windowOpenDelaySec, 0, 300);
     v.num('defaults.windowResumeDelaySec', d.windowResumeDelaySec, 0, 1800);
     v.num('defaults.windowRemindAfterMin', d.windowRemindAfterMin, 5, 120);
+  }
+  const tr = s.tariffs;
+  if (v.obj('tariffs', tr)) {
+    v.str('tariffs.currency', tr.currency, 0, 8);
+    v.numOrNull('tariffs.electricityPerKwh', tr.electricityPerKwh, 0, 100);
+    v.numOrNull('tariffs.gasPrice', tr.gasPrice, 0, 10_000);
+    v.oneOf('tariffs.gasPriceUnit', tr.gasPriceUnit, GAS_PRICE_UNITS);
+    v.num('tariffs.gasKwhPerM3', tr.gasKwhPerM3, 5, 15);
   }
   v.bool('onboardingDismissed', s.onboardingDismissed);
   return v.issues;

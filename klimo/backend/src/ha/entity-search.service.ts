@@ -57,6 +57,8 @@ const ROLE_ALSO = 8;
 const PLANT_LAST = 20;
 /** Another room's device can move here, but the free ones come first. */
 const OTHER_ROOM = 5;
+/** Wizard search: «window» means a window contact, not a thermometer named «By the window». */
+const KIND_WORD = 30;
 /** Outdoor sensor picker: thermometers whose name or area says outdoors come before the rest. */
 const OUTDOOR_FIRST = 20;
 /** Devices «Не використовуються в Klimo» lists only what is clearly a climate device. */
@@ -99,6 +101,7 @@ export class EntitySearchService implements IEntitySearch {
     const nearArea = q.nearRoomId ? this.config.room(q.nearRoomId)?.haAreaId ?? null : null;
     const domains = q.domain?.length ? new Set(q.domain) : null;
     const classes = q.deviceClass?.length ? new Set(q.deviceClass) : null;
+    const words = new Set(searchKey(query).split(' ').filter(Boolean));
 
     const hits: { r: EntityRecord; score: number; name: string; wizard: WizardRoleHint | null }[] = [];
     for (const r of this.registry.records()) {
@@ -130,13 +133,16 @@ export class EntitySearchService implements IEntitySearch {
       if (q.nearAreaId && r.areaId === q.nearAreaId) score += NEAR_AREA;
       if (q.role === 'outdoor' && isOutdoorSensor(f)) score += OUTDOOR_FIRST;
       if (wizard && q.wizard && q.wizard !== 'any') score += wizard.suggested[0] === q.wizard ? ROLE_FIRST : wizard.suggested.includes(q.wizard) ? ROLE_ALSO : 0;
+      if (wizard && f.deviceClass && searchKey(f.deviceClass).split(' ').every((w) => words.has(w))) score += KIND_WORD;
       if (wizard && referenced.has(r.entityId)) {
         const uses = this.config.usages({ type: 'entity', id: r.entityId });
         score -= uses.some((u) => u.type === 'source' || u.type === 'pump' || u.type === 'circuit') ? PLANT_LAST : uses.some((u) => u.type === 'room') ? OTHER_ROOM : 0;
       }
       hits.push({ r, score, name: f.name, wizard });
     }
-    hits.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'uk') || a.r.entityId.localeCompare(b.r.entityId));
+    // a combined sensor is added through its temperature entity: its humidity follows, not leads
+    const paired = (w: WizardRoleHint | null) => (w?.suggested[0] === 'humidity' && w.possible.includes('temp_humidity') ? 1 : 0);
+    hits.sort((a, b) => b.score - a.score || paired(a.wizard) - paired(b.wizard) || a.name.localeCompare(b.name, 'uk') || a.r.entityId.localeCompare(b.r.entityId));
     const haUnit = this.registry.haUnit();
     return hits.slice(0, limit).map((h) => {
       const dto = this.registry.toDto(h.r, this.usedBy(h.r.entityId, referenced), h.score);

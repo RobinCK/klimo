@@ -53,6 +53,8 @@ POST   /api/rooms/:id/target/preview                         U
 POST   /api/rooms/:id/target                                 U
 POST   /api/rooms/:id/target/undo                            U
 DELETE /api/rooms/:id/override                               U
+GET    /api/rooms/:id/control                                U
+PUT    /api/rooms/:id/control                                U
 POST   /api/rooms/:id/boost                                  U
 DELETE /api/rooms/:id/boost                                  U
 POST   /api/rooms/:id/airing                                 U
@@ -96,6 +98,8 @@ POST   /api/house/profile/preview                            U
 PUT    /api/house/profile                                    U
 DELETE /api/house/profile                                    U
 POST   /api/house/profile/undo                               U
+GET    /api/house/control                                    U
+PUT    /api/house/control                                    U
 GET    /api/house/mode                                       U
 POST   /api/house/mode/preview                               U
 PUT    /api/house/mode                                       U
