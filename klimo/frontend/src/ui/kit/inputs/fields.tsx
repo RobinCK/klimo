@@ -49,10 +49,12 @@ export interface SelectProps<T> {
   disabled?: boolean;
   /** Stretch to the parent's width (default for md/lg, sm stays content-sized). */
   fullWidth?: boolean;
+  /** A line under the control: what the choice affects. */
+  help?: ReactNode;
 }
 
 /** Native select in the kit look: the OS list is the most usable one on phones. */
-export function Select<T>({ value, options, onChange, size = 'md', ariaLabel, onFocusChange, label, disabled, fullWidth }: SelectProps<T>) {
+export function Select<T>({ value, options, onChange, size = 'md', ariaLabel, onFocusChange, label, disabled, fullWidth, help }: SelectProps<T>) {
   const id = useId();
   const index = options.findIndex((o) => Object.is(o.value, value) || o.value === value);
   const inline = !(fullWidth ?? size !== 'sm');
@@ -63,6 +65,7 @@ export function Select<T>({ value, options, onChange, size = 'md', ariaLabel, on
         className={s.select}
         data-size={size}
         aria-label={label ? undefined : ariaLabel}
+        aria-describedby={describedBy(id, undefined, help)}
         value={index >= 0 ? String(index) : ''}
         disabled={disabled}
         onChange={(e) => {
@@ -84,13 +87,16 @@ export function Select<T>({ value, options, onChange, size = 'md', ariaLabel, on
       </span>
     </span>
   );
-  if (!label) return control;
+  if (!label && !help) return control;
   return (
     <div className={s.field}>
-      <label htmlFor={id} className={s.label}>
-        {label}
-      </label>
+      {label ? (
+        <label htmlFor={id} className={s.label}>
+          {label}
+        </label>
+      ) : null}
       {control}
+      <Messages id={id} help={help} />
     </div>
   );
 }

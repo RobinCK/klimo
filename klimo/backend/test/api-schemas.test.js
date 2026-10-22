@@ -151,8 +151,8 @@ family('undo', S.undoRequest, { ok: [{ revertToken: 'abc' }], bad: [[{}, 'revert
 /* ── HA lookups and history ───────────────────────────────────────────────────────────────────── */
 
 family('entity search query', S.entityQuery, {
-  ok: [{}, { q: 'диван', domain: 'sensor,binary_sensor', unassigned: 'true', limit: '20' }, { role: 'trv' }],
-  bad: [[{ limit: '9000' }, 'limit'], [{ role: 'toaster' }, 'role'], [{ domain: 'Sensor' }, 'domain.0']],
+  ok: [{}, { q: 'диван', domain: 'sensor,binary_sensor', unassigned: 'true', limit: '20' }, { role: 'trv' }, { wizard: 'any', nearAreaId: 'office' }, { wizard: 'temperature' }],
+  bad: [[{ limit: '9000' }, 'limit'], [{ role: 'toaster' }, 'role'], [{ domain: 'Sensor' }, 'domain.0'], [{ wizard: 'toaster' }, 'wizard'], [{ nearAreaId: '' }, 'nearAreaId']],
 });
 
 family('history query', S.historyQuery, {

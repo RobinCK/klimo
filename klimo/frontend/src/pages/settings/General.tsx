@@ -8,7 +8,7 @@ import type { GeneralSettings, Lang, RoomDefaults, RoomTargetDuration, SettingsB
 import { ROOM_TARGET_DURATIONS, WINDOW_REACTIONS } from '@api/model';
 import { api } from '@api/endpoints';
 import { useAutosave, useEntitySearch, useResource } from '@data';
-import { languagePref, setLanguagePref, useColorScheme, type LangPref, type SchemePref } from '@app';
+import { applyPanelLanguage, languagePref, setLanguagePref, useColorScheme, type LangPref, type SchemePref } from '@app';
 import { AutosaveStatus, CheckboxRow, EntityPicker, KeyValueList, Section, SegmentedControl, Select, Stack, TextField, ValuePill } from '@ui';
 import { LANG_NAMES, fmtDur, fmtTemp, roomDurationLabel, t, windowReactionLabel } from '@i18n';
 
@@ -112,7 +112,11 @@ export function HouseSection({ bundle, onSaved, canEdit }: { bundle: SettingsBun
 }
 
 export function DisplaySection({ bundle, onSaved, canEdit, haUnits }: { bundle: SettingsBundle; onSaved: Save; canEdit: boolean; haUnits: 'metric' | 'us_customary' | null }) {
-  const auto = useGeneral(bundle, ['units', 'notificationLanguage', 'uiLanguage'] as const, onSaved);
+  const auto = useGeneral(bundle, ['units', 'notificationLanguage', 'uiLanguage'] as const, (saved) => {
+    onSaved(saved);
+    // a new panel language for everyone shows here as soon as the server has it
+    applyPanelLanguage(saved.general.uiLanguage);
+  });
   const v = auto.value;
   const scheme = useColorScheme();
   const lang = languagePref();
@@ -140,6 +144,7 @@ export function DisplaySection({ bundle, onSaved, canEdit, haUnits }: { bundle: 
           disabled={!canEdit}
           fullWidth
           onChange={(notificationLanguage) => auto.set((prev) => ({ ...prev, notificationLanguage }))}
+          help={t('Notifications, dashboard cards and entity names in Home Assistant — not this panel.')}
         />
         <Select<GeneralSettings['uiLanguage']>
           label={t('Panel language for everyone')}
@@ -149,6 +154,11 @@ export function DisplaySection({ bundle, onSaved, canEdit, haUnits }: { bundle: 
           disabled={!canEdit}
           fullWidth
           onChange={(uiLanguage) => auto.set((prev) => ({ ...prev, uiLanguage }))}
+          help={
+            lang === 'auto'
+              ? t('For everyone who has not picked a language in their browser; the page reloads.')
+              : t('This browser keeps its own language ({lang}); choose Default below to follow this setting.', { lang: LANG_NAMES[lang] })
+          }
         />
         <SegmentedControl<LangPref>
           ariaLabel={t('Language in this browser')}
@@ -156,7 +166,7 @@ export function DisplaySection({ bundle, onSaved, canEdit, haUnits }: { bundle: 
           full
           options={[{ value: 'auto', label: t('Default') }, ...langOptions]}
           onChange={(p) => setLanguagePref(p)}
-          hint={t('Language in this browser only; the page reloads.')}
+          hint={t('Language in this browser only; Default follows the setting above. The page reloads.')}
         />
         <SegmentedControl<SchemePref>
           ariaLabel={t('Colour scheme')}

@@ -2,7 +2,7 @@
 export { App, Root } from './App';
 export { AppBanners, HouseSeasonPill, InboxBell } from './Chrome';
 export { haDarkMode, haLanguage, inHomeAssistant } from './haBridge';
-export { languagePref, resolveLanguage, setLanguagePref, type LangPref } from './lang';
+export { applyPanelLanguage, languagePref, resolveLanguage, setLanguagePref, type LangPref } from './lang';
 export { areaOf, desktopNav, phoneNav, phoneTabOf, type AreaKey } from './nav';
 export { getJsonPref, getPref, setJsonPref, setPref, usePref } from './prefs';
 export {

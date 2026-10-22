@@ -31,7 +31,7 @@ profile klimo flags=(attach_disconnected,mediate_deleted) {
   signal (send) peer=@{profile_name},
 
   # the image is only read: node, musl and the libraries it maps, Klimo's code and its SQLite addon
-  /{app,bin,etc,home,lib,media,mnt,opt,root,run,sbin,srv,usr,var}/{,**} r,
+  /{app,bin,etc,home,lib,opt,root,run,sbin,usr,var}/{,**} r,
   /{,usr/,usr/local/}lib/**.so* mr,
   /app/node_modules/**.node mr,
 

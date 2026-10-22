@@ -1,15 +1,15 @@
 /**
- * Panel language: the stored choice → the Home Assistant user's language (parent frame) →
- * the add-on's default UI language → the browser languages → English. Resolved once at boot;
- * changing it reloads the page so every label is rebuilt in the new language.
+ * Panel language, resolved once at boot in the order of pickLanguage (langOrder.ts). Changing
+ * it reloads the page so every label is rebuilt in the new language.
  */
-import type { Lang } from '@api/model';
+import type { GeneralSettings, Lang } from '@api/model';
 import { api } from '@api/endpoints';
-import { isLang } from '@i18n';
+import { isLang, lang } from '@i18n';
 import { getPref, setPref } from './prefs';
 import { haLanguage } from './haBridge';
+import { pickLanguage, type LangPref } from './langOrder';
 
-export type LangPref = 'auto' | Lang;
+export type { LangPref };
 
 export function languagePref(): LangPref {
   const v = getPref('lang');
@@ -21,17 +21,19 @@ export function setLanguagePref(pref: LangPref): void {
   window.location.reload();
 }
 
-const base = (tag: string | null | undefined): Lang | null => {
-  const b = (tag ?? '').toLowerCase().split(/[-_]/)[0];
-  return isLang(b) ? b : null;
-};
+function browserLanguages(): readonly string[] {
+  try {
+    return navigator.languages?.length ? navigator.languages : [navigator.language];
+  } catch {
+    return [];
+  }
+}
 
-/** The server's default, without delaying the first paint for more than a moment. */
-async function serverLanguage(timeoutMs: number): Promise<Lang | null> {
+/** The panel language for everyone, without delaying the first paint for more than a moment. */
+async function everyoneLanguage(timeoutMs: number): Promise<GeneralSettings['uiLanguage'] | null> {
   try {
     const settings = await Promise.race([api.settings.get(), new Promise<null>((r) => window.setTimeout(() => r(null), timeoutMs))]);
-    const ui = settings?.general.uiLanguage;
-    return ui && ui !== 'auto' ? ui : null;
+    return settings?.general.uiLanguage ?? null;
   } catch {
     return null;
   }
@@ -39,18 +41,19 @@ async function serverLanguage(timeoutMs: number): Promise<Lang | null> {
 
 export async function resolveLanguage(): Promise<Lang> {
   const pref = languagePref();
-  if (pref !== 'auto') return pref;
-  const ha = base(haLanguage());
-  if (ha) return ha;
-  const server = await serverLanguage(1500);
-  if (server) return server;
-  try {
-    for (const l of navigator.languages?.length ? navigator.languages : [navigator.language]) {
-      const b = base(l);
-      if (b) return b;
-    }
-  } catch {
-    /* no navigator */
-  }
-  return 'en';
+  // a browser with its own choice needs nothing from the server
+  const everyone = pref === 'auto' ? await everyoneLanguage(1500) : null;
+  return pickLanguage({ pref, everyone, ha: haLanguage(), browser: browserLanguages() });
+}
+
+/**
+ * A newly saved panel language for everyone, applied in this browser: the page reloads when it
+ * changes what is shown here. False when nothing changes — this browser keeps its own choice, or
+ * the language is the one already on screen.
+ */
+export function applyPanelLanguage(everyone: GeneralSettings['uiLanguage']): boolean {
+  const next = pickLanguage({ pref: languagePref(), everyone, ha: haLanguage(), browser: browserLanguages() });
+  if (next === lang()) return false;
+  window.location.reload();
+  return true;
 }

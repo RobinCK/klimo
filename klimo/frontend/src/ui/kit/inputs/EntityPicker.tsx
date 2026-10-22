@@ -13,7 +13,7 @@ const DEBOUNCE_MS = 200;
 type Search = (q: string) => Promise<HaEntityDto[]>;
 
 /** Debounced search with stale-response protection; runs while `active`. */
-function useEntityResults(search: Search, query: string, active: boolean) {
+export function useEntityResults(search: Search, query: string, active: boolean) {
   const [results, setResults] = useState<HaEntityDto[]>([]);
   const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle');
   const seq = useRef(0);
