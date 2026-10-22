@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { In, LessThan } from 'typeorm';
+import { In, LessThan, MoreThan } from 'typeorm';
 import { uuid } from '../common/ids';
+import type { Rewindable } from '../common/rewind';
 import { Db } from '../db/database';
 import { JournalRow } from '../db/entities';
 import type { Decision, EpochMs, IBus, IEvents, IJournal, JournalEntry, JournalPageDto, JournalQuery } from '../shared/model';
@@ -37,7 +38,7 @@ function subjectKey(d: Decision): string {
  * engine decisions, drops repeats of the same decision within 60 s and pushes new lines to the UI.
  */
 @Injectable()
-export class JournalService implements IJournal {
+export class JournalService implements IJournal, Rewindable {
   private readonly log = new Logger('Journal');
   private readonly lastSeen = new Map<string, EpochMs>();
 
@@ -99,6 +100,12 @@ export class JournalService implements IJournal {
       .take(Math.min(PAGE_MAX, limit))
       .getMany();
     return rows.map(toEntry);
+  }
+
+  async forgetAfter(at: EpochMs): Promise<number> {
+    for (const [k, ts] of this.lastSeen) if (ts > at) this.lastSeen.delete(k);
+    const res = await this.db.tx((em) => em.delete(JournalRow, { ts: MoreThan(at) }));
+    return res.affected ?? 0;
   }
 
   private prune(now: EpochMs): void {

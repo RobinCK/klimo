@@ -48,6 +48,8 @@ export interface Env {
   };
   /** Development: requests without ingress headers are treated as an HA admin. */
   devAdmin: boolean;
+  /** Under the Supervisor: HTTP and the live socket answer only the Supervisor (ingress) and the container. */
+  ingressOnly: boolean;
 }
 
 type Vars = Record<string, string | undefined>;
@@ -127,6 +129,7 @@ export function loadEnv(vars: Vars = process.env, options?: Options): Env {
       warmup: vars.KLIMO_SIM_WARMUP !== '0',
     },
     devAdmin: flag(vars.KLIMO_DEV_ADMIN),
+    ingressOnly: !simulate && !flag(vars.KLIMO_DEV_ADMIN) && !!vars.SUPERVISOR_TOKEN,
   };
 }
 

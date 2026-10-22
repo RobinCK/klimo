@@ -534,9 +534,13 @@ export class MqttService implements IMqtt, OnApplicationBootstrap, OnModuleDestr
 
     let problems: { count: number; kinds: EventKind[] } = { count: house.alertsCount.critical + house.alertsCount.warning, kinds: [] };
     let alerts = house.alertsCount.total;
+    let open: PublishView['incidents'];
     if (incidents) {
       try {
-        const active = incidents.list({ scope: 'all', status: 'active' }).filter((i) => i.severity === 'critical' || i.severity === 'warning');
+        // hidden ones too: they keep an issue the user hid off the room card
+        const all = incidents.list({ scope: 'all', status: 'active', limit: 200 });
+        open = all.map((i) => ({ id: i.id, kind: i.kind, roomId: i.roomId, sourceId: i.sourceId, entityId: i.entityId, deviceKey: i.deviceKey, hidden: i.hidden }));
+        const active = all.filter((i) => i.severity === 'critical' || i.severity === 'warning');
         problems = { count: active.length, kinds: [...new Set(active.map((i) => i.kind))] };
         alerts = incidents.counts().total;
       } catch (e) {
@@ -581,6 +585,7 @@ export class MqttService implements IMqtt, OnApplicationBootstrap, OnModuleDestr
       durations,
       problems,
       alerts,
+      incidents: open,
     };
   }
 
@@ -847,12 +852,11 @@ function climateAttributes(cfg: Doc, d: Doc): Doc {
     hvac_action: d.action ?? null,
     preset_mode: d.preset ?? null,
     preset_modes: cfg.preset_modes,
+    temperature: d.t ?? null,
   };
   if (cfg.temperature_low_command_topic) {
     out.target_temp_low = d.lo ?? null;
     out.target_temp_high = d.hi ?? null;
-  } else {
-    out.temperature = d.t ?? null;
   }
   return { ...out, ...asDoc(d.attrs) };
 }

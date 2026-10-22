@@ -134,6 +134,38 @@ test('room day: no Klimo data → rebuilt from the raw sensors with the room met
   assert.deepEqual(rawCall.ids.sort(), ['sensor.a', 'sensor.b', 'sensor.h'], 'excluded sensors stay out');
 });
 
+test('the last hour for the trend after a restart: Klimo’s own sensor, else the raw sensors when it went quiet', async () => {
+  const { ha, config, history } = setup();
+  livingRoom(config);
+  const bed = config.addRoom('r_bed', 'Спальня', 'spalnia');
+  bed.temperature = { ...bed.temperature, method: 'average' };
+  config.addSensor('r_bed', 'sensor.c');
+  config.addRoom('r_empty', 'Комора', 'komora');
+  const from = NOW - HOUR;
+  ha.historyFn = (ids) => {
+    const out = {};
+    // the living room's own sensor ran until a minute ago, warming 0.1° every 10 min
+    if (ids.includes('sensor.klimo_vitalnia_temperature')) {
+      out['sensor.klimo_vitalnia_temperature'] = [...Array.from({ length: 6 }, (_, i) => ({ s: (20 + i / 10).toFixed(1), lu: sec(from + i * 10 * MIN) })), { s: 'unavailable', lu: sec(NOW - MIN) }];
+    }
+    // the bedroom's stopped 40 min ago (Klimo was down): its raw sensor carries on
+    if (ids.includes('sensor.klimo_spalnia_temperature')) out['sensor.klimo_spalnia_temperature'] = [{ s: '18.0', lu: sec(from) }, { s: 'unavailable', lu: sec(from + 20 * MIN) }];
+    if (ids.includes('sensor.c')) out['sensor.c'] = [{ s: '18.0', lu: sec(from) }, { s: '18.6', lu: sec(from + 30 * MIN) }];
+    return out;
+  };
+  const got = await history.recentRoomTemps(config.engineConfig().rooms, from, NOW);
+  assert.deepEqual(Object.keys(got).sort(), ['r_bed', 'r_liv'], 'a room without any data is left out');
+  const liv = got.r_liv;
+  assert.equal(liv.length, 59, 'one point a minute while the sensor reported');
+  assert.deepEqual(liv[0], [from, 20]);
+  assert.deepEqual(liv.at(-1), [NOW - 2 * MIN, 20.5]);
+  const bedPts = got.r_bed;
+  assert.equal(bedPts.length, 61);
+  assert.deepEqual(bedPts.at(-1), [NOW, 18.6]);
+  assert.equal(ha.historyCalls.length, 2);
+  assert.deepEqual(ha.historyCalls[1].ids, ['sensor.c']);
+});
+
 test('room day: recorder down → the last hours from memory', async () => {
   const { ha, config, history, bus } = setup();
   livingRoom(config);

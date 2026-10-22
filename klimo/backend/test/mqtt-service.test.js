@@ -86,6 +86,23 @@ test('hub and room cards are coalesced to one update per 2 s; the room state is 
   assert.equal(h.transport.json('klimo/hub/attrs').rooms[0].t, 20);
 });
 
+test('the room card carries the incident behind its issue, so the card can snooze or hide it', async () => {
+  const h = await connected();
+  const kids = h.engine.roomsList.find((r) => r.roomId === 'r_5c1a9f');
+  // the engine does not link its issues: the service finds the incident among the open ones
+  kids.issues = kids.issues.map((i) => ({ ...i, incidentId: null }));
+  h.incidents.items = [{ id: 'inc_hum', kind: 'humidity_high', severity: 'warning', roomId: 'r_5c1a9f', sourceId: null, entityId: null, deviceKey: null, hidden: false }];
+  tick(h);
+  await h.timers.advance(2_500);
+  assert.equal(h.transport.json('klimo/room/r_5c1a9f/card').iss.id, 'inc_hum');
+
+  // hidden with «Сховати»: the issue leaves the card
+  h.incidents.items = [{ ...h.incidents.items[0], hidden: true }];
+  h.bus.emit('incident.changed', { id: 'inc_hum' });
+  await h.timers.advance(2_500);
+  assert.equal(h.transport.json('klimo/room/r_5c1a9f/card').iss, null);
+});
+
 test('sync progress of a room card is never held back', async () => {
   const h = await connected();
   h.engine.roomsList[0].tempC = 19.9;
@@ -232,6 +249,23 @@ test('season change republishes the climate configs with the new modes', async (
   assert.ok(changed.includes('homeassistant/climate/klimo_r_9f2a1c/config'));
   assert.ok(!changed.includes('homeassistant/sensor/klimo_r_9f2a1c_temperature/config'));
   assert.deepEqual(h.transport.json('homeassistant/climate/klimo_r_9f2a1c/config').modes, ['off', 'auto', 'cool']);
+});
+
+test('neutral season: a room with a single target keeps it on the heat_cool climate', async () => {
+  const h = await connected();
+  h.engine.seasonState = { ...h.engine.seasonState, season: 'neutral', houseMode: 'auto' };
+  tick(h);
+  await h.timers.advance(300);
+  const config = h.transport.json('homeassistant/climate/klimo_r_9f2a1c/config');
+  assert.deepEqual(config.modes, ['off', 'auto', 'heat_cool']);
+  assert.equal(config.temperature_state_topic, 'klimo/room/r_9f2a1c/state');
+  assert.equal(config.temperature_command_topic, 'klimo/room/r_9f2a1c/temp/set');
+  const state = h.transport.json('klimo/room/r_9f2a1c/state');
+  assert.equal(state.t, 20);
+  assert.equal(state.lo, null);
+  const climate = h.mqtt.asHaStates().find((s) => s.entity_id === 'climate.klimo_vitalnia');
+  assert.equal(climate.attributes.temperature, 20);
+  assert.equal(climate.attributes.target_temp_low, null);
 });
 
 test('asHaStates mirrors what HA would show for the card harness', async () => {

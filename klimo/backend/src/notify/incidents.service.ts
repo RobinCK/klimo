@@ -1,12 +1,13 @@
 import { HttpStatus, Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import { In, MoreThanOrEqual, Not } from 'typeorm';
+import { In, MoreThan, MoreThanOrEqual, Not } from 'typeorm';
 import { ApiException, notFound, validationError } from '../common/http';
 import { uuid } from '../common/ids';
 import { errorText } from '../common/logger';
 import { lazyRef } from '../common/refs';
+import type { Rewindable } from '../common/rewind';
 import { Db } from '../db/database';
-import { IncidentRow } from '../db/entities';
+import { IncidentRow, SentMessageRow } from '../db/entities';
 import { addDays, fromLocal, hhmmToMinute, toLocal } from '../engine/core/time';
 import type {
   Actor,
@@ -164,7 +165,7 @@ function sameFacts(a: Incident['facts'], b: Incident['facts']): boolean {
  * problem returning within ten minutes re-opens its old row so nobody is told twice.
  */
 @Injectable()
-export class IncidentService implements IIncidents, OnModuleInit, OnModuleDestroy {
+export class IncidentService implements IIncidents, Rewindable, OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger('Incidents');
   /** Non-resolved incidents by dedup key. */
   private readonly open = new Map<string, Incident>();
@@ -806,6 +807,25 @@ export class IncidentService implements IIncidents, OnModuleInit, OnModuleDestro
     } finally {
       this.flushing = null;
     }
+  }
+
+  /** Incidents opened after `at` never happened; the messages sent after it go from the log too. */
+  async forgetAfter(at: EpochMs): Promise<number> {
+    await this.flush();
+    for (const [id, i] of this.byId) {
+      if (i.openedAt <= at) continue;
+      this.byId.delete(id);
+      this.dirty.delete(id);
+      this.lastEmit.delete(id);
+      if (this.open.get(i.dedupKey)?.id === id) this.open.delete(i.dedupKey);
+    }
+    for (const [key, ts] of this.candidates) if (ts > at) this.candidates.delete(key);
+    for (const [key, ts] of this.oneShots) if (ts > at) this.oneShots.delete(key);
+    return this.db.tx(async (em) => {
+      const res = await em.delete(IncidentRow, { openedAt: MoreThan(at) });
+      await em.delete(SentMessageRow, { at: MoreThan(at) });
+      return res.affected ?? 0;
+    });
   }
 
   /** Waits until every change so far is in the database. */

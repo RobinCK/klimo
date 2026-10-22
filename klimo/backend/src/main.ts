@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { AppModule } from './app.module';
 import { ApiExceptionFilter } from './common/http';
+import { ingressFilter, peerAllowed } from './common/ingress';
 import { errorText, loggerLevels } from './common/logger';
 import { appVersion, env } from './env';
 import { EventsService } from './events/events.service';
@@ -21,6 +22,7 @@ async function bootstrap(): Promise<void> {
   // full configuration imports can be large
   app.useBodyParser('json', { limit: '5mb' });
   app.useGlobalFilters(new ApiExceptionFilter());
+  if (env.ingressOnly) app.use(ingressFilter(true));
 
   // the Lovelace card bundle (auto-deployed to HA, also served here for the dev harness)
   const cardDir = path.resolve(env.cardDir);
@@ -39,7 +41,7 @@ async function bootstrap(): Promise<void> {
   }
 
   const server = await app.listen(env.port, '0.0.0.0');
-  app.get(EventsService).attach(server);
+  app.get(EventsService).attach(server, (req) => peerAllowed(req, env.ingressOnly));
   log.log(`Klimo ${appVersion()} listening on :${env.port}${env.simulate ? ' (simulator)' : ''}`);
 }
 

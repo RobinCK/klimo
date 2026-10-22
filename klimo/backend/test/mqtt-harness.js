@@ -940,6 +940,10 @@ class FakeRoomActions {
     this.rec('applyClimateCommand', a);
     return {};
   }
+  async clearRoomProfile(...a) {
+    this.rec('clearRoomProfile', a);
+    return {};
+  }
   durations() {
     return [];
   }

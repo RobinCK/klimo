@@ -96,7 +96,9 @@ test('climate modes follow the season and the house mode', () => {
   assert.deepEqual(neutral.modes, ['off', 'auto', 'heat_cool']);
   assert.equal(neutral.temperature_low_command_topic, 'klimo/room/r_9f2a1c/temp_low/set');
   assert.equal(neutral.temperature_high_state_template, '{{ value_json.hi }}');
-  assert.equal(neutral.temperature_command_topic, undefined);
+  // a room with one target in the neutral season must still show it
+  assert.equal(neutral.temperature_command_topic, 'klimo/room/r_9f2a1c/temp/set');
+  assert.equal(neutral.temperature_state_template, '{{ value_json.t }}');
   assert.deepEqual([neutral.min_temp, neutral.max_temp], [5, 32]);
   const summer = byId(discover({ cfg, season: 'cooling' }), 'klimo_r_9f2a1c_climate').config;
   assert.deepEqual(summer.modes, ['off', 'auto', 'cool']);

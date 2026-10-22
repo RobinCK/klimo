@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { Brackets } from 'typeorm';
+import { Brackets, MoreThan } from 'typeorm';
 import { uuid } from '../common/ids';
+import type { Rewindable } from '../common/rewind';
 import { Db } from '../db/database';
 import { RunSpanRow } from '../db/entities';
 import { deepClone } from '../shared/defaults';
@@ -28,7 +29,7 @@ const openKey = (s: Pick<RunSpan, 'subject' | 'subjectId' | 'kind'>) => `${s.sub
  * so an end edge finds its start without a query.
  */
 @Injectable()
-export class SpanStore implements ISpanStore {
+export class SpanStore implements ISpanStore, Rewindable {
   private readonly log = new Logger('Spans');
   private readonly openSpans = new Map<string, RunSpan>();
 
@@ -98,6 +99,17 @@ export class SpanStore implements ISpanStore {
     if (subjectId) qb.andWhere('s.subjectId = :subjectId', { subjectId });
     const rows = await qb.orderBy('s.startTs', 'ASC').getMany();
     return rows.map(toSpan);
+  }
+
+  /** Spans that began after `at` go; one still running then ends there. */
+  async forgetAfter(at: EpochMs): Promise<number> {
+    const removed = await this.db.tx(async (em) => {
+      const res = await em.delete(RunSpanRow, { startTs: MoreThan(at) });
+      await em.update(RunSpanRow, { endTs: MoreThan(at) }, { endTs: at });
+      return res.affected ?? 0;
+    });
+    for (const [key, s] of this.openSpans) if (s.startTs > at) this.openSpans.delete(key);
+    return removed;
   }
 
   async closeDangling(at: EpochMs, stillOn: (s: RunSpan) => boolean): Promise<number> {

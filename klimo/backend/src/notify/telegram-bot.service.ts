@@ -146,7 +146,12 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
     if (this.polling) return;
     this.polling = true;
     this.abort = new AbortController();
-    this.loopDone = this.loop().catch((e) => this.log.error(`polling stopped: ${errorText(e)}`));
+    this.loopDone = this.loop().catch((e) => {
+      // an unexpected failure must not leave the flag set, or polling would never start again
+      this.polling = false;
+      this.log.error(`polling stopped: ${errorText(e)}`);
+      this.retryLater();
+    });
   }
 
   async stop(): Promise<void> {
@@ -282,11 +287,11 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
 
   /** One long poll; the offset is saved so a restart never handles a button press twice. */
   async pollOnce(): Promise<'ok' | 'conflict' | 'fatal' | 'error' | 'stopped'> {
-    if (this.offset === null) {
-      const stored = Number(await this.db.kvGet(OFFSET_KEY));
-      this.offset = Number.isFinite(stored) && stored > 0 ? stored : 0;
-    }
     try {
+      if (this.offset === null) {
+        const stored = Number(await this.db.kvGet(OFFSET_KEY));
+        this.offset = Number.isFinite(stored) && stored > 0 ? stored : 0;
+      }
       const updates = await this.call<TgUpdate[]>(
         'getUpdates',
         { timeout: POLL_TIMEOUT_SEC, offset: this.offset, allowed_updates: ['callback_query', 'message'] },
@@ -394,7 +399,9 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
       await reply(systemText('pairUnknown', {}, ctx)).catch(() => undefined);
       return null;
     }
-    if (pair.status === 'pending' && now > pair.expiresAt) {
+    // a code pairs one chat: the same deep link forwarded to another chat must not add it as well
+    const usedElsewhere = pair.status === 'paired' && (!pair.targetId || this.config.get('targets', pair.targetId)?.chatId !== chatId);
+    if ((pair.status === 'pending' && now > pair.expiresAt) || usedElsewhere) {
       await reply(systemText('pairExpired', {}, ctx)).catch(() => undefined);
       return null;
     }

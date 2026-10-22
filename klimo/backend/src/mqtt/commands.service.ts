@@ -325,7 +325,9 @@ export class CommandsService {
     if (m) {
       const room = this.room(m[1]);
       const actor = await this.entityActor(`klimo_${room.id}_climate`, `climate.klimo_${objectId(room.slug)}`, receivedAt);
-      await this.rooms().applyClimateCommand(room.id, this.climateCommand(m[2], payload), actor);
+      // HA puts «none» in front of the presets: no profile of the room's own, it follows the house again
+      if (m[2] === 'preset' && payload.trim().toLowerCase() === 'none') await this.rooms().clearRoomProfile(room.id, actor);
+      else await this.rooms().applyClimateCommand(room.id, this.climateCommand(m[2], payload), actor);
       return this.ok(room.id, actor);
     }
     m = ROOM_PRESS.exec(topic);

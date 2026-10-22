@@ -39,9 +39,11 @@ export class HaMobileChannel implements ChannelAdapter {
     if (panel) buttons.push({ action: 'URI', title: msg.openLabel, uri: panel });
     if (buttons.length) data.actions = buttons;
     if (msg.critical) {
-      // iOS reads `push.sound`, Android the channel/importance keys; each ignores the other's
+      // iOS reads `push.sound`, Android the channel/stream keys; each ignores the other's. On Android only
+      // the alarm stream sounds through silent mode and Do Not Disturb (`channel` for older app versions)
       data.push = { sound: { name: 'default', critical: 1, volume: 1.0 } };
-      data.channel = 'klimo_critical';
+      data.channel = 'alarm_stream';
+      data.media_stream = 'alarm_stream';
       data.importance = 'high';
       data.priority = 'high';
       data.ttl = 0;

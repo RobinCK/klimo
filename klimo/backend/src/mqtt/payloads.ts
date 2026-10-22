@@ -1,4 +1,5 @@
 import { BRAND } from '../common/brand';
+import { sourceLabels } from '../config/source-labels';
 import { sourceTemplate } from '../shared/defaults';
 import { round1 } from '../shared/model';
 import type {
@@ -122,8 +123,10 @@ export class ViewIndex {
   readonly summaryById = new Map<Id, RoomSummary>();
   private readonly lines = new Map<Id, Line>();
   private readonly entities = new Map<Id, Set<string>>();
+  private readonly sourceLabels: Map<Id, string>;
 
   constructor(readonly view: PublishView) {
+    this.sourceLabels = sourceLabels(view.cfg);
     for (const r of view.cfg.rooms) this.roomById.set(r.id, r);
     for (const s of view.rooms) this.stateById.set(s.roomId, s);
     for (const s of view.summaries) this.summaryById.set(s.id, s);
@@ -137,8 +140,15 @@ export class ViewIndex {
     return id ? this.view.cfg.profiles.find((p) => p.id === id)?.name ?? null : null;
   }
 
-  sourceName(id: Id | null | undefined): string | null {
-    return id ? this.view.cfg.sources.find((s) => s.id === id)?.name ?? null : null;
+  /**
+   * Sources sharing a name read with their room («Кондиціонер · Вітальня»), except on that room's own
+   * card, where the plain name (and its short word) says enough.
+   */
+  sourceName(id: Id | null | undefined, inRoom: Id | null = null): string | null {
+    if (!id) return null;
+    const s = this.view.cfg.sources.find((x) => x.id === id);
+    if (!s) return null;
+    return inRoom !== null && s.roomId === inRoom ? s.name : (this.sourceLabels.get(id) ?? s.name);
   }
 
   /** The texts shorten a source still called by its default name («від ТН»): they need its kind. */
@@ -480,7 +490,7 @@ function targetLine(ix: ViewIndex, roomId: Id): Line {
 function deviceLine(ix: ViewIndex, room: RoomConfig, state: RoomState, summary: RoomSummary): RoomCardAttrs['dev'] {
   const d = summary.device;
   // the texts shorten a source still called by its default name («від ТН») and need its kind for that
-  const source = ix.sourceName(d.sourceId);
+  const source = ix.sourceName(d.sourceId, room.id);
   const sourceKind = ix.sourceKind(d.sourceId);
   const syncing = (state.sync.phase === 'sending' || state.sync.phase === 'partial' || state.sync.phase === 'retry') && d.total > 0 && d.acked < d.total;
   switch (d.kind) {
@@ -876,7 +886,7 @@ export function hubAttrs(ix: ViewIndex): HubAttrs {
         const cfgSource = cfg.sources.find((x) => x.id === s.sourceId);
         return {
           id: s.sourceId,
-          n: cfgSource?.name ?? s.sourceId,
+          n: ix.sourceName(s.sourceId) ?? s.sourceId,
           i: cfgSource ? sourceTemplate(cfgSource.kind).icon : 'anyEntity',
           st: s.state,
           tone: s.tone,

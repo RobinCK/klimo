@@ -100,9 +100,10 @@ export class EventsService implements IEvents, OnModuleDestroy {
     bus?.on('command.result', ({ reqId, ok, code, error }) => this.send({ type: 'command.result', payload: { reqId, ok, code, error } }));
   }
 
-  attach(server: Server): void {
+  /** `allow` screens the upgrade request (who may open the live channel at all). */
+  attach(server: Server, allow: (req: IncomingMessage) => boolean = () => true): void {
     if (this.wss) return;
-    this.wss = new WebSocketServer({ server, path: '/api/ws' });
+    this.wss = new WebSocketServer({ server, path: '/api/ws', verifyClient: (info: { req: IncomingMessage }) => allow(info.req) });
     this.wss.on('connection', (ws: WebSocket, _req: IncomingMessage) => this.onConnection(ws));
     this.wss.on('error', (e) => this.log.warn(`websocket server: ${e.message}`));
     // drop half-open sockets (phone went to sleep) so throttled fan-out does not pile up behind them

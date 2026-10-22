@@ -34,7 +34,9 @@ test('a critical alert reaches every routed target at once, with the alarm sound
     const push = h.ha.callsOf('notify', 'mobile_app_phone')[0].data;
     assert.equal(push.data.tag, inc.id);
     assert.deepEqual(push.data.push, { sound: { name: 'default', critical: 1, volume: 1.0 } });
-    assert.equal(push.data.channel, 'klimo_critical');
+    assert.equal(push.data.channel, 'alarm_stream', 'Android: through silent mode and Do Not Disturb');
+    assert.equal(push.data.media_stream, 'alarm_stream');
+    assert.deepEqual([push.data.priority, push.data.ttl], ['high', 0]);
     assert.deepEqual(push.data.actions[0], { action: `KLIMO_ACK_${inc.id}`, title: 'Бачу' });
     assert.deepEqual(push.data.actions.at(-1), { action: 'URI', title: 'Відкрити Klimo', uri: '/a0d7b954_klimo' });
 
@@ -366,6 +368,30 @@ test('the preview uses the real templates and the settings show live channel sta
     assert.equal(s.catalogue.length, 35);
     assert.equal(s.telegramTokenPresent, false);
     assert.equal(s.channels.find((c) => c.channel === 'ha_persistent').openCount, 0);
+  } finally {
+    await h.close();
+  }
+});
+
+test('sources sharing a name are told apart by their room in the messages', async () => {
+  const h = await openNotify();
+  try {
+    await house(h);
+    const { newSourceConfig } = require('../dist/shared/defaults');
+    const room = (name) => h.config.create('rooms', { name }, ACTOR);
+    const ac = async (roomId) => {
+      const { id: _id, ...base } = newSourceConfig('ac', { id: '', name: 'Кондиціонер', now: 0 });
+      return h.config.create('sources', { ...base, roomId }, ACTOR);
+    };
+    const living = await room('Вітальня');
+    const bedroom = await room('Спальня');
+    const a = await ac(living.id);
+    await ac(bedroom.id);
+    assert.equal(h.texts.names().source(a.id), 'Кондиціонер · Вітальня');
+    await h.tick([det('source_unavailable', `source_unavailable:${a.id}`, { sourceId: a.id, facts: { sourceId: a.id, minutes: 3 } })]);
+    await h.advance(5 * MIN);
+    const msg = (await h.log()).find((m) => m.incidentId);
+    assert.ok(msg.title.startsWith('Кондиціонер · Вітальня'), msg.title);
   } finally {
     await h.close();
   }

@@ -1,4 +1,5 @@
 import { BRAND } from '../common/brand';
+import { sourceLabels } from '../config/source-labels';
 import { HOUSE_MODES, ROOM_STATES, SEASONS } from '../shared/model';
 import type {
   Emitter,
@@ -467,14 +468,16 @@ export function buildDiscovery(input: DiscoveryInput): DiscoveredEntity[] {
 
   /* plant */
   const optIn = cfg.settings.mqttConfigEntities;
+  const sourceName = sourceLabels(cfg);
   for (const s of [...cfg.sources].sort((a, b) => a.order - b.order)) {
     const topic = TOPIC.source(s.id);
+    const name = sourceName.get(s.id) ?? s.name;
     c.add({
       component: 'binary_sensor',
       uniqueId: `klimo_src_${s.id}`,
       object: `klimo_source_${objectId(s.id)}`,
       role: 'source',
-      name: s.name,
+      name,
       config: {
         device_class: 'running',
         state_topic: topic,
@@ -490,7 +493,7 @@ export function buildDiscovery(input: DiscoveryInput): DiscoveredEntity[] {
         uniqueId: `klimo_src_${s.id}_allowed`,
         object: `klimo_source_${objectId(s.id)}_allowed`,
         role: 'source_allowed',
-        name: `${s.name} ${label('allowed', lang)}`,
+        name: `${name} ${label('allowed', lang)}`,
         config: {
           entity_category: 'config',
           icon: 'mdi:power-settings',
@@ -784,12 +787,15 @@ function addRoom(c: Catalogue, input: DiscoveryInput, room: RoomConfig): void {
   });
 }
 
-/** The room thermostat: season-dependent modes, dual bounds only in the `heat_cool` variant. */
+/**
+ * The room thermostat: season-dependent modes. The `heat_cool` variant adds the dual bounds next to the
+ * single target: a room with one target in the neutral season still shows it (lo/hi are then None, and
+ * HA draws whichever of the two is set).
+ */
 function climateConfig(cfg: EngineConfig, room: RoomConfig, caps: { heat: boolean; cool: boolean }, input: DiscoveryInput): Record<string, unknown> {
   const state = TOPIC.room(room.id);
   const modes = climateModes(caps, input.season, input.houseMode);
   const [min, max] = climateRange(cfg, room, modes, caps);
-  const dual = modes.includes('heat_cool');
   const config: Record<string, unknown> = {
     modes,
     mode_state_topic: state,
@@ -799,8 +805,11 @@ function climateConfig(cfg: EngineConfig, room: RoomConfig, caps: { heat: boolea
     current_temperature_template: json('cur'),
     current_humidity_topic: state,
     current_humidity_template: json('hum'),
+    temperature_state_topic: state,
+    temperature_state_template: json('t'),
+    temperature_command_topic: TOPIC.roomSet(room.id, 'temp'),
   };
-  if (dual) {
+  if (modes.includes('heat_cool')) {
     Object.assign(config, {
       temperature_low_state_topic: state,
       temperature_low_state_template: json('lo'),
@@ -808,12 +817,6 @@ function climateConfig(cfg: EngineConfig, room: RoomConfig, caps: { heat: boolea
       temperature_high_state_topic: state,
       temperature_high_state_template: json('hi'),
       temperature_high_command_topic: TOPIC.roomSet(room.id, 'temp_high'),
-    });
-  } else {
-    Object.assign(config, {
-      temperature_state_topic: state,
-      temperature_state_template: json('t'),
-      temperature_command_topic: TOPIC.roomSet(room.id, 'temp'),
     });
   }
   Object.assign(config, {

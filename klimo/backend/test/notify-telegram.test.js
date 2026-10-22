@@ -213,3 +213,59 @@ test('«HA не на зв’язку» goes only through the own bot, to Telegra
     await h.close();
   }
 });
+
+test('pairing: a used code does not pair a second chat it was forwarded to', async () => {
+  const h = await openNotify({ token: '123:abc' });
+  try {
+    await h.settings({ telegram: { mode: 'own', haService: null, botUsername: null } });
+    await h.bot.verify();
+    const pair = await h.notify.telegramPair();
+    const start = (update_id, chat) => ({ update_id, message: { message_id: update_id, date: 0, chat, text: `/start ${pair.code}` } });
+    h.tg.reply('getUpdates', 200, { ok: true, result: [start(20, { id: 501, type: 'private', first_name: 'Ігор' })] });
+    await h.bot.pollOnce();
+    assert.equal(h.notify.telegramPairStatus(pair.code).target.chatId, '501');
+
+    // the same chat again is harmless; another chat with the same link is turned away
+    h.tg.reply('getUpdates', 200, { ok: true, result: [start(21, { id: 501, type: 'private', first_name: 'Ігор' }), start(22, { id: 909, type: 'private', first_name: 'Чужий' })] });
+    await h.bot.pollOnce();
+    const chats = h.config.list('targets').filter((t) => t.channel === 'telegram').map((t) => t.chatId);
+    assert.deepEqual(chats, ['501']);
+    assert.equal(h.tg.of('sendMessage').at(-1).body.chat_id, '909');
+    assert.equal(h.tg.of('sendMessage').at(-1).body.text, 'Код застарів — створіть новий у Klimo.');
+  } finally {
+    await h.close();
+  }
+});
+
+test('polling survives a database hiccup and an unexpected failure does not wedge it', async () => {
+  const h = await openNotify({ token: '123:abc' });
+  try {
+    await ownBot(h);
+    const kvGet = h.db.kvGet.bind(h.db);
+    h.db.kvGet = async () => {
+      throw new Error('database is locked');
+    };
+    assert.equal(await h.bot.pollOnce(), 'error');
+    h.db.kvGet = kvGet;
+    assert.equal(await h.bot.pollOnce(), 'ok');
+
+    // a crash inside the loop clears the polling flag, so the next reconcile starts it again
+    h.bot.verify = async () => {
+      throw new Error('boom');
+    };
+    await h.bot.reconcile();
+    await h.bot.loopDone;
+    assert.equal(h.bot.isPolling(), false);
+    let started = 0;
+    h.bot.verify = async () => {
+      started++;
+      return { ok: false, botUsername: null, error: 'offline' };
+    };
+    await h.bot.reconcile();
+    await h.bot.loopDone;
+    assert.equal(started, 1);
+    await h.bot.stop();
+  } finally {
+    await h.close();
+  }
+});

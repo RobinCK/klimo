@@ -5,6 +5,7 @@ const { ROOM_IDS } = require('../dist/sim/demo-house');
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
+const DAY = 24 * HOUR;
 const EVENING_ROOMS = { r_living: 19.8, r_bedroom: 17.6, r_kids: 21.7, r_study: 21.0, r_kitchen: 20.9, r_bath: 23.7, r_hall: 19.1 };
 
 async function withWorld(opts, fn) {
@@ -73,6 +74,32 @@ test('switching to the summer scenario rebuilds the world for that afternoon', (
     assert.equal(s.rooms.find((r) => r.roomId === ROOM_IDS.bath).humidityPct, 63);
     assert.equal(ha.getState('binary_sensor.bedroom_window').state, 'on');
     assert.equal(ha.connected, true);
+  }));
+
+test('going back to an earlier day forgets the later journal lines and timelines', () =>
+  withWorld({ warmup: false }, async ({ world, journal, spans, clock }) => {
+    const line = (ts) => journal.add({ code: 'source.start', category: 'src', tone: 'heat', params: {}, sourceId: 's_heatpump' }, ts);
+    const run = (subjectId, edge, at) => ({ subject: 'source', subjectId, kind: 'run', mode: 'heat', edge, at });
+    await line(EVENING - HOUR);
+    await spans.apply([run('s_heatpump', 'start', EVENING - 10 * MIN)]);
+    world.clock({ jumpTo: EVENING + 2 * HOUR });
+    await line(EVENING + HOUR);
+    await spans.apply([run('s_heatpump', 'end', EVENING + 20 * MIN), run('s_boiler', 'start', EVENING + HOUR)]);
+
+    // the clock goes back to the evening itself
+    world.clock({ jumpTo: EVENING });
+    await settle();
+    const page = await journal.page({ limit: 50 });
+    assert.deepEqual(page.items.map((x) => x.ts), [EVENING - HOUR]);
+    const left = await spans.range(EVENING - DAY, EVENING + DAY);
+    assert.deepEqual(left.map((x) => [x.subjectId, x.startTs, x.endTs]), [['s_heatpump', EVENING - 10 * MIN, EVENING]], 'a run going on then ends there');
+    assert.deepEqual(spans.open(), []);
+
+    // a scenario on an earlier date: everything after its moment goes
+    await world.scenario('frost_morning');
+    assert.deepEqual((await journal.page({ limit: 50 })).items, []);
+    assert.deepEqual(await spans.range(0, EVENING + DAY), []);
+    assert.ok(clock.now() < EVENING);
   }));
 
 /** A stand-in engine core: heats with the heat pump while the living room is below 20 °C. */

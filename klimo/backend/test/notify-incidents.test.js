@@ -261,3 +261,22 @@ test('incidents survive a restart with their flags', async () => {
     await h2.close();
   }
 });
+
+test('going back in time: incidents opened later are forgotten, earlier ones stay', async () => {
+  const h = await openNotify();
+  try {
+    await h.tick([offline('sensor.a')]);
+    const back = h.clock.now();
+    await h.tick([offline('sensor.a'), offline('sensor.b')], 30 * MIN);
+    assert.equal(h.incidents.list({ scope: 'all' }).length, 2);
+    const removed = await h.incidents.forgetAfter(back);
+    assert.equal(removed, 1);
+    const left = h.incidents.list({ scope: 'all' });
+    assert.deepEqual(left.map((i) => i.entityId), ['sensor.a']);
+    // the same problem seen again later is a new incident, not the forgotten row
+    await h.tick([offline('sensor.a'), offline('sensor.b')], MIN);
+    assert.equal(h.incidents.list({ scope: 'all' }).length, 2);
+  } finally {
+    await h.close();
+  }
+});

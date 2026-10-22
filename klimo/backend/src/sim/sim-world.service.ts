@@ -3,6 +3,7 @@ import { ModuleRef } from '@nestjs/core';
 import { uuid } from '../common/ids';
 import { errorText } from '../common/logger';
 import { lazyRef } from '../common/refs';
+import { isRewindable } from '../common/rewind';
 import { Db } from '../db/database';
 import { SEED_HA_KEY } from '../db/seed';
 import { houseProfileEdges } from '../engine/core/targets';
@@ -37,7 +38,7 @@ import type {
   SimScenarioId,
   SimStateDto,
 } from '../shared/model';
-import { CONFIG_STORE, ENGINE, EVALUATE, EVENTS, JOURNAL, MEMORY_STORE, OVERRIDE_STORE, SPAN_STORE } from '../tokens';
+import { CONFIG_STORE, ENGINE, EVALUATE, EVENTS, INCIDENTS, JOURNAL, MEMORY_STORE, OVERRIDE_STORE, SPAN_STORE } from '../tokens';
 import { Autopilot, type Command } from './autopilot';
 import { buildDemoHouse, ROOM_IDS } from './demo-house';
 import { DEVICES, entityOfRole, entitySpec, ROOM_KEYS, type DeviceSpec, type RoomKey } from './devices';
@@ -81,6 +82,7 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
   private readonly log = new Logger('Simulator');
   private readonly evaluate: () => EvaluateFn | null;
   private readonly engine: () => IEngine | null;
+  private readonly incidents: () => unknown;
   /** Runs the house while no engine is there to do it (a broken or missing engine module). */
   private pilot: { autopilot: Autopilot; at: EpochMs } | null = null;
   private scenarioId: SimScenarioId = env.sim.scenario;
@@ -112,10 +114,13 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
   ) {
     this.evaluate = lazyRef<EvaluateFn>(moduleRef, EVALUATE);
     this.engine = lazyRef<IEngine>(moduleRef, ENGINE);
+    this.incidents = lazyRef<unknown>(moduleRef, INCIDENTS);
   }
 
   async onModuleInit(): Promise<void> {
     await this.seedDemoHouse();
+    // a kept database may hold a later day of an earlier run: the scenario starts before it
+    await this.forgetAfter(this.simClock.now());
     await this.prepare(this.scenarioId, this.simClock.now());
   }
 
@@ -158,6 +163,7 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
   clock(req: SimClockRequest): SimStateDto {
     if (req.jumpTo !== undefined) {
       this.tick();
+      if (req.jumpTo < this.simClock.now()) void this.forgetAfter(req.jumpTo);
       this.simClock.jumpTo(req.jumpTo);
       // going back in time: the house stays as it is, only the calendar moves
       if (req.jumpTo < this.world.now) this.world.now = req.jumpTo;
@@ -233,6 +239,7 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
     const wasPaused = this.simClock.paused;
     this.simClock.setPaused(true);
     const start = scenarioStart(scenario);
+    if (start < this.simClock.now()) await this.forgetAfter(start);
     this.simClock.jumpTo(start);
     for (const o of this.overrides.active()) await this.overrides.remove(o.id);
     await this.prepare(id, start);
@@ -243,6 +250,25 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
     this.events.send({ type: 'sim', payload: this.clockPayload() });
     this.log.log(`scenario ${id} from ${new Date(start).toISOString()}`);
     return this.state();
+  }
+
+  /**
+   * Going back to an earlier day: the journal lines, timelines, alerts and sent messages recorded after
+   * it would otherwise sit «in the future», first in every list.
+   */
+  private async forgetAfter(at: EpochMs): Promise<void> {
+    const stores = { journal: this.journal, spans: this.spans, incidents: this.incidents() };
+    const removed: string[] = [];
+    for (const [name, store] of Object.entries(stores)) {
+      if (!isRewindable(store)) continue;
+      try {
+        const n = await store.forgetAfter(at);
+        if (n) removed.push(`${n} ${name}`);
+      } catch (e) {
+        this.log.warn(`${name} after ${new Date(at).toISOString()} could not be removed: ${errorText(e)}`);
+      }
+    }
+    if (removed.length) this.log.log(`back to ${new Date(at).toISOString()}: removed ${removed.join(', ')} from the later timeline`);
   }
 
   /** Builds the world and its history up to `t0`, then the scenario's state at `t0`. */

@@ -133,7 +133,7 @@ export const ENGINE_DEFAULTS = {
   trv: { calibrationStepC: 0.3, calibrationEveryMin: 10, keepAliveMin: 30 },
   ac: { assistDeficitC: 1.5, heatMinOutdoorC: -5, maxStepC: 1, stepEveryMin: 5, maxOffsetC: 3 },
   windows: { virtualDropC: 1.0, virtualWindowMin: 5, virtualHoldMin: 30 },
-  humidity: { warnPct: 65, holdMin: 15, glassMarginC: 3, glassK: 0.7, dehumOnPct: 62, dehumOffPct: 57, dehumMinOnMin: 10 },
+  humidity: { warnPct: 65, holdMin: 15, glassMarginC: 3, glassK: 0.35, dehumOnPct: 62, dehumOffPct: 57, dehumMinOnMin: 10 },
 } as const;
 
 /* ── singletons ───────────────────────────────────────────────────────────────────────────────── */
@@ -163,7 +163,7 @@ export function defaultSettings(lang: Lang = 'uk'): GeneralSettings {
     haTargetChangeDuration: 'slot',
     adminOnlyConfig: true,
     mqttConfigEntities: false,
-    glassCoefficient: 0.7,
+    glassCoefficient: 0.35,
     presence: {
       enabled: false,
       personEntityIds: [],
@@ -1182,6 +1182,7 @@ export function defaultRoomMemory(roomId: Id, now: EpochMs): RoomMemory {
     floorLimit: offLatch(now),
     demandMode: 'none',
     demandSince: null,
+    preheat: null,
     window: {
       contactOpenSince: null,
       allClosedSince: null,

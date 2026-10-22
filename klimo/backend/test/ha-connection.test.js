@@ -297,3 +297,19 @@ test('lovelace resource: exists, updated with a new version, created, unsupporte
   assert.equal(await ha.ensureLovelaceResource('/other.js'), 'unsupported');
   ha.stop();
 });
+
+test('lovelace resource: a timeout or an HA error is an error, only a missing command means YAML mode', async () => {
+  const { ha, clock } = connect();
+  await settle();
+  ha.server.silent.add('lovelace/resources');
+  const slow = ha.ensureLovelaceResource('/local/klimo-cards.js?v=1');
+  clock.advance(15_000);
+  await assert.rejects(slow, /within 15 s/);
+  ha.server.silent.delete('lovelace/resources');
+  ha.server.answer['lovelace/resources'] = () => [];
+  ha.server.answer['lovelace/resources/create'] = { __error: { code: 'unauthorized', message: 'Unauthorized' } };
+  await assert.rejects(ha.ensureLovelaceResource('/local/klimo-cards.js?v=1'), (e) => e.code === 'unauthorized');
+  ha.server.answer['lovelace/resources/create'] = { __error: { code: 'unknown_command', message: 'Unknown command.' } };
+  assert.equal(await ha.ensureLovelaceResource('/local/klimo-cards.js?v=1'), 'unsupported');
+  ha.stop();
+});

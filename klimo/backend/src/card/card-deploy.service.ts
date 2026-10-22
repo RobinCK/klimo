@@ -10,8 +10,11 @@ import { HA_PORT } from '../tokens';
 
 const FILE = 'klimo-cards.js';
 const RESOURCE_BASE = `/local/${FILE}`;
-// the Home Assistant config dir is mounted here when the `homeassistant_config` map is set
-const WWW_CANDIDATES = ['/homeassistant/www', '/config/www'];
+/** Where the add-on serves its own copy (the simulator's dashboards load it from there). */
+const SERVED_PATH = `/card/${FILE}`;
+// the `homeassistant_config` map mounts the HA config dir at /homeassistant; /config is the add-on's own
+// folder (`addon_config`), whose www HA never serves
+const WWW_CANDIDATES = ['/homeassistant/www'];
 const SHA_KEY = 'card.sha';
 
 type LovelaceStatus = SettingsBundle['lovelace'];
@@ -61,7 +64,11 @@ export class CardDeployService implements ICardDeploy, OnApplicationBootstrap {
 
   private async deploy(force: boolean): Promise<void> {
     // the simulator has no HA config dir and serves the bundle itself
-    if (this.ha.simulated) return;
+    if (this.ha.simulated) {
+      const served = fs.existsSync(this.settings.source);
+      this.state = { deployed: served, resource: 'simulated', path: served ? SERVED_PATH : null };
+      return;
+    }
     const wwwDir = this.settings.www.find((d) => fs.existsSync(path.dirname(d)));
     if (!wwwDir) {
       this.log.log('HA config dir not mounted — add the cards manually (see docs)');

@@ -1,6 +1,7 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { lazyRef } from '../common/refs';
+import { sourceLabels } from '../config/source-labels';
 import type {
   CardTextKey,
   ClockPort,
@@ -160,15 +161,16 @@ export class TextsService implements ITexts {
       }
     }
     for (const p of cfg.pumps) entities.set(p.entityId, p.name);
+    const sources = sourceLabels(cfg);
     for (const s of cfg.sources) {
-      for (const id of commandEntities(s.adapter)) if (!entities.has(id)) entities.set(id, s.name);
+      for (const id of commandEntities(s.adapter)) if (!entities.has(id)) entities.set(id, sources.get(s.id) ?? s.name);
     }
     for (const m of this.config.deviceMeta()) if (m.label) devices.set(m.key, m.label);
     const z2m = this.config.list('z2m');
     this.cache = {
       rev,
       rooms,
-      sources: byId(cfg.sources),
+      sources,
       profiles: byId(cfg.profiles),
       triggers: byId(cfg.triggers),
       rules: byId(cfg.rules),

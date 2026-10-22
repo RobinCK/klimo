@@ -225,3 +225,19 @@ test('the room state carries which bound the target is for the target sensor', (
   assert.equal(P.roomStatePayload(ix, living, ix.stateById.get(living.id)).target_mode, 'dual');
   assert.equal(P.roomStatePayload(ix, bedroom, ix.stateById.get(bedroom.id)).target_mode, 'heat');
 });
+
+test('air conditioners sharing a name read with their room on the system card', () => {
+  const hub = hubOf({
+    real: 'uk',
+    mutate: (_s, cfg, view) => {
+      for (const s of cfg.sources) if (s.kind === 'ac') s.name = 'Кондиціонер';
+      const ac = view.plant.sources.find((s) => s.sourceId === 's_ac1');
+      Object.assign(ac, { on: true, state: 'cooling', mode: 'cool', since: WED_1910 - MIN });
+      for (const s of view.plant.sources) if (s.sourceId !== 's_ac1') Object.assign(s, { on: false, state: 'standby', mode: null });
+    },
+  });
+  assert.equal(source(hub, 's_ac1').n, 'Кондиціонер · Вітальня');
+  assert.equal(source(hub, 's_ac2').n, 'Кондиціонер · Спальня');
+  assert.equal(source(hub, 's_hp').n, 'Тепловий насос');
+  assert.match(hub.house.tiles[0].value, /^Кондиціонер · Вітальня/);
+});

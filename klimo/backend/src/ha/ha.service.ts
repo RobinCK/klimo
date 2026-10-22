@@ -34,6 +34,16 @@ type StatRow = { start: number; mean?: number | null; min?: number | null; max?:
 type HistoryRow = { s: string; lu: number; a?: Record<string, unknown> };
 export type AuthUser = { id: string; name: string; is_admin: boolean; system_generated: boolean };
 
+/** An error result of a WebSocket command; `code` is HA's (`unknown_command`, `home_assistant_error`…). */
+export class HaCommandError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(`${code}: ${message}`);
+  }
+}
+
 interface Pending {
   resolve(v: unknown): void;
   reject(e: Error): void;
@@ -319,7 +329,7 @@ export class HaService implements HaPort, OnModuleInit, OnApplicationShutdown {
       return;
     }
     const err = record(msg.error);
-    p.reject(new Error(`${str(err.code) ?? 'error'}: ${str(err.message) ?? 'request failed'}`));
+    p.reject(new HaCommandError(str(err.code) ?? 'error', str(err.message) ?? 'request failed'));
   }
 
   private onEventMessage(msg: Record<string, unknown>): void {
@@ -740,7 +750,8 @@ export class HaService implements HaPort, OnModuleInit, OnApplicationShutdown {
   /**
    * Registers (or updates) a Lovelace module resource. A resource with the same base URL but another
    * query (version) is updated, so a new card version is not masked by the browser cache. YAML-mode
-   * dashboards manage resources in configuration.yaml → 'unsupported'.
+   * dashboards have no resource commands (`unknown_command`) → 'unsupported'; a timeout or a lost
+   * connection is an error, retried on the next connect.
    */
   async ensureLovelaceResource(url: string): Promise<'created' | 'updated' | 'exists' | 'unsupported'> {
     if (!this.ready) throw new Error('Home Assistant is not connected');
@@ -755,8 +766,9 @@ export class HaService implements HaPort, OnModuleInit, OnApplicationShutdown {
       }
       await this.request({ type: 'lovelace/resources/create', res_type: 'module', url });
       return 'created';
-    } catch {
-      return 'unsupported';
+    } catch (e) {
+      if (e instanceof HaCommandError && e.code === 'unknown_command') return 'unsupported';
+      throw e;
     }
   }
 

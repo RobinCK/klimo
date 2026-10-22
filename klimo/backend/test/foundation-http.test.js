@@ -97,9 +97,14 @@ test('errors leave the API as ApiError bodies', async () => {
   assert.equal((await res.json()).code, 'not_found');
 });
 
-test('backup hooks answer loopback callers', async () => {
+test('backup hooks answer loopback callers; the main database file is left alone in between', async () => {
+  const { Db } = require('../dist/db/database');
+  const autocheckpoint = async () => Object.values((await app.get(Db).ds.query('PRAGMA wal_autocheckpoint'))[0])[0];
   let res = await fetch(`${base}/api/system/backup/pre`, { method: 'POST' });
   assert.equal(res.status, 204);
+  // writes that go on during the copy stay in the WAL instead of being checkpointed into the file
+  assert.equal(await autocheckpoint(), 0);
   res = await fetch(`${base}/api/system/backup/post`, { method: 'POST' });
   assert.equal(res.status, 204);
+  assert.equal(await autocheckpoint(), 1000);
 });

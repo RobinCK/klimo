@@ -83,6 +83,16 @@ test('a room target from an unknown MQTT client is accepted and attributed to «
   assert.deepEqual(call.args[2], { via: 'mqtt', userId: null, userName: null, contextId: null });
 });
 
+test('the HA preset «none» clears the room’s own profile instead of being rejected', async () => {
+  const h = openMqtt();
+  const out = await handle(h, 'klimo/room/r_9f2a1c/preset/set', 'none');
+  assert.equal(out.ok, true);
+  assert.deepEqual(
+    h.roomActions.calls.map((c) => [c.name, c.args[0]]),
+    [['clearRoomProfile', 'r_9f2a1c']],
+  );
+});
+
 test('climate topics map onto the climate command, attributed through the entity registry', async () => {
   const h = openMqtt();
   // the user renamed the entity in HA: the call_service names the new id

@@ -54,6 +54,8 @@ const SPARK_POINTS = 13;
 const STAT_BUCKET = 5 * MIN;
 /** A rebuilt room series is sampled on this grid (fine enough for a day chart, ≤ 288 points). */
 const REBUILD_STEP = 5 * MIN;
+/** Klimo's own sensor counts for the trend seed when it reported this close to the end of the window. */
+const SEED_FRESH = 5 * MIN;
 
 const DISPLAY_KINDS = new Set<TargetDisplayKind>([
   'schedule', 'profile_updated', 'manual', 'range', 'boost', 'window', 'airing', 'off', 'monitor', 'frost', 'presence',
@@ -87,13 +89,18 @@ type Segment = RoomDayDto['targetSegments'][number];
 
 const minuteOf = (t: EpochMs) => Math.floor(t / MIN);
 
+/** The recorder's view of the last hour of room temperatures, for the engine's trend after a restart. */
+export interface RecentRoomTemps {
+  recentRoomTemps(rooms: readonly RoomConfig[], from: EpochMs, to: EpochMs): Promise<Record<Id, [EpochMs, number][]>>;
+}
+
 /**
  * Charts come from the HA recorder (Klimo stores no samples): entity series, statistics, the room day
  * (Klimo's own MQTT sensors, else rebuilt from the raw sensors, else the last 6 h kept in memory),
  * sparklines for every room in one statistics call, and the outdoor history of the season card.
  */
 @Injectable()
-export class HistoryService implements IHistory, OnModuleInit, OnModuleDestroy {
+export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger('History');
   private readonly once = new LogOnce(this.log);
   private readonly cache = new Map<string, { at: EpochMs; ttl: number; value: Promise<unknown> }>();
@@ -313,17 +320,65 @@ export class HistoryService implements IHistory, OnModuleInit, OnModuleDestroy {
     end: EpochMs,
     round: (x: number) => number,
     temperature: boolean,
+    step = REBUILD_STEP,
   ): Point[] {
     const series = sensors.map((s) => ({ w: s.weight, points: this.numericPoints(raw[s.entityId], temperature ? this.tempUnitOf(s.entityId) : null) }));
     if (!series.some((s) => s.points.some(([, v]) => v !== null))) return [];
     const out: Point[] = [];
-    for (let t = from; t <= end; t += REBUILD_STEP) {
+    for (let t = from; t <= end; t += step) {
       const values = series.flatMap((s) => {
         const v = valueAt(s.points, t);
         return v === null ? [] : [{ v, w: s.w }];
       });
       const c = combine(values, method);
       out.push([t, c === null ? null : round(c)]);
+    }
+    return out;
+  }
+
+  /* ── the engine's trend after a restart ────────────────────────────────────────────────────── */
+
+  /**
+   * Room temperatures over [from, to] on a 1-min grid, so the trend shows right after a restart rather
+   * than after 15 min of new samples. Klimo's own sensor (the aggregate as it was published) when it ran
+   * until shortly before, else the room rebuilt from its raw sensors. Rooms without data are left out.
+   */
+  async recentRoomTemps(rooms: readonly RoomConfig[], from: EpochMs, to: EpochMs): Promise<Record<Id, [EpochMs, number][]>> {
+    const out: Record<Id, [EpochMs, number][]> = {};
+    if (!rooms.length || to <= from || !this.ha.connected) return out;
+    const start = Math.ceil(from / MIN) * MIN;
+    const grid = (points: Point[]): [EpochMs, number][] => {
+      const res: [EpochMs, number][] = [];
+      for (let t = start; t <= to; t += MIN) {
+        const v = valueAt(points, t);
+        if (v !== null) res.push([t, v]);
+      }
+      return res;
+    };
+    const ids = this.klimoIds([...rooms]);
+    const ownIds = rooms.map((r) => ids.get(r.id)!.temperature);
+    const own = await this.ha.history(ownIds, from, to, { minimal: true, noAttributes: true });
+    const cfg = this.config.engineConfig();
+    const tempSensors = (r: RoomConfig) => (cfg.sensorsByRoom[r.id] ?? []).filter((s) => s.included && s.role === 'temperature');
+    const ownOf = new Map<Id, [EpochMs, number][]>();
+    const stale: RoomConfig[] = [];
+    for (const r of rooms) {
+      const id = ids.get(r.id)!.temperature;
+      const points = grid(this.numericPoints(own[id], this.tempUnitOf(id)));
+      ownOf.set(r.id, points);
+      // Klimo was down for a while: its sensor has a gap at the end the raw sensors do not
+      if (points.length && points[points.length - 1][0] >= to - SEED_FRESH) out[r.id] = points;
+      else if (tempSensors(r).length) stale.push(r);
+      else if (points.length) out[r.id] = points;
+    }
+    if (stale.length) {
+      const rawIds = [...new Set(stale.flatMap((r) => tempSensors(r).map((s) => s.entityId)))];
+      const raw = await this.ha.history(rawIds, from, to, { minimal: true, noAttributes: true });
+      for (const r of stale) {
+        const rebuilt = this.rebuild(raw, tempSensors(r), r.temperature.method, start, to, (x) => x, true, MIN).filter((p): p is [EpochMs, number] => p[1] !== null);
+        const points = rebuilt.length ? rebuilt : ownOf.get(r.id) ?? [];
+        if (points.length) out[r.id] = points;
+      }
     }
     return out;
   }

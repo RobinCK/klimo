@@ -132,8 +132,31 @@ test('a failing registration is reported as an error; the simulator deploys noth
     await other.onApplicationBootstrap();
     await settle();
     assert.equal(fs.existsSync(l.www), false);
-    assert.deepEqual(other.status(), { deployed: false, resource: null, path: null });
+    assert.equal(other.status().resource, 'simulated');
   } finally {
     l.cleanup();
   }
+});
+
+test('the simulator serves the bundle itself: a state of its own, not «not installed»', async () => {
+  const l = layout({ mounted: false });
+  try {
+    const ha = new FakeHa();
+    ha.simulated = true;
+    const { s } = service(l, ha);
+    await s.onApplicationBootstrap();
+    await settle();
+    assert.deepEqual(s.status(), { deployed: true, resource: 'simulated', path: '/card/klimo-cards.js' });
+    assert.deepEqual(ha.resources, [], 'no dashboard resource is registered');
+    assert.deepEqual(await s.redeploy(), { deployed: true, resource: 'simulated', path: '/card/klimo-cards.js' });
+  } finally {
+    l.cleanup();
+  }
+});
+
+test('the cards go to the HA config mount, never into the add-on’s own /config folder', () => {
+  const s = new CardDeployService(new FakeHa(), new FakeKv());
+  // `homeassistant_config` is mounted at /homeassistant; /config is the `addon_config` folder HA does not serve
+  assert.deepEqual(s.settings.www, ['/homeassistant/www']);
+  assert.equal(s.settings.source.endsWith(path.join('card', 'klimo-cards.js')), true);
 });
