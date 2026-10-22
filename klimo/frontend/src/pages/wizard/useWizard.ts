@@ -146,6 +146,8 @@ export interface Wizard {
   unsupported: { strategy: TrvStrategy; reason: string }[];
   request: CreateRoomRequest;
   issues: ApiErrorIssue[];
+  /** Counts the checks that came back with problems (the shell scrolls to them). */
+  issueRound: number;
   busy: boolean;
   next: () => void;
   back: () => void;
@@ -236,6 +238,7 @@ export function useWizard(): Wizard {
     [],
   );
   const [busy, setBusy] = useState(false);
+  const [issueRound, setIssueRound] = useState(0);
   const [retrying, setRetrying] = useState<CreateRoomStepKind | null>(null);
 
   useEffect(() => {
@@ -368,10 +371,13 @@ export function useWizard(): Wizard {
       try {
         const res = await api.rooms.validate({ step: s, draft: request });
         patch((x) => ({ issues: res.issues.map(plainPath), hints: res.hints ?? x.hints }));
+        if (!res.ok) setIssueRound((n) => n + 1);
         return res.ok;
       } catch (e) {
-        if (isApiError(e) && e.issues.length) patch({ issues: e.issues.map(plainPath) });
-        else toast({ tone: 'err', message: errorText(e) });
+        if (isApiError(e) && e.issues.length) {
+          patch({ issues: e.issues.map(plainPath) });
+          setIssueRound((n) => n + 1);
+        } else toast({ tone: 'err', message: errorText(e) });
         return false;
       } finally {
         setBusy(false);
@@ -388,7 +394,10 @@ export function useWizard(): Wizard {
       liveStore.refetchRooms();
       invalidate('overview');
     } catch (e) {
-      if (isApiError(e) && e.issues.length) patch({ issues: e.issues.map(plainPath) });
+      if (isApiError(e) && e.issues.length) {
+        patch({ issues: e.issues.map(plainPath) });
+        setIssueRound((n) => n + 1);
+      }
       toast({ tone: 'err', message: t('The room was not created: {reason}', { reason: errorText(e) }) });
     } finally {
       setBusy(false);
@@ -544,6 +553,7 @@ export function useWizard(): Wizard {
     unsupported: hints?.unsupportedStrategies ?? [],
     request,
     issues,
+    issueRound,
     busy,
     next,
     back,

@@ -181,7 +181,7 @@ export class MqttService implements IMqtt, OnApplicationBootstrap, OnModuleDestr
   ) {
     transport.onConnect(() => void this.onConnected());
     transport.onClose(() => this.onDisconnected());
-    transport.onMessage((topic, payload) => this.onMessage(topic, payload));
+    transport.onMessage((topic, payload, retained) => this.onMessage(topic, payload, retained === true));
   }
 
   async onApplicationBootstrap(): Promise<void> {
@@ -380,7 +380,7 @@ export class MqttService implements IMqtt, OnApplicationBootstrap, OnModuleDestr
     });
   }
 
-  private onMessage(topic: string, payload: string): void {
+  private onMessage(topic: string, payload: string, retained = false): void {
     if (topic === `${this.settings.prefix}/status`) {
       if (payload.trim() === 'online') {
         // Home Assistant restarted: announce everything again
@@ -394,7 +394,7 @@ export class MqttService implements IMqtt, OnApplicationBootstrap, OnModuleDestr
       void this.command(topic, payload);
       return;
     }
-    if (this.z2m.handles(topic)) this.z2m.onMessage(topic, payload);
+    if (this.z2m.handles(topic)) this.z2m.onMessage(topic, payload, retained);
   }
 
   private async command(topic: string, payload: string): Promise<void> {

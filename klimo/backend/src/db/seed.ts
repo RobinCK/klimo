@@ -182,10 +182,11 @@ export class SeedService implements OnApplicationBootstrap, OnModuleDestroy {
       await this.config.transaction(async (tx) => {
         const settings = tx.singleton('settings');
         const patch: Partial<GeneralSettings> = {};
-        if (!settings.outdoor.sensorEntityId || !settings.outdoor.weatherEntityId) {
+        if (!settings.outdoor.sensorEntityIds.length || !settings.outdoor.weatherEntityId) {
+          const picked = pickOutdoorSensor(states);
           patch.outdoor = {
             ...settings.outdoor,
-            sensorEntityId: settings.outdoor.sensorEntityId ?? pickOutdoorSensor(states),
+            sensorEntityIds: settings.outdoor.sensorEntityIds.length ? settings.outdoor.sensorEntityIds : picked ? [picked] : [],
             weatherEntityId: settings.outdoor.weatherEntityId ?? states.find((s) => s.entity_id.startsWith('weather.'))?.entity_id ?? null,
           };
         }

@@ -6,6 +6,7 @@ import { useUiText } from '../../UiTextContext';
 import { Icon } from '../../basic/Icon';
 import { ActionButton, ActionRow, type KitAction } from '../internal/ActionButton';
 import { cx } from '../internal/util';
+import { StatusBanner } from '../feedback/status';
 import s from './containers.module.css';
 
 const PHONE = '(max-width: 699px)';
@@ -53,12 +54,14 @@ export interface DialogProps {
   actions: KitAction[];
   /** Width: sm 420 · md 520 · lg 680. */
   size?: 'sm' | 'md' | 'lg';
+  /** Why the last attempt failed, in words, shown above the buttons (what no field of the dialog shows). */
+  error?: string | null;
 }
 
 const DIALOG_WIDTH = { sm: 420, md: 520, lg: 680 } as const;
 
 /** Centred modal: Escape and the scrim close it, focus stays inside until it closes. */
-export function Dialog({ open, onClose, title, children, actions, size = 'md' }: DialogProps) {
+export function Dialog({ open, onClose, title, children, actions, size = 'md', error }: DialogProps) {
   return (
     <Modal.Root opened={open} onClose={onClose} size={DIALOG_WIDTH[size]} centered radius={18} zIndex={300} classNames={DIALOG_CLASSES}>
       <Modal.Overlay />
@@ -69,6 +72,7 @@ export function Dialog({ open, onClose, title, children, actions, size = 'md' }:
         </Modal.Header>
         <Modal.Body>
           {children}
+          {error ? <StatusBanner tone="err" icon="alert" text={error} /> : null}
           <ActionRow actions={actions} className={s.footer} />
         </Modal.Body>
       </Modal.Content>
@@ -137,7 +141,8 @@ export interface DrawerProps {
 
 /** Side panel from the right (device details, trigger and rule editors). */
 export function Drawer({ open, onClose, title, children, footer, width = 520 }: DrawerProps) {
-  const phone = useMediaQuery(PHONE) ?? false;
+  // read synchronously: a drawer mounted already open must not slide in at the tablet width first
+  const phone = useMediaQuery(PHONE, undefined, { getInitialValueInEffect: false }) ?? false;
   return (
     <MantineDrawer.Root opened={open} onClose={onClose} position="right" size={phone ? '100%' : width} zIndex={300} classNames={DRAWER_CLASSES}>
       <MantineDrawer.Overlay />

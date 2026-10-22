@@ -340,7 +340,7 @@ function makeCfg(o = {}) {
   const b = boiler(o.boiler ?? {});
   const cfg = {
     revision: 1,
-    settings: { ...d.defaultSettings('uk'), outdoor: { ...d.defaultSettings('uk').outdoor, sensorEntityId: null } },
+    settings: { ...d.defaultSettings('uk'), outdoor: { ...d.defaultSettings('uk').outdoor, sensorEntityIds: [] } },
     safety: { ...d.defaultSafety(), ...(o.safety ?? {}) },
     house: d.defaultHouse(),
     rooms: [room],

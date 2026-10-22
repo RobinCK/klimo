@@ -97,6 +97,7 @@ const EN: Record<string, string> = {
   Інвертор: 'Inverter',
   'Головка в гаражі': 'Garage head',
   'Датчик у гаражі': 'Garage sensor',
+  'Південна стіна': 'South wall',
   'Розетка в гаражі': 'Garage plug',
   'повітря — вода': 'air to water',
   'Повітря — вода': 'Air to water',

@@ -11,6 +11,7 @@ import { AreaSelect, DateField, NumberField, Select, TextField, TimeRangeInput }
 import { Stepper, TimeStepper } from '../inputs/steppers';
 import { ValuePill } from '../inputs/ValuePill';
 import { EntityMultiPicker, EntityPicker } from '../inputs/EntityPicker';
+import { EntityFinder } from '../inputs/EntityFinder';
 import { ColorSwatchPicker, DayOfWeekToggle, DayTabs, IconPicker, MonthToggleGrid } from '../inputs/pickers';
 import { SortableList } from '../inputs/SortableList';
 import { DashedAddButton, FileButton, QuickActionPill, TestButton } from '../inputs/actions';
@@ -304,6 +305,23 @@ function Fields() {
           <EntityPicker value={entity} onChange={(id) => setEntity(id)} search={gallerySearch} placeholder={ut('Find a sensor…')} clearable />
           <EntityMultiPicker value={many} onChange={setMany} search={gallerySearch} placeholder={ut('Add a sensor…')} />
         </AutoGrid>
+      </Item>
+      <Item name="EntityFinder">
+        <EntityFinder
+          search={gallerySearch}
+          // a relay could be either: both are offered; a sensor is clear
+          choices={(e) =>
+            e.domain === 'switch'
+              ? [
+                  { value: 'heater', label: ut('Heater'), icon: 'convector' },
+                  { value: 'floor_zone', label: ut('Floor zone valve'), icon: 'floor' },
+                ]
+              : [{ value: 'temperature', label: ut('Temperature sensor'), icon: 'thermometer' }]
+          }
+          onPick={() => undefined}
+          placeholder={ut('Add a device — name or entity id')}
+          help={ut('Searches all of Home Assistant: thermostats, valves, sensors, plugs.')}
+        />
       </Item>
     </>
   );

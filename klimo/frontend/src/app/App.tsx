@@ -133,11 +133,12 @@ export function App() {
       }
     />
   );
-  // the phone wizard is full screen, without the tab bar
-  const bottom = phone && route.name !== 'wizard' ? <BottomTabBar items={phoneNav(house)} current={phoneTabOf(route)} /> : undefined;
+  // the phone wizard is full screen, without the tab bar — and without banners pushing its buttons off the screen
+  const phoneWizard = phone && route.name === 'wizard';
+  const bottom = phone && !phoneWizard ? <BottomTabBar items={phoneNav(house)} current={phoneTabOf(route)} /> : undefined;
 
   return (
-    <AppShell top={top} bottom={bottom} banner={<AppBanners house={house} simulated={simulated} />}>
+    <AppShell top={top} bottom={bottom} banner={phoneWizard ? undefined : <AppBanners house={house} simulated={simulated} />}>
       <Suspense fallback={null}>
         {/* the page keeps its place in the tree, so opening the panel does not reset it */}
         <RoutedPage key="page" route={overlay ? background.current : route} phone={phone} />

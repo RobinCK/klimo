@@ -3,6 +3,7 @@ import type { IconName, Tone } from '../../types';
 import { useUiText } from '../../UiTextContext';
 import { Icon } from '../../basic/Icon';
 import { IconButton } from '../../basic/IconButton';
+import { InfoHint, type InfoHintContent } from '../../basic/InfoHint';
 import { CodeBlock } from '../display/text';
 import { SegmentedControl, type ChoiceValue, type SegmentedControlProps } from '../inputs/choice';
 import { Stepper, type StepperProps } from '../inputs/steppers';
@@ -182,10 +183,14 @@ export interface CircuitCardProps<T extends ChoiceValue> {
   note?: string;
   /** Caption above the rule control («Насос вмикається, коли»). */
   ruleLabel?: string;
+  /** What the pump entity is and when it is switched, behind an «i» after it. */
+  pumpHint?: InfoHintContent;
+  /** What the rule options mean, behind an «i» after `ruleLabel`. The run-on takes `runOn.hint`. */
+  ruleHint?: InfoHintContent;
 }
 
 /** A heating circuit and its pump: when it runs, how long it runs on, what it serves. */
-export function CircuitCard<T extends ChoiceValue>({ name, pumpEntity, extra, chip, rule, runOn, chips, note, ruleLabel }: CircuitCardProps<T>) {
+export function CircuitCard<T extends ChoiceValue>({ name, pumpEntity, extra, chip, rule, runOn, chips, note, ruleLabel, pumpHint, ruleHint }: CircuitCardProps<T>) {
   const ut = useUiText();
   return (
     <div className={s.wellCard}>
@@ -196,13 +201,29 @@ export function CircuitCard<T extends ChoiceValue>({ name, pumpEntity, extra, ch
             <span className={s.muted}>
               {ut('pump')} <span className={s.mono}>{pumpEntity}</span>
               {extra ? ` · ${extra}` : ''}
+              {pumpHint ? (
+                <>
+                  {' '}
+                  <InfoHint content={pumpHint} subject={ut('pump')} />
+                </>
+              ) : null}
             </span>
           </span>
         </span>
         <ToneChip tone={chip.tone} label={chip.label} />
       </div>
       <div className={s.circuitBlock}>
-        {ruleLabel ? <span className={s.circuitBlockLabel}>{ruleLabel}</span> : null}
+        {ruleLabel ? (
+          <span className={s.circuitBlockLabel}>
+            {ruleLabel}
+            {ruleHint ? (
+              <>
+                {' '}
+                <InfoHint content={ruleHint} subject={ruleLabel} />
+              </>
+            ) : null}
+          </span>
+        ) : null}
         <SegmentedControl {...rule} size={rule.size ?? 'xs'} surface="well" />
       </div>
       <Stepper {...runOn} variant="compact" />

@@ -313,7 +313,7 @@ test('registry index follows new entities and registry updates', () => {
 });
 
 test('wizard search: every entity with the room role it most likely has, ambiguous ones with two', () => {
-  const { search, ha } = house();
+  const { search, ha, config } = house();
   // a Zigbee thermostat on a radiator with no area: the add-room wizard has to find it by name
   ha.set(state('climate.zig_thermostat_office', 'heat', { hvac_modes: ['off', 'heat'], current_temperature: 21.5, temperature: 22, friendly_name: 'Office thermostat' }));
   const hint = (id) => search.search({ q: id, wizard: 'any' }).find((e) => e.entityId === id)?.wizard ?? null;
@@ -327,7 +327,7 @@ test('wizard search: every entity with the room role it most likely has, ambiguo
   assert.deepEqual(hint('climate.bedroom_ac').suggested, ['ac']);
   assert.deepEqual(hint('climate.hall_thermostat'), { suggested: ['ac', 'trv'], possible: ['ac', 'trv', 'heater'] });
   assert.deepEqual(hint('sensor.living_temperature').suggested, ['temp_humidity']);
-  assert.deepEqual(hint('sensor.living_humidity').suggested, ['temp_humidity']);
+  assert.deepEqual(hint('sensor.living_humidity'), { suggested: ['humidity'], possible: ['humidity', 'temp_humidity'] });
   assert.deepEqual(hint('sensor.bedroom_temperature').suggested, ['temperature']);
   assert.deepEqual(hint('binary_sensor.living_window'), { suggested: ['window'], possible: ['window', 'door'] });
   // a plug could drive a heater or a floor zone: the wizard asks
@@ -336,6 +336,10 @@ test('wizard search: every entity with the room role it most likely has, ambiguo
   for (const id of ['switch.living_trv_child_lock', 'number.radiator_ext', 'sensor.living_trv_battery', 'sensor.bedroom_plug_power', 'sensor.outdoor_temperature', 'person.ihor']) {
     assert.equal(hint(id), null, id);
   }
+  // a source's own climate is offered last: it is the plant's, not a room's
+  config.use('climate.bedroom_ac', { type: 'source', id: 's_ac', label: 'AC' });
+  const all = search.search({ wizard: 'any', limit: 500 }).map((e) => e.entityId);
+  assert.ok(all.indexOf('climate.bedroom_ac') > all.indexOf('sensor.bedroom_temperature'));
   // without `wizard` the picker DTO stays as it was
   assert.equal(search.search({ q: 'climate.zig_thermostat_office' })[0].wizard, undefined);
 });

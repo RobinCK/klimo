@@ -4,17 +4,22 @@ import type { Row, Vars } from './format';
 /**
  * Notification wording per alert kind, [en, uk]. Every template can use the incident's facts plus
  * these resolved variables: {room} {source} {fallback} {circuit} {instance} (names), {sensor} /
- * {device} (what the alert is about), {entity} (the raw entity id, as people see it in HA),
- * {duration} (minutes the problem lasts), {lastAt} (last report) and {roomTemp}.
+ * {device} (what the alert is about: its name as on the Devices page, with the entity id when the name
+ * alone does not tell it apart), {entity} (the raw entity id, as people see it in HA), {duration}
+ * (minutes the problem lasts), {sinceAt} (when it started), {lastAt} (last report) and {roomTemp}.
  *
  * title ≤ 40 characters (lock screens); body ≤ 140: how long + the evidence + what Klimo did, and for
- * a pending problem what happens next; short = the room chip; resolved = the recovery message.
+ * a pending problem what happens next; short = the room chip; resolved = the recovery message; line =
+ * one incident among several (grouped messages, the morning digest): place, device, state and what
+ * Klimo does, so two devices never read the same.
  */
 export interface EventTexts {
   title: Row;
   body: Row;
   short: Row;
   resolved: Row;
+  /** One incident in a grouped message or a digest; the title when missing. */
+  line?: Row;
   /** Several of the same kind within the grouping window, `{n}` of them. */
   group?: Row;
 }
@@ -22,6 +27,13 @@ export interface EventTexts {
 const n = (v: Vars, k: string) => (typeof v[k] === 'number' ? (v[k] as number) : Number(v[k]));
 const has = (v: Vars, k: string) => v[k] !== undefined && v[k] !== null && v[k] !== '';
 const cool = (v: Vars) => v.mode === 'cool';
+const outdoor = (v: Vars) => v.outdoor === true || v.role === 'outdoor';
+
+/** «Кухня · », «Надворі · » or nothing: where the device is, in front of its name. */
+function where(v: Vars, lang: 0 | 1): string {
+  if (has(v, 'room')) return '{room} · ';
+  return outdoor(v) ? ['Outdoors · ', 'Надворі · '][lang] : '';
+}
 
 function fallbackSentence(v: Vars, lang: 0 | 1): string {
   if (has(v, 'fallback')) {
@@ -30,6 +42,104 @@ function fallbackSentence(v: Vars, lang: 0 | 1): string {
       : [' Heating moved to {fallback} — the rooms stay warm.', ' Опалення перейшло на {fallback} — у кімнатах тепло.'][lang];
   }
   return [' No reserve — Klimo retries[ at {retryAt}].', ' Резерву немає — Klimo повторить спробу[ о {retryAt}].'][lang];
+}
+
+function fallbackClause(v: Vars, lang: 0 | 1): string {
+  if (has(v, 'fallback')) return cool(v) ? ['cooling moved to {fallback}', 'охолодження перейшло на {fallback}'][lang] : ['heating moved to {fallback}', 'опалення перейшло на {fallback}'][lang];
+  return ['no reserve, retrying[ at {retryAt}]', 'резерву немає, повторю спробу[ о {retryAt}]'][lang];
+}
+
+/** What Klimo does meanwhile: [a sentence for the body, the same as a clause for a one-line summary]. */
+type Action = readonly [sentence: string, clause: string];
+
+function outdoorAction(v: Vars, lang: 0 | 1): Action {
+  switch (v.outdoorSource) {
+    case 'sensor':
+      return [['The outdoor temperature comes from the other outdoor sensors.', 'Температуру надворі беру з інших датчиків.'][lang], ['using the other outdoor sensors', 'беру з інших датчиків надворі'][lang]];
+    case 'hold':
+      return [['Holding the last outdoor value[ {outdoorC}] for now.', 'Поки тримаю останнє значення[ {outdoorC}].'][lang], ['holding the last value[ {outdoorC}]', 'тримаю останнє значення[ {outdoorC}]'][lang]];
+    case 'none':
+      return [['No outdoor temperature — the season follows the calendar.', 'Температури надворі немає — сезон іде за календарем.'][lang], ['the season follows the calendar', 'сезон іде за календарем'][lang]];
+    default:
+      return [['Using the weather forecast instead.', 'Беру температуру з прогнозу погоди.'][lang], ['using the weather forecast', 'беру прогноз погоди'][lang]];
+  }
+}
+
+function sensorAction(v: Vars, lang: 0 | 1): Action {
+  if (outdoor(v)) return outdoorAction(v, lang);
+  if (v.role === 'contact') return [['Until it is back, the window counts as closed.', 'Поки його немає, вікно вважаю зачиненим.'][lang], ['the window counts as closed', 'вікно вважаю зачиненим'][lang]];
+  if (v.role === 'humidity') return [['Until it is back, the room’s humidity is unknown.', 'Поки його немає, вологість у кімнаті невідома.'][lang], ['humidity unknown', 'вологість невідома'][lang]];
+  if (!has(v, 'left')) return ['', ''];
+  if (n(v, 'left') > 0) {
+    return [
+      ['The temperature comes from {left|other sensor|other sensors}[ — {roomTemp} now].', 'Температуру рахую з {left|іншого датчика|інших датчиків|інших датчиків}[ — зараз {roomTemp}].'][lang],
+      ['temperature from {left|other sensor|other sensors}', 'температуру рахую з {left|іншого датчика|інших датчиків|інших датчиків}'][lang],
+    ];
+  }
+  if (v.fallback === 'trv') {
+    return [['No other sensors — the temperature comes from the radiator valves.', 'Інших датчиків немає — беру температуру з головок.'][lang], ['temperature from the radiator valves', 'беру температуру з головок'][lang]];
+  }
+  if (has(v, 'safeC')) {
+    return [['The room has no data — the radiator valves hold a safe {safeC}.', 'Кімната без даних — головки тримають безпечні {safeC}.'][lang], ['no room data, the valves hold {safeC}', 'кімната без даних, головки тримають {safeC}'][lang]];
+  }
+  return [['The room has no data — heating in it is off.', 'Кімната без даних — опалення в ній вимкнено.'][lang], ['no room data, heating in it is off', 'кімната без даних, опалення вимкнено'][lang]];
+}
+
+function entityAction(v: Vars, lang: 0 | 1): Action {
+  if (outdoor(v)) return outdoorAction(v, lang);
+  if (has(v, 'triggerId')) {
+    switch (v.unknownAs) {
+      case 'true':
+        return [['Trigger «{triggerId}» counts as active meanwhile.', 'Тригер «{triggerId}» поки вважаю активним.'][lang], ['trigger «{triggerId}» counts as active', 'тригер «{triggerId}» вважаю активним'][lang]];
+      case 'hold_false':
+      case 'hold_true':
+        return [['Trigger «{triggerId}» keeps its last state meanwhile.', 'Тригер «{triggerId}» поки тримає останній стан.'][lang], ['trigger «{triggerId}» keeps its last state', 'тригер «{triggerId}» тримає останній стан'][lang]];
+      default:
+        return [['Trigger «{triggerId}» counts as inactive meanwhile.', 'Тригер «{triggerId}» поки вважаю неактивним.'][lang], ['trigger «{triggerId}» counts as inactive', 'тригер «{triggerId}» вважаю неактивним'][lang]];
+    }
+  }
+  switch (v.role) {
+    case 'pump':
+      return [['Klimo cannot switch the pump until it is back.', 'Насосом не керую, доки він не повернеться.'][lang], ['the pump cannot be switched', 'насосом не керую'][lang]];
+    case 'zone':
+    case 'dehumidifier':
+      return [['Klimo cannot switch it until it is back.', 'Не можу нею керувати, доки вона не повернеться.'][lang], ['it cannot be switched', 'не можу нею керувати'][lang]];
+    case 'energy':
+      return [['The energy rules keep the last value for a while.', 'Енергетичні правила поки тримають останнє значення.'][lang], ['energy rules keep the last value', 'енергоправила тримають останнє значення'][lang]];
+    default:
+      return [['Until it is back, Klimo does not rely on its state.', 'Поки її немає, Klimo не покладається на її стан.'][lang], ['its state is not relied on', 'на її стан не покладаюся'][lang]];
+  }
+}
+
+function windowAction(v: Vars, lang: 0 | 1): Action {
+  switch (v.reaction) {
+    case 'notify':
+      return [['Only a reminder — heating works as usual.', 'Лише нагадую — опалення працює як зазвичай.'][lang], ['only a reminder', 'лише нагадую'][lang]];
+    case 'eco':
+      return [['The room is on «Eco» until the window is closed.', 'Кімната на «Еко», доки вікно не закриють.'][lang], ['the room is on «Eco»', 'кімната на «Еко»'][lang]];
+    case 'lower':
+      return [['The room target is lowered until the window is closed.', 'Ціль кімнати знижено, доки вікно не закриють.'][lang], ['the target is lowered', 'ціль знижено'][lang]];
+    default:
+      return [['The room is paused until the window is closed.', 'Кімната на паузі, доки вікно не закриють.'][lang], ['the room is paused', 'кімната на паузі'][lang]];
+  }
+}
+
+function manualAction(v: Vars, lang: 0 | 1): Action {
+  switch (v.policy) {
+    case 'revert':
+      return [['Klimo puts the schedule target back.', 'Klimo повертає ціль розкладу.'][lang], ['the schedule target is put back', 'повертаю ціль розкладу'][lang]];
+    case 'save':
+      return [['Klimo saved it as the profile target.', 'Klimo зберіг її як ціль профілю.'][lang], ['saved to the profile', 'збережено в профіль'][lang]];
+    default:
+      return [['It holds until the next schedule slot[ ({until})].', 'Діє до наступного інтервалу розкладу[ ({until})].'][lang], ['holds until the next slot', 'діє до наступного інтервалу'][lang]];
+  }
+}
+
+function batteryAction(v: Vars, lang: 0 | 1): Action {
+  if (has(v, 'reminderPct') && n(v, 'pct') > n(v, 'reminderPct')) {
+    return [['I will remind you again at {reminderPct}.', 'Нагадаю ще раз на {reminderPct}.'][lang], ['reminder again at {reminderPct}', 'нагадаю ще раз на {reminderPct}'][lang]];
+  }
+  return [['Replace it soon — it stops reporting when it dies.', 'Замініть найближчим часом — коли сяде, пристрій замовкне.'][lang], ['replace it soon', 'замініть найближчим часом'][lang]];
 }
 
 function failedBody(v: Vars, lang: 0 | 1): string {
@@ -45,36 +155,46 @@ function failedBody(v: Vars, lang: 0 | 1): string {
 }
 
 function sensorBody(v: Vars, lang: 0 | 1): string {
-  const head = ['{sensor}, no data for {duration}[ (last value at {lastAt})].', '{sensor}, {duration} без даних[ (останнє значення о {lastAt})].'][lang];
-  if (v.outdoor === true) return head + [' Using the weather forecast instead.', ' Беру температуру з прогнозу погоди.'][lang];
-  if (!has(v, 'left')) return head;
-  if (n(v, 'left') <= 0) {
-    return head + [' No other sensors — Klimo falls back to the radiator valves.', ' Інших датчиків немає — рахую за головками.'][lang];
-  }
-  return (
-    head +
-    [
-      ' Using {left|other sensor|other sensors}[ — {roomTemp}], heating works as it should.',
-      ' Рахую з {left} інших[ — {roomTemp}], опалення працює як слід.',
-    ][lang]
-  );
+  const head = ['No data for {duration}[ (last report {lastAt})].', 'Немає даних {duration}[ (останнє — {lastAt})].'][lang];
+  const [sentence] = sensorAction(v, lang);
+  return sentence ? `${head} ${sentence}` : head;
 }
 
+function sensorLine(v: Vars, lang: 0 | 1): string {
+  const [, clause] = sensorAction(v, lang);
+  const head = where(v, lang) + ['{sensor}: no data for {duration}', '{sensor}: немає даних {duration}'][lang];
+  return clause ? `${head} — ${clause}` : head;
+}
+
+const retrying = (v: Vars) => has(v, 'attempt') && has(v, 'of') && n(v, 'attempt') < n(v, 'of');
+
 function trvBody(v: Vars, lang: 0 | 1): string {
-  if (has(v, 'attempt') && has(v, 'of') && n(v, 'attempt') < n(v, 'of')) {
-    return ['{device}, retry {attempt} of {of}. If the last one fails too, I will let you know.', '{device}, повтор {attempt} з {of}. Якщо й остання спроба не пройде — повідомлю.'][lang];
+  if (retrying(v)) {
+    return ['Target[ {targetC}] not confirmed yet, retry {attempt} of {of}. If the last one fails too, I will let you know.', 'Ціль[ {targetC}] ще не підтверджено, повтор {attempt} з {of}. Якщо й остання спроба не пройде — повідомлю.'][lang];
   }
   return [
-    '{device} did not confirm the target[ after {attempts|attempt|attempts}]. Klimo keeps retrying in the background.',
-    '{device} не підтвердила ціль[ після {attempts|спроби|спроб|спроб}]. Klimo повторює у фоні.',
+    'Target[ {targetC}] not confirmed[ after {attempt|attempt|attempts}][ for {duration}]. Klimo keeps retrying in the background.',
+    'Ціль[ {targetC}] не підтверджено[ після {attempt|спроби|спроб|спроб}][, уже {duration}]. Klimo повторює у фоні.',
   ][lang];
+}
+
+function trvLine(v: Vars, lang: 0 | 1): string {
+  const head = where(v, lang) + ['{device}: target[ {targetC}] not confirmed', '{device}: ціль[ {targetC}] не підтверджено'][lang];
+  return retrying(v) ? head + [' — retry {attempt} of {of}', ' — повтор {attempt} з {of}'][lang] : head + [' — retrying in the background', ' — повторюю у фоні'][lang];
+}
+
+/** The open window by name; with several open, the one open longest «and N more». */
+function windowTitle(v: Vars, lang: 0 | 1): string {
+  if (!has(v, 'device')) return ['{room}: window open {duration}', '{room}: вікно відкрите {duration}'][lang];
+  const more = n(v, 'openCount') - 1;
+  const subject = more > 0 ? ['{room} · {device} and {more} more', '{room} · {device} і ще {more}'][lang].replace('{more}', String(more)) : '{room} · {device}';
+  return subject + [': open {duration}', ': відкрито {duration}'][lang];
 }
 
 function windowBody(v: Vars, lang: 0 | 1): string {
   const out = ['[Outdoor {outdoorC}. ]', '[Надворі {outdoorC}. ]'][lang];
-  return v.reaction === 'notify'
-    ? out + ['Only a reminder — heating works as usual.', 'Лише нагадую — опалення працює як зазвичай.'][lang]
-    : out + ['The room is paused until the window is closed.', 'Кімната на паузі, доки вікно не закриють.'][lang];
+  const open = has(v, 'device') ? ['Open for {duration}[, since {sinceAt}]. ', 'Відкрито {duration}[, з {sinceAt}]. '][lang] : '';
+  return open + out + windowAction(v, lang)[0];
 }
 
 function channelBody(v: Vars, lang: 0 | 1): string {
@@ -109,15 +229,22 @@ export const EVENTS: Record<EventKind, EventTexts> = {
     body: both(failedBody),
     short: ['{source}: fault', '{source}: аварія'],
     resolved: ['{source} works again', '{source} знову працює'],
+    line: [(v) => `{source}: fault — ${fallbackClause(v, 0)}`, (v) => `{source}: аварія — ${fallbackClause(v, 1)}`],
+    group: ['Sources failed: {n}', 'Аварія джерел: {n}'],
   },
   source_unavailable: {
     title: ['{source} does not respond', '{source} не відповідає'],
     body: [
-      (v) => `{entity} unavailable for {duration}.${fallbackSentence(v, 0)}`,
-      (v) => `{entity} недоступний {duration}.${fallbackSentence(v, 1)}`,
+      (v) => `{entity} unavailable for {duration}[ (since {sinceAt})].${fallbackSentence(v, 0)}`,
+      (v) => `Сутність {entity} недоступна {duration}[ (з {sinceAt})].${fallbackSentence(v, 1)}`,
     ],
     short: ['{source} does not respond', '{source} не відповідає'],
     resolved: ['{source} is back online', '{source} знову на зв’язку'],
+    line: [
+      (v) => `{source} ({entity}): no response for {duration} — ${fallbackClause(v, 0)}`,
+      (v) => `{source} ({entity}): не відповідає {duration} — ${fallbackClause(v, 1)}`,
+    ],
+    group: ['{n|source does|sources do} not respond', '{n|джерело не відповідає|джерела не відповідають|джерел не відповідають}'],
   },
   frost_risk: {
     title: [(v) => (has(v, 'circuit') && !has(v, 'room') ? '{circuit}: frost risk' : '{room}: frost risk'), (v) => (has(v, 'circuit') && !has(v, 'room') ? '{circuit}: ризик замерзання' : '{room}: ризик замерзання')],
@@ -168,37 +295,45 @@ export const EVENTS: Record<EventKind, EventTexts> = {
     resolved: ['Power is back — heating works as usual', 'Живлення є — опалення працює як зазвичай'],
   },
   sensor_offline: {
-    title: [(v) => (has(v, 'room') ? '{room}: sensor offline' : '{sensor}: offline'), (v) => (has(v, 'room') ? '{room}: датчик не на зв’язку' : '{sensor}: не на зв’язку')],
+    title: [(v) => `${where(v, 0)}{sensor}: offline`, (v) => `${where(v, 1)}{sensor}: не на зв’язку`],
     body: both(sensorBody),
-    short: ['Sensor offline', 'Датчик не на зв’язку'],
-    resolved: [(v) => (has(v, 'room') ? '{room}: the sensor is back' : '{sensor} is back'), (v) => (has(v, 'room') ? '{room}: датчик знову на зв’язку' : '{sensor} знову на зв’язку')],
+    short: ['{sensor}: offline', '{sensor}: не на зв’язку'],
+    resolved: [(v) => `${where(v, 0)}{sensor} is back`, (v) => `${where(v, 1)}{sensor}: знову на зв’язку`],
+    line: both(sensorLine),
     group: ['{n|sensor|sensors} offline', '{n|датчик|датчики|датчиків} не на зв’язку'],
   },
   trv_not_confirmed: {
-    title: [(v) => (has(v, 'room') ? '{room}: valve did not confirm' : '{device}: did not confirm'), (v) => (has(v, 'room') ? '{room}: головка не підтвердила' : '{device}: не підтвердила')],
+    title: [(v) => `${where(v, 0)}{device}: not confirmed`, (v) => `${where(v, 1)}{device}: без підтвердження`],
     body: both(trvBody),
-    short: ['Radiator valve did not confirm', 'Головка не підтвердила'],
-    resolved: [(v) => (has(v, 'room') ? '{room}: the valve confirmed' : '{device} confirmed'), (v) => (has(v, 'room') ? '{room}: головка підтвердила' : '{device}: підтвердила')],
+    short: ['{device}: target not confirmed', '{device}: ціль не підтверджено'],
+    resolved: [(v) => `${where(v, 0)}{device} confirmed the target`, (v) => `${where(v, 1)}{device}: ціль підтверджено`],
+    line: both(trvLine),
     group: ['{n|radiator valve|radiator valves} did not confirm', '{n|головка не підтвердила|головки не підтвердили|головок не підтвердили}'],
   },
   battery_low: {
     title: [
-      (v) => (n(v, 'pct') <= 5 ? '{device}: battery critical' : '{device}: battery {pct}'),
-      (v) => (n(v, 'pct') <= 5 ? '{device}: батарея майже сіла' : '{device}: батарея {pct}'),
+      (v) => `${where(v, 0)}${n(v, 'pct') <= 5 ? '{device}: battery critical' : '{device}: battery {pct}'}`,
+      (v) => `${where(v, 1)}${n(v, 'pct') <= 5 ? '{device}: батарея майже сіла' : '{device}: батарея {pct}'}`,
     ],
     body: [
-      'Charge {pct}[, about {estDays|day|days} left].[ Battery: {batteryType}.]',
-      'Заряд {pct}[, вистачить приблизно на {estDays|день|дні|днів}].[ Батарейка: {batteryType}.]',
+      (v) => `Charge {pct}[, about {estDays|day|days} left].[ Battery: {batteryType}.] ${batteryAction(v, 0)[0]}`,
+      (v) => `Заряд {pct}[, вистачить приблизно на {estDays|день|дні|днів}].[ Батарейка: {batteryType}.] ${batteryAction(v, 1)[0]}`,
     ],
-    short: ['Battery {pct}', 'Батарея {pct}'],
-    resolved: ['{device}: battery replaced', '{device}: батарею замінено'],
+    short: ['{device}: battery {pct}', '{device}: батарея {pct}'],
+    resolved: [(v) => `${where(v, 0)}{device}: battery replaced`, (v) => `${where(v, 1)}{device}: батарею замінено`],
+    line: [
+      (v) => `${where(v, 0)}{device}: battery {pct}[, about {estDays|day|days} left][ ({batteryType})] — ${batteryAction(v, 0)[1]}`,
+      (v) => `${where(v, 1)}{device}: батарея {pct}[, ще ~{estDays|день|дні|днів}][ ({batteryType})] — ${batteryAction(v, 1)[1]}`,
+    ],
     group: ['Low battery: {n|device|devices}', 'Низький заряд: {n|пристрій|пристрої|пристроїв}'],
   },
   window_open_long: {
-    title: ['{room}: window open {duration}', '{room}: вікно відкрите {duration}'],
+    title: both(windowTitle),
     body: both(windowBody),
     short: ['Window open[ {duration}]', 'Вікно відкрите[ {duration}]'],
     resolved: ['{room}: window closed', '{room}: вікно закрили'],
+    line: [(v) => `${windowTitle(v, 0)} — ${windowAction(v, 0)[1]}`, (v) => `${windowTitle(v, 1)} — ${windowAction(v, 1)[1]}`],
+    group: ['Windows open in {n|room|rooms}', 'Вікна відкриті в {n|кімнаті|кімнатах|кімнатах}'],
   },
   humidity_high: {
     title: ['{room}: humidity {rh}', '{room}: вологість {rh}'],
@@ -219,23 +354,40 @@ export const EVENTS: Record<EventKind, EventTexts> = {
     resolved: ['{circuit}: cooling works fully again', '{circuit}: охолодження знову на повну'],
   },
   signal_weak: {
-    title: ['{device}: weak signal', '{device}: слабкий сигнал'],
-    body: ['LQI {lqi} over the last hours. Add a Zigbee router (a mains-powered plug) nearby.', 'LQI {lqi} за останні години. Додайте поруч Zigbee-роутер (розетку з живленням від мережі).'],
-    short: ['Weak signal', 'Слабкий сигнал'],
-    resolved: ['{device}: the signal is fine again', '{device}: сигнал знову добрий'],
+    title: [(v) => `${where(v, 0)}{device}: weak signal`, (v) => `${where(v, 1)}{device}: слабкий сигнал`],
+    body: [
+      'LQI {lqi} over the last hours — commands may get lost, Klimo repeats them until confirmed. A Zigbee router nearby helps.',
+      'LQI {lqi} за останні години — команди можуть губитися, Klimo повторює їх до підтвердження. Допоможе Zigbee-роутер поруч.',
+    ],
+    short: ['{device}: weak signal', '{device}: слабкий сигнал'],
+    resolved: [(v) => `${where(v, 0)}{device}: the signal is fine again`, (v) => `${where(v, 1)}{device}: сигнал знову добрий`],
+    line: [
+      (v) => `${where(v, 0)}{device}: weak signal, LQI {lqi} — commands are repeated`,
+      (v) => `${where(v, 1)}{device}: слабкий сигнал, LQI {lqi} — команди повторюю`,
+    ],
+    group: ['Weak signal: {n|device|devices}', 'Слабкий сигнал: {n|пристрій|пристрої|пристроїв}'],
   },
   entity_unavailable: {
-    title: ['{device}: unavailable', '{device}: недоступна'],
-    body: ['{entity} unavailable[ for {duration}]. Until it is back, Klimo does not rely on its state.', '{entity} недоступна[ {duration}]. Поки її немає, Klimo не покладається на її стан.'],
-    short: ['Unavailable', 'Недоступна'],
-    resolved: ['{device} is available again', '{device} знову доступна'],
+    title: [(v) => `${where(v, 0)}{device}: unavailable`, (v) => `${where(v, 1)}{device}: недоступно`],
+    body: [
+      (v) => `{entity} unavailable[ for {duration}][ (since {sinceAt})]. ${entityAction(v, 0)[0]}`,
+      (v) => `Сутність {entity} недоступна[ {duration}][ (з {sinceAt})]. ${entityAction(v, 1)[0]}`,
+    ],
+    short: ['{device}: unavailable', '{device}: недоступно'],
+    resolved: [(v) => `${where(v, 0)}{device} is available again`, (v) => `${where(v, 1)}{device}: знову доступно`],
+    line: [
+      (v) => `${where(v, 0)}{device}: unavailable[ for {duration}] — ${entityAction(v, 0)[1]}`,
+      (v) => `${where(v, 1)}{device}: недоступно[ {duration}] — ${entityAction(v, 1)[1]}`,
+    ],
     group: ['{n|entity|entities} unavailable', '{n|сутність недоступна|сутності недоступні|сутностей недоступні}'],
   },
   entity_missing: {
-    title: ['{device}: entity missing', '{device}: сутності немає'],
-    body: ['{entity} is gone from Home Assistant. Pick its replacement on the Devices page.', '{entity} зникла з Home Assistant. Оберіть заміну на сторінці «Пристрої».'],
-    short: ['Missing in Home Assistant', 'Немає в Home Assistant'],
-    resolved: ['{device}: the entity is back', '{device}: сутність знову є'],
+    title: [(v) => `${where(v, 0)}{device}: entity missing`, (v) => `${where(v, 1)}{device}: сутності немає`],
+    body: ['{entity} is gone from Home Assistant[ for {duration}]. Klimo works without it — pick its replacement on the Devices page.', 'Сутність {entity} зникла з Home Assistant[ {duration} тому]. Працюю без неї — оберіть заміну на сторінці «Пристрої».'],
+    short: ['{device}: missing in Home Assistant', '{device}: немає в Home Assistant'],
+    resolved: [(v) => `${where(v, 0)}{device}: the entity is back`, (v) => `${where(v, 1)}{device}: сутність знову є`],
+    line: [(v) => `${where(v, 0)}{device}: gone from Home Assistant — pick a replacement`, (v) => `${where(v, 1)}{device}: немає в Home Assistant — оберіть заміну`],
+    group: ['Missing in Home Assistant: {n|entity|entities}', 'Зникли з Home Assistant: {n|сутність|сутності|сутностей}'],
   },
   overheat: {
     title: ['{room}: overheating {t}', '{room}: перегрів {t}'],
@@ -247,25 +399,31 @@ export const EVENTS: Record<EventKind, EventTexts> = {
     resolved: ['{room}: the temperature is back to normal[ ({roomTemp})]', '{room}: температура знову в нормі[ ({roomTemp})]'],
   },
   relay_mismatch: {
-    title: ['{device}: relay does not obey', '{device}: реле не слухається'],
-    body: ['The relay did not follow the command after 3 attempts. Check its power and connection.', 'Реле не виконало команду після 3 спроб. Перевірте живлення й зв’язок пристрою.'],
-    short: ['Relay does not follow the command', 'Реле не виконує команду'],
-    resolved: ['{device}: the relay follows commands again', '{device}: реле знову виконує команди'],
+    title: [(v) => `${where(v, 0)}{device}: relay does not obey`, (v) => `${where(v, 1)}{device}: реле не слухається`],
+    body: ['The relay did not follow the command after 3 attempts[ ({entity})]. Check its power and connection.', 'Реле не виконало команду після 3 спроб[ ({entity})]. Перевірте живлення й зв’язок пристрою.'],
+    short: ['{device}: relay does not follow the command', '{device}: реле не виконує команду'],
+    resolved: [(v) => `${where(v, 0)}{device}: the relay follows commands again`, (v) => `${where(v, 1)}{device}: реле знову виконує команди`],
+    line: [(v) => `${where(v, 0)}{device}: the relay does not follow the command — check its power`, (v) => `${where(v, 1)}{device}: реле не виконує команду — перевірте живлення`],
   },
   actuator_conflict: {
-    title: ['{device}: changed by something else', '{device}: змінює щось інше'],
+    title: [(v) => `${where(v, 0)}{device}: changed by something else`, (v) => `${where(v, 1)}{device}: змінює щось інше`],
     body: [
       (v) =>
         v.by === 'user'
-          ? '{entity} is changed by hand against Klimo. Klimo backed off for 10 min.'
-          : '{entity} is changed by an automation against Klimo. Klimo backed off for 10 min — disable that automation.',
+          ? '{entity} is changed by hand against Klimo. Klimo backed off[ until {until}].'
+          : '{entity} is changed by an automation against Klimo. Klimo backed off[ until {until}] — disable that automation.',
       (v) =>
         v.by === 'user'
-          ? '{entity} змінюють вручну всупереч Klimo. Klimo відступив на 10 хв.'
-          : '{entity} змінює автоматизація всупереч Klimo. Klimo відступив на 10 хв — вимкніть ту автоматизацію.',
+          ? '{entity} змінюють вручну всупереч Klimo. Klimo відступив[ до {until}].'
+          : '{entity} змінює автоматизація всупереч Klimo. Klimo відступив[ до {until}] — вимкніть ту автоматизацію.',
     ],
-    short: ['Changed by something else', 'Змінює щось інше'],
-    resolved: ['{device}: no more conflicts', '{device}: конфлікт минув'],
+    short: ['{device}: changed by something else', '{device}: змінює щось інше'],
+    resolved: [(v) => `${where(v, 0)}{device}: no more conflicts`, (v) => `${where(v, 1)}{device}: конфлікт минув`],
+    line: [
+      (v) => `${where(v, 0)}{device}: changed by something else — Klimo backed off[ until {until}]`,
+      (v) => `${where(v, 1)}{device}: змінює щось інше — Klimo відступив[ до {until}]`,
+    ],
+    group: ['Changed by something else: {n|device|devices}', 'Щось інше змінює {n|пристрій|пристрої|пристроїв}'],
   },
   room_too_cold: {
     title: ['{room}: too cold', '{room}: холодно'],
@@ -334,10 +492,21 @@ export const EVENTS: Record<EventKind, EventTexts> = {
     resolved: ['Season: {to:season}', 'Сезон: {to:season}'],
   },
   manual_override: {
-    title: ['{room}: target {valueC} by hand', '{room}: ціль {valueC} вручну'],
-    body: ['The target was changed to {valueC}[ until {until}][ · {by}].', 'Ціль змінили на {valueC}[ до {until}][ · {by}].'],
+    title: [
+      (v) => (has(v, 'device') ? '{room} · {device}: {valueC} by hand' : '{room}: target {valueC} by hand'),
+      (v) => (has(v, 'device') ? '{room} · {device}: {valueC} вручну' : '{room}: ціль {valueC} вручну'),
+    ],
+    body: [
+      (v) => (has(v, 'device') ? `Turned on the device itself to {valueC}[ · {by}]. ${manualAction(v, 0)[0]}` : 'The target was changed to {valueC}[ until {until}][ · {by}].'),
+      (v) => (has(v, 'device') ? `Ціль змінили на самому пристрої: {valueC}[ · {by}]. ${manualAction(v, 1)[0]}` : 'Ціль змінили на {valueC}[ до {until}][ · {by}].'),
+    ],
     short: ['Manual target {valueC}', 'Вручну {valueC}'],
     resolved: ['{room}: back to schedule', '{room}: знову за розкладом'],
+    line: [
+      (v) => (has(v, 'device') ? `{room} · {device}: {valueC} by hand — ${manualAction(v, 0)[1]}` : '{room}: target {valueC} by hand[ until {until}]'),
+      (v) => (has(v, 'device') ? `{room} · {device}: {valueC} вручну — ${manualAction(v, 1)[1]}` : '{room}: ціль {valueC} вручну[ до {until}]'),
+    ],
+    group: ['Changed by hand: {n|device|devices}', 'Змінили вручну: {n|пристрій|пристрої|пристроїв}'],
   },
   budget_shed: {
     title: ['{source}: shed by the budget', '{source}: відключено бюджетом'],

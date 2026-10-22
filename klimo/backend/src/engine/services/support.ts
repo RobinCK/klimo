@@ -14,6 +14,7 @@ import type {
   ICoreFns,
   Id,
   IEngine,
+  IHaInputs,
   IIncidents,
   IJournal,
   IMqtt,
@@ -22,7 +23,7 @@ import type {
   RoomConfig,
   RoomState,
 } from '../../shared/model';
-import { CARD_DEPLOY, CLOCK, CONFIG_STORE, CORE, ENGINE, INCIDENTS, JOURNAL, MQTT, MQTT_TRANSPORT } from '../../tokens';
+import { CARD_DEPLOY, CLOCK, CONFIG_STORE, CORE, ENGINE, HA_INPUTS, INCIDENTS, JOURNAL, MQTT, MQTT_TRANSPORT } from '../../tokens';
 
 /** How long «Скасувати» stays possible after a change (the UI shows 8 s of it). */
 export const UNDO_MS = 30_000;
@@ -49,6 +50,7 @@ export class EngineAccess {
   private readonly mqttRef: () => IMqtt | null;
   private readonly cardsRef: () => ICardDeploy | null;
   private readonly transportRef: () => MqttTransport | null;
+  private readonly inputsRef: () => IHaInputs | null;
 
   constructor(@Optional() @Inject(ModuleRef) moduleRef?: Pick<ModuleRef, 'get'>) {
     const ref = moduleRef as ModuleRef | undefined;
@@ -58,6 +60,12 @@ export class EngineAccess {
     this.mqttRef = lazyRef<IMqtt>(ref, MQTT);
     this.cardsRef = lazyRef<ICardDeploy>(ref, CARD_DEPLOY);
     this.transportRef = lazyRef<MqttTransport>(ref, MQTT_TRANSPORT);
+    this.inputsRef = lazyRef<IHaInputs>(ref, HA_INPUTS);
+  }
+
+  /** Outdoor temperature, forecasts and other HA-derived inputs (null without the HA module). */
+  inputs(): IHaInputs | null {
+    return this.inputsRef();
   }
 
   engine(): IEngine | null {

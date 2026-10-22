@@ -88,7 +88,8 @@ test('the first-boot setup completes from Home Assistant once and keeps the Engl
     const settings = s.config.singleton('settings');
     assert.equal(settings.notificationLanguage, 'en');
     assert.equal(settings.houseName, 'Home');
-    assert.equal(settings.outdoor.sensorEntityId, 'sensor.outdoor_temperature');
+    assert.deepEqual(settings.outdoor.sensorEntityIds, ['sensor.outdoor_temperature']);
+    assert.equal(settings.outdoor.sensorEntityId, undefined, 'only the list is stored');
     assert.equal(settings.outdoor.weatherEntityId, 'weather.home');
     assert.deepEqual(settings.presence.personEntityIds, ['person.ihor', 'person.olia']);
     assert.equal(s.config.get('profiles', 'home').name, 'Home');

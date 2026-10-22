@@ -462,6 +462,9 @@
 
 .bindingRole {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   width: 168px;
   color: var(--ui-text-3);
   font-size: var(--ui-fs-body-sm);

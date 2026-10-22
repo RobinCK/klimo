@@ -1,0 +1,97 @@
+/* ---------- InfoHint ---------- */
+
+.trigger {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  /* sits inside a line of text without making the line taller */
+  margin: -4px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ui-text-3);
+  vertical-align: middle;
+  cursor: pointer;
+  transition: color var(--ui-motion) ease-out, background-color var(--ui-motion) ease-out;
+}
+
+.trigger[data-open] {
+  color: var(--ui-text-1);
+  background: var(--ui-surface-3);
+}
+
+@media (hover: hover) {
+  .trigger:hover {
+    color: var(--ui-text-1);
+    background: var(--ui-surface-2);
+  }
+}
+
+/* a finger needs 40 px; the visual stays 24 px so rows keep their rhythm */
+@media (pointer: coarse) {
+  .trigger::after {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    border-radius: 50%;
+  }
+}
+
+.dropdown.dropdown {
+  max-width: min(320px, calc(100vw - 24px));
+  padding: 10px 12px;
+  border-radius: var(--ui-radius-lg);
+  /* the arrow draws its edge with the same variable */
+  --popover-border-color: var(--ui-border-strong);
+  border: 1px solid var(--popover-border-color);
+  background: var(--ui-surface-elevated);
+  color: var(--ui-text-1);
+  box-shadow: var(--ui-shadow-elevated);
+  font-size: var(--ui-fs-body-sm);
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  /* entity ids are long single words */
+  overflow-wrap: anywhere;
+  outline: none;
+}
+
+.title {
+  margin: 0 0 4px;
+  font-weight: 600;
+  color: var(--ui-text-1);
+}
+
+.para {
+  margin: 0;
+  color: var(--ui-text-2);
+}
+
+.para + .para {
+  margin-top: 6px;
+}
+
+.lead {
+  font-weight: 600;
+  color: var(--ui-text-1);
+}
+
+.list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--ui-text-2);
+}
+
+.title + .list,
+.list:first-child {
+  margin-top: 0;
+}
+
+.list li + li {
+  margin-top: 2px;
+}

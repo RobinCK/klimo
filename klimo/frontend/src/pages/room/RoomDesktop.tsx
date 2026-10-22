@@ -4,6 +4,7 @@ import { AutoGrid, Page, RoomTabs, Section, Stack, type Tone } from '@ui';
 import { paths } from '@app';
 import { fmtTemp, t } from '@i18n';
 import { Hero } from './Hero';
+import { SectionBody } from './SectionBody';
 import { DangerZone, LEFT_SECTIONS, RIGHT_SECTIONS, type SectionDef, type SectionProps } from './sections';
 import type { TargetEditor } from './useTargetEditor';
 
@@ -27,10 +28,9 @@ export function tabTone(r: RoomSummary): Tone {
 
 function SectionCard({ def, p }: { def: SectionDef; p: SectionProps }) {
   if (def.hidden?.(p)) return null;
-  const Body = def.Body;
   return (
     <Section id={`section-${def.key}`} title={def.title(p)} subtitle={def.subtitle?.(p)} tag={def.tag?.(p)} action={def.action?.(p) ?? undefined}>
-      <Body {...p} />
+      <SectionBody def={def} p={p} />
     </Section>
   );
 }

@@ -3,6 +3,7 @@ export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from '.
 export { IssueChip, RoomStateChip, StatusChip, type ChipSize, type IssueChipProps, type RoomStateChipProps, type StatusChipProps } from './Chips';
 export { Icon, IconTile, iconColor, type IconProps, type IconSize, type IconTileProps } from './Icon';
 export { IconButton, type IconButtonProps } from './IconButton';
+export { InfoHint, infoHintText, type InfoHintContent, type InfoHintParagraph, type InfoHintProps } from './InfoHint';
 export {
   MetaRow,
   TargetSourceLine,

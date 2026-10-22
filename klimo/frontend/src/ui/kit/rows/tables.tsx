@@ -6,6 +6,7 @@ import { useUiText } from '../../UiTextContext';
 import { ScrollX } from '../../shell/Layout';
 import { Icon } from '../../basic/Icon';
 import { StatusDot } from '../../basic/Badges';
+import { InfoHint, type InfoHintContent } from '../../basic/InfoHint';
 import { DataTable, type DataColumn } from '../display/DataTable';
 import { toneVars } from '../internal/util';
 import s from './rows.module.css';
@@ -27,6 +28,8 @@ export interface EntityBindingRow {
   statusLabel?: string;
   /** Opens the entity picker for this role. */
   onPick?: () => void;
+  /** What the role is for, behind an «i» next to its name. */
+  hint?: InfoHintContent;
 }
 
 const BINDING_TONE: Record<BindingStatus, Tone | null> = { ok: 'ok', info: null, empty: 'warn', warn: 'warn', err: 'err' };
@@ -56,7 +59,10 @@ export function EntityBindingTable({ rows, ariaLabel }: { rows: EntityBindingRow
         );
         return (
           <div key={`${r.role}-${i}`} className={s.bindingRow} data-status={r.status} role="listitem">
-            <span className={s.bindingRole}>{r.role}</span>
+            <span className={s.bindingRole}>
+              <span>{r.role}</span>
+              {r.hint ? <InfoHint content={r.hint} subject={r.role} /> : null}
+            </span>
             {value}
             {r.live ? <span className={s.bindingLive}>{r.live}</span> : null}
             {r.statusLabel ? (

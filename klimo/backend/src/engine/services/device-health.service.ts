@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { notFound, validationError } from '../../common/http';
 import { errorText } from '../../common/logger';
 import { DEFAULT_TRV_CAPABILITIES, DEFAULT_TRV_SIBLINGS, deepClone } from '../../shared/defaults';
@@ -25,10 +25,12 @@ import type {
   HaPort,
   HaRegistries,
   HaStateObj,
+  IBus,
   IConfigStore,
   Id,
   IDeviceHealth,
   IEntitySearch,
+  IEvents,
   IHaInputs,
   IHistory,
   IJournal,
@@ -39,7 +41,8 @@ import type {
   SourceConfig,
   Tone,
 } from '../../shared/model';
-import { CLOCK, CONFIG_STORE, ENTITY_SEARCH, HA_INPUTS, HA_PORT, HISTORY, JOURNAL } from '../../tokens';
+import { outdoorSensorIds } from '../../shared/model';
+import { BUS, CLOCK, CONFIG_STORE, ENTITY_SEARCH, EVENTS, HA_INPUTS, HA_PORT, HISTORY, JOURNAL } from '../../tokens';
 import { addDays, fromLocal, toLocal } from '../core/time';
 import { median } from '../core/util';
 import { domainOf } from './mappers';
@@ -55,6 +58,12 @@ const MISSING_AFTER_MS = 5 * MIN_MS;
 const Z2M_OFFLINE_AFTER_MS = MIN_MS;
 /** A cleared problem keeps reporting «inactive» for a while so the incident's flap guard can run out. */
 const CLEAR_REPEAT_MS = 10 * MIN_MS;
+/** Problems that end when the device is on the air again. */
+const OFFLINE_KINDS = new Set<EventKind>(['sensor_offline', 'entity_unavailable', 'entity_missing', 'z2m_offline']);
+/** States that are not a report from the device. */
+const DEAD_STATES = new Set(['unavailable', 'unknown']);
+/** Entities whose time stamps come from the integration, not from the device speaking (firmware checks, presses). */
+const QUIET_DOMAINS = new Set(['update', 'button', 'scene']);
 const REGRESSION_DAYS = 21;
 const REGRESSION_MIN_R2 = 0.6;
 
@@ -122,6 +131,20 @@ interface Device {
   battery: EntityId | null;
   linkquality: EntityId | null;
   entityIds: EntityId[];
+  /** Every enabled entity of the HA device: a report from any of them means the device is on the air. */
+  siblings: EntityId[];
+}
+
+/** What device health reads from the Zigbee2MQTT listener (only there when MQTT is). */
+interface Z2mLink {
+  lqi: number | null;
+  lqiAt: EpochMs | null;
+  batteryPct: number | null;
+  batteryAt: EpochMs | null;
+  lastSeenAt: EpochMs | null;
+}
+interface Z2mLinks {
+  deviceLink(instanceId: Id, ieee: string | null, friendlyName: string): Z2mLink | null;
 }
 
 interface Live {
@@ -143,6 +166,21 @@ const numOf = (v: unknown): number | null => {
   const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
   return Number.isFinite(n) ? n : null;
 };
+const isLive = (st: HaStateObj | null | undefined): st is HaStateObj => !!st && !DEAD_STATES.has(st.state);
+const latest = (a: number | null, b: number | null): number | null => (a === null ? b : b === null ? a : Math.max(a, b));
+
+/**
+ * When the device behind a state last spoke: HA's newest stamp, or Zigbee2MQTT's `last_seen` when it
+ * comes as an attribute (legacy attributes) or as the state of its own `…_last_seen` entity.
+ */
+function seenAt(st: HaStateObj): number | null {
+  let t = latest(latest(ts(st.last_reported), ts(st.last_updated)), ts(st.last_changed));
+  const attr = st.attributes.last_seen;
+  if (typeof attr === 'string') t = latest(t, ts(attr));
+  else if (typeof attr === 'number' && Number.isFinite(attr)) t = latest(t, attr < 1e11 ? attr * 1000 : attr);
+  if (st.attributes.device_class === 'timestamp' && /_last_seen$/.test(st.entity_id)) t = latest(t, ts(st.state));
+  return t;
+}
 
 /** Least squares of percent over days; the slope and how well a line explains the points. */
 export function batteryTrend(points: readonly [EpochMs, number][]): { slopePerDay: number; r2: number } | null {
@@ -176,7 +214,9 @@ export function batteryTrend(points: readonly [EpochMs, number][]): { slopePerDa
 @Injectable()
 export class DeviceHealthService implements IDeviceHealth, OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger('DeviceHealth');
-  private index: { at: EpochMs; revision: number; devices: Device[] } | null = null;
+  private index: { at: EpochMs; revision: number; devices: Device[]; byEntity: Map<EntityId, Device> } | null = null;
+  /** Per device: availability and problems as last announced to the Devices page. */
+  private announced: Map<string, string> | null = null;
   private readonly lqiRing = new Map<string, [EpochMs, number][]>();
   private readonly lqiSampledAt = new Map<string, EpochMs>();
   private readonly batteryDays = new Map<string, number | null>();
@@ -197,7 +237,15 @@ export class DeviceHealthService implements IDeviceHealth, OnModuleInit, OnModul
     @Inject(HA_INPUTS) private readonly inputs: IHaInputs,
     @Inject(JOURNAL) private readonly journal: IJournal,
     @Inject(EngineAccess) private readonly access: EngineAccess,
-  ) {}
+    @Optional() @Inject(EVENTS) private readonly events?: IEvents,
+    @Optional() @Inject(BUS) bus?: IBus,
+  ) {
+    ha.onStateChanged((id, next, prev) => this.onState(id, next, prev));
+    // Zigbee2MQTT hears a device that HA may never report again (same value: no state change reaches us)
+    bus?.on('z2m.device', () => {
+      if (this.anyOffline()) this.recheck('z2m.device');
+    });
+  }
 
   onModuleInit(): void {
     // the first estimate waits for HA to connect and the recorder to answer
@@ -325,6 +373,44 @@ export class DeviceHealthService implements IDeviceHealth, OnModuleInit, OnModul
     return found;
   }
 
+  lastSeen(entityId: EntityId): EpochMs | null {
+    const dev = this.deviceOf(entityId);
+    return dev ? this.lastSeenOf(dev, true) : null;
+  }
+
+  /* ── live changes ────────────────────────────────────────────────────────────────────────── */
+
+  /**
+   * A device going between unavailable and a real state, or a device reported offline that speaks
+   * again, is judged now (the engine evaluates within a second, its incidents resolve and open pages
+   * hear of it) instead of on the next periodic pass.
+   */
+  private onState(entityId: EntityId, next: HaStateObj | null, prev: HaStateObj | null): void {
+    try {
+      const flipped = isLive(next) !== isLive(prev);
+      if (!flipped && !this.anyOffline()) return;
+      const dev = this.deviceOf(entityId);
+      if (!dev) return;
+      if (flipped || this.isOffline(dev.key)) this.recheck('device.state');
+    } catch (e) {
+      this.log.warn(`state change of ${entityId} not checked: ${errorText(e)}`);
+    }
+  }
+
+  private recheck(reason: string): void {
+    this.access.engine()?.requestRun(reason);
+  }
+
+  private anyOffline(): boolean {
+    for (const d of this.active.values()) if (OFFLINE_KINDS.has(d.kind)) return true;
+    return false;
+  }
+
+  private isOffline(key: string): boolean {
+    for (const d of this.active.values()) if (d.deviceKey === key && OFFLINE_KINDS.has(d.kind)) return true;
+    return false;
+  }
+
   /* ── detections ──────────────────────────────────────────────────────────────────────────── */
 
   detect(now: EpochMs): Detection[] {
@@ -364,13 +450,15 @@ export class DeviceHealthService implements IDeviceHealth, OnModuleInit, OnModul
         const left = temps.filter((s) => !offline.has(s.entityId) && this.ha.getState(s.entityId)?.state !== 'unavailable' && !!this.ha.getState(s.entityId)).length;
         add({ kind: 'sensor_offline', dedupKey: `sensor_offline:${b.entityId}`, active: true, roomId: room.id, entityId: b.entityId, deviceKey: dev.key, facts: { entityId: b.entityId, name: b.label, minutes, left, total: temps.length } });
       } else {
-        add({ kind: 'entity_unavailable', dedupKey: `entity_unavailable:${b.entityId}`, active: true, roomId: b.roomId, entityId: b.entityId, deviceKey: dev.key, sourceId: b.sourceId ?? null, facts: { entityId: b.entityId, name: b.label, minutes } });
+        const facts = { entityId: b.entityId, name: b.label, minutes, ...(b.role === 'outdoor' ? { outdoor: true } : {}) };
+        add({ kind: 'entity_unavailable', dedupKey: `entity_unavailable:${b.entityId}`, active: true, roomId: b.roomId, entityId: b.entityId, deviceKey: dev.key, sourceId: b.sourceId ?? null, facts });
       }
     }
 
     for (const dev of this.devices()) this.sampleLqi(dev, now, settings.weakSignal.windowH);
+    const lives = new Map(this.devices().map((dev) => [dev.key, this.live(dev, now)] as const));
     for (const dev of devices) {
-      const live = this.live(dev, now);
+      const live = lives.get(dev.key) ?? this.live(dev, now);
       let problem = dev.bindings.some((b) => offline.has(b.entityId));
 
       for (const b of dev.bindings) {
@@ -431,16 +519,60 @@ export class DeviceHealthService implements IDeviceHealth, OnModuleInit, OnModul
         this.z2mOfflineSince.delete(inst.id);
       }
     }
-    return this.withResolves(next, now);
+    this.announce(lives, offline, next, bridges);
+    return this.withResolves(next, now, lives);
   }
 
-  /** Problems that ended report «inactive» so their incidents can resolve after the flap guard. */
-  private withResolves(next: Map<string, Detection>, now: EpochMs): Detection[] {
+  /**
+   * Problems that ended report «inactive». A device verifiably back on the air (or a battery and a link
+   * that read fine again) closes its incident at once; anything else waits for the flap guard.
+   */
+  private withResolves(next: Map<string, Detection>, now: EpochMs, lives: Map<string, Live>): Detection[] {
     for (const [key, det] of this.active) if (!next.has(key)) this.clearing.set(key, { det: { ...det, active: false }, since: now });
     for (const key of next.keys()) this.clearing.delete(key);
     for (const [key, c] of this.clearing) if (now - c.since > CLEAR_REPEAT_MS) this.clearing.delete(key);
     this.active = next;
-    return [...next.values(), ...[...this.clearing.values()].map((c) => c.det)];
+    return [...next.values(), ...[...this.clearing.values()].map((c) => ({ ...c.det, recovered: this.isBack(c.det, lives) }))];
+  }
+
+  private isBack(det: Detection, lives: Map<string, Live>): boolean {
+    const live = det.deviceKey ? lives.get(det.deviceKey) : undefined;
+    switch (det.kind) {
+      case 'sensor_offline':
+      case 'entity_unavailable':
+        return !!det.entityId && isLive(this.ha.getState(det.entityId));
+      case 'entity_missing':
+        return !!det.entityId && this.exists(det.entityId);
+      case 'z2m_offline':
+        return typeof det.facts.instanceId === 'string' && this.inputs.z2mBridges()[det.facts.instanceId] === true;
+      case 'battery_low':
+        return live?.batteryPct != null;
+      case 'signal_weak':
+        return !!live?.available && live.lqi !== null;
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Tells open Devices pages which devices changed availability or problems, so a sensor that is back
+   * shows as back within seconds. The first pass after a start only takes the baseline.
+   */
+  private announce(lives: Map<string, Live>, offline: Map<EntityId, { dev: Device }>, next: Map<string, Detection>, bridges: Record<Id, boolean | null>): void {
+    const kinds = new Map<string, string[]>();
+    for (const d of next.values()) if (d.deviceKey) kinds.set(d.deviceKey, [...(kinds.get(d.deviceKey) ?? []), d.kind]);
+    const silent = new Set([...offline.values()].map((o) => o.dev.key));
+    const now = new Map<string, string>();
+    for (const dev of this.devices()) {
+      const bridge = dev.transport.type === 'z2m' ? String(bridges[dev.transport.instanceId] ?? '') : '';
+      now.set(dev.key, [lives.get(dev.key)?.available ? 1 : 0, silent.has(dev.key) ? 1 : 0, (kinds.get(dev.key) ?? []).sort().join(','), bridge].join('|'));
+    }
+    const before = this.announced;
+    this.announced = now;
+    if (!before || !this.events) return;
+    const changed = [...now].filter(([key, sig]) => before.get(key) !== sig).map(([key]) => key);
+    for (const key of before.keys()) if (!now.has(key)) changed.push(key);
+    if (changed.length) this.events.send({ type: 'devices', payload: { keys: changed } });
   }
 
   /** Minutes a primary entity has been offline beyond its class threshold, or null. */
@@ -454,7 +586,8 @@ export class DeviceHealthService implements IDeviceHealth, OnModuleInit, OnModul
     if (battery) {
       // battery Zigbee devices report rarely: silence is what counts, not the state
       limitMin = b.sensorRole === 'contact' ? s.offline.contactMin : s.offline.batteryMin;
-      since = st.state === 'unavailable' ? ts(st.last_changed) : reportedAt(st);
+      // the device's freshest sign of life: a report that repeats a value moves no state Klimo sees
+      since = st.state === 'unavailable' ? ts(st.last_changed) : (this.lastSeenOf(dev, true) ?? reportedAt(st));
     } else {
       limitMin = zigbee ? s.offline.mainsMin : s.offline.integrationMin;
       since = st.state === 'unavailable' ? ts(st.last_changed) : null;
@@ -470,8 +603,15 @@ export class DeviceHealthService implements IDeviceHealth, OnModuleInit, OnModul
     const rev = this.config.revision();
     if (this.index && this.index.revision === rev && now - this.index.at < INDEX_TTL_MS) return this.index.devices;
     const devices = this.build(this.config.engineConfig());
-    this.index = { at: now, revision: rev, devices };
+    const byEntity = new Map<EntityId, Device>();
+    for (const dev of devices) for (const id of [...dev.entityIds, ...dev.siblings]) if (!byEntity.has(id)) byEntity.set(id, dev);
+    this.index = { at: now, revision: rev, devices, byEntity };
     return devices;
+  }
+
+  private deviceOf(entityId: EntityId): Device | undefined {
+    this.devices();
+    return this.index?.byEntity.get(entityId);
   }
 
   private bindings(cfg: EngineConfig): Binding[] {
@@ -501,7 +641,7 @@ export class DeviceHealthService implements IDeviceHealth, OnModuleInit, OnModul
       if (c.mixingValve) add({ entityId: c.mixingValve.entityId, role: 'circuit', kind: 'relay', roomId: null, label: c.name, primary: true });
     }
     for (const m of cfg.manifolds) for (const id of [m.supplySensorEntityId, m.returnSensorEntityId]) if (id) add({ entityId: id, role: 'circuit', kind: 'sensor', roomId: null, label: m.name, primary: true });
-    if (cfg.settings.outdoor.sensorEntityId) add({ entityId: cfg.settings.outdoor.sensorEntityId, role: 'outdoor', kind: 'sensor', roomId: null, label: '', primary: true });
+    for (const id of outdoorSensorIds(cfg.settings.outdoor)) add({ entityId: id, role: 'outdoor', kind: 'sensor', roomId: null, label: '', primary: true });
     for (const id of Object.values(cfg.energy.entities)) if (id) add({ entityId: id, role: 'energy', kind: 'entity', roomId: null, label: '', primary: true });
     for (const t of cfg.triggers) {
       if (!t.enabled) continue;
@@ -559,6 +699,7 @@ export class DeviceHealthService implements IDeviceHealth, OnModuleInit, OnModul
         battery,
         linkquality,
         entityIds: [...new Set([...list.map((b) => b.entityId), ...(battery ? [battery] : []), ...(linkquality ? [linkquality] : [])])],
+        siblings: siblings.filter((id) => !QUIET_DOMAINS.has(domainOf(id))),
       });
     }
     return out;
@@ -569,13 +710,7 @@ export class DeviceHealthService implements IDeviceHealth, OnModuleInit, OnModul
   private live(dev: Device, now: EpochMs): Live {
     let available = true;
     let offlineSince: EpochMs | null = null;
-    let lastSeenAt: EpochMs | null = null;
-    for (const id of dev.entityIds) {
-      const st = this.ha.getState(id);
-      if (!st) continue;
-      const r = reportedAt(st);
-      if (r !== null && (lastSeenAt === null || r > lastSeenAt)) lastSeenAt = r;
-    }
+    const lastSeenAt = this.lastSeenOf(dev);
     for (const b of dev.bindings) {
       if (!b.primary) continue;
       const st = this.ha.getState(b.entityId);
@@ -592,6 +727,13 @@ export class DeviceHealthService implements IDeviceHealth, OnModuleInit, OnModul
     if (batteryPct === null && primaryState) {
       batteryPct = numOf(primaryState.attributes.battery) ?? numOf(primaryState.attributes.battery_level);
       batteryAt = reportedAt(primaryState);
+    }
+    if (batteryPct === null) {
+      const link = this.z2mLink(dev);
+      if (link?.batteryPct != null) {
+        batteryPct = link.batteryPct;
+        batteryAt = link.batteryAt;
+      }
     }
     const samples = this.lqiRing.get(dev.key) ?? [];
     const lqi = available && samples.length ? median(samples.map(([, v]) => v)) : null;
@@ -612,13 +754,50 @@ export class DeviceHealthService implements IDeviceHealth, OnModuleInit, OnModul
     const primary = this.ha.getState(dev.primary.entityId);
     if (!primary || primary.state === 'unavailable') return;
     const lqiState = dev.linkquality ? this.ha.getState(dev.linkquality) : undefined;
-    const v = (lqiState && lqiState.state !== 'unavailable' ? numOf(lqiState.state) : null) ?? numOf(primary.attributes.linkquality);
+    const windowMs = windowH * HOUR_MS;
+    let v = (lqiState && lqiState.state !== 'unavailable' ? numOf(lqiState.state) : null) ?? numOf(primary.attributes.linkquality);
+    if (v === null) {
+      // the link quality entity is disabled in HA by default; Zigbee2MQTT's own messages carry it —
+      // taken only when it is news since the last sample, so a silent device adds no samples
+      const link = this.z2mLink(dev);
+      const at = link?.lqiAt ?? null;
+      if (link?.lqi != null && at !== null && now - at <= windowMs && (last === undefined || at > last)) v = link.lqi;
+    }
     if (v === null) return;
     this.lqiSampledAt.set(dev.key, now);
-    const windowMs = windowH * HOUR_MS;
     const ring = (this.lqiRing.get(dev.key) ?? []).filter(([t]) => now - t <= windowMs);
     ring.push([now, v]);
     this.lqiRing.set(dev.key, ring);
+  }
+
+  /**
+   * When the device last spoke: the freshest report of any of its entities (bound or not) and
+   * Zigbee2MQTT's last seen. Without any live state it falls back to when HA last stamped one, unless
+   * `liveOnly`.
+   */
+  private lastSeenOf(dev: Device, liveOnly = false): EpochMs | null {
+    let seen: number | null = null;
+    let quiet: number | null = null;
+    for (const id of new Set([...dev.entityIds, ...dev.siblings])) {
+      const st = this.ha.getState(id);
+      if (!st) continue;
+      if (isLive(st)) seen = latest(seen, seenAt(st));
+      else quiet = latest(quiet, reportedAt(st));
+    }
+    seen = latest(seen, this.z2mLink(dev)?.lastSeenAt ?? null);
+    return seen ?? (liveOnly ? null : quiet);
+  }
+
+  /** Link quality, battery and last seen straight from Zigbee2MQTT over MQTT; null without them. */
+  private z2mLink(dev: Device): Z2mLink | null {
+    const t = dev.transport;
+    if (t.type !== 'z2m') return null;
+    try {
+      const zigbee = (this.access.mqtt() as { zigbee?: () => Z2mLinks } | null)?.zigbee?.();
+      return zigbee?.deviceLink(t.instanceId, t.ieee, t.friendlyName) ?? null;
+    } catch {
+      return null;
+    }
   }
 
   /* ── DTO ─────────────────────────────────────────────────────────────────────────────────── */

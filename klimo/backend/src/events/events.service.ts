@@ -48,6 +48,7 @@ function throttleOf(msg: WsServerMessage): { key: string; ms: number } | null {
     case 'room': return { key: `room:${msg.payload.roomId}`, ms: 500 };
     case 'source.test': return { key: `source.test:${msg.payload.sourceId}`, ms: 1000 };
     case 'sim': return { key: 'sim', ms: 1000 };
+    case 'devices': return { key: 'devices', ms: 1000 };
     default: return null;
   }
 }
@@ -58,6 +59,11 @@ function mergeRooms(prev: MessageOf<'rooms'>, next: MessageOf<'rooms'>): Message
   for (const r of prev.payload) byId.set(r.id, r);
   for (const r of next.payload) byId.set(r.id, r);
   return { type: 'rooms', payload: [...byId.values()] };
+}
+
+/** `devices` names only the devices that changed: a pending batch keeps every key. */
+function mergeDevices(prev: MessageOf<'devices'>, next: MessageOf<'devices'>): MessageOf<'devices'> {
+  return { type: 'devices', payload: { keys: [...new Set([...prev.payload.keys, ...next.payload.keys])] } };
 }
 
 function parseClientMessage(raw: string): WsClientMessage | null {
@@ -132,8 +138,13 @@ export class EventsService implements IEvents, OnModuleDestroy {
       this.deliver(msg);
       return;
     }
+    const pending = slot.pending;
     slot.pending =
-      slot.pending && slot.pending.type === 'rooms' && msg.type === 'rooms' ? mergeRooms(slot.pending, msg) : msg;
+      pending?.type === 'rooms' && msg.type === 'rooms'
+        ? mergeRooms(pending, msg)
+        : pending?.type === 'devices' && msg.type === 'devices'
+          ? mergeDevices(pending, msg)
+          : msg;
     if (!slot.timer) {
       const s = slot;
       s.timer = setTimeout(() => {

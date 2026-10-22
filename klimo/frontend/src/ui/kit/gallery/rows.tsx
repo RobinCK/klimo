@@ -4,6 +4,7 @@ import { useUiText } from '../../UiTextContext';
 import { AutoGrid, Stack } from '../../shell/Layout';
 import { Icon } from '../../basic/Icon';
 import { SensorRow } from '../rows/SensorRow';
+import { DeviceRow } from '../rows/DeviceRow';
 import { ActionRuleCard, ChannelCard, CircuitCard, RuleCard, TriggerCard } from '../rows/cards';
 import { DeviceTable, EntityBindingTable, WatchTable } from '../rows/tables';
 import { ConditionEditor } from '../condition/ConditionEditor';
@@ -314,11 +315,36 @@ function Conditions() {
   );
 }
 
+function Devices() {
+  const ut = useUiText();
+  const [on, setOn] = useState(true);
+  const [role, setRole] = useState('trv');
+  const roles = [
+    { value: 'trv', label: ut('Radiator valve') },
+    { value: 'heater', label: ut('Heater') },
+  ];
+  return (
+    <Item name="DeviceRow">
+      <Stack gap="xs">
+        <DeviceRow checked={on} onCheck={setOn} title={ut('Radiator')} meta="SONOFF TRVZB · LQI 115" value="19.4°" role={{ value: role, options: roles, onChange: setRole }} />
+        <DeviceRow
+          title={ut('Office thermostat')}
+          meta="climate.zig_thermostat_office"
+          value="21.5°"
+          role={{ value: 'trv', options: roles, onChange: () => undefined }}
+          onRemove={() => undefined}
+        />
+      </Stack>
+    </Item>
+  );
+}
+
 export function GalleryRows() {
   const ut = useUiText();
   return (
     <Group title={ut('Domain rows')}>
       <Sensors />
+      <Devices />
       <Cards />
       <Tables />
       <Conditions />

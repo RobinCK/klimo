@@ -1,4 +1,4 @@
-import { useId, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type CSSProperties, type ReactNode } from 'react';
 import type { Action } from '../../types';
 import { useUiText } from '../../UiTextContext';
 import { Icon } from '../../basic/Icon';
@@ -47,15 +47,32 @@ export interface WizardShellProps {
   next: Action;
   /** The finished state: the progress is full. */
   done?: boolean;
+  /**
+   * Bumped each time the step's checks come back with problems: the body brings the first one into
+   * view (on a phone it is easily below the fold, under the field the user was busy with).
+   */
+  revealKey?: number;
 }
+
+const PROBLEM = '[role="alert"], [data-tone="warn"], [data-tone="err"]';
 
 /**
  * Multi-step flow: close + step label + progress + title on top, a scrolling body and a sticky
  * footer with Back / Next. Full screen on phones, content-sized inside the desktop overlay.
  */
-export function WizardShell({ step, total, title, stepLabel, onClose, children, back, next, done }: WizardShellProps) {
+export function WizardShell({ step, total, title, stepLabel, onClose, children, back, next, done, revealKey }: WizardShellProps) {
   const ut = useUiText();
   const titleId = useId();
+  const body = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!revealKey) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      const first = body.current?.querySelector(PROBLEM);
+      const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      first?.scrollIntoView({ block: 'center', behavior: still ? 'auto' : 'smooth' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [revealKey]);
   return (
     <div className={s.wizard} role="group" aria-labelledby={titleId}>
       <div className={s.wizardHead}>
@@ -72,7 +89,9 @@ export function WizardShell({ step, total, title, stepLabel, onClose, children, 
           {title}
         </h1>
       </div>
-      <div className={s.wizardBody}>{children}</div>
+      <div ref={body} className={s.wizardBody}>
+        {children}
+      </div>
       <div className={s.wizardFoot}>
         {back ? (
           <Button variant="secondary" size="xl" onClick={back.onClick} to={back.to} disabled={back.disabled} loading={back.loading} fullWidth>

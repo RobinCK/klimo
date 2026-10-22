@@ -403,10 +403,12 @@ test('usages and referenced entities', () =>
   withStores(async ({ config }) => {
     const r = await config.create('rooms', room('Кабінет'), ACTOR);
     await config.create('sensors', { roomId: r.id, entityId: 'sensor.study_t', role: 'temperature', name: 't', contactKind: null, model: null, haDeviceId: null, weight: 1, included: true, excludedBy: null, order: 0 }, ACTOR);
-    await config.patchSingleton('settings', { outdoor: { sensorEntityId: 'sensor.outdoor_temperature' } }, ACTOR);
+    await config.patchSingleton('settings', { outdoor: { sensorEntityIds: ['sensor.outdoor_temperature', 'sensor.south_wall_temperature'] } }, ACTOR);
     const ents = config.referencedEntities();
     assert.ok(ents.includes('sensor.study_t'));
     assert.ok(ents.includes('sensor.outdoor_temperature'));
+    assert.ok(ents.includes('sensor.south_wall_temperature'));
+    assert.deepEqual(config.usages({ type: 'entity', id: 'sensor.south_wall_temperature' }).map((u) => u.type), ['settings']);
     assert.ok(!ents.includes(''));
     assert.deepEqual(config.usages({ type: 'entity', id: 'sensor.study_t' }).map((u) => [u.type, u.id, u.label]), [['room', r.id, 'Кабінет']]);
     assert.deepEqual(config.usages({ type: 'profile', id: 'night' }).map((u) => u.type), ['settings']);

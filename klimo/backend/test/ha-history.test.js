@@ -259,7 +259,7 @@ test('sparks: one statistics call for all rooms; Klimo sensor, else raw sensors;
 
 test('outdoor: hourly statistics and the N-day mean', async () => {
   const { ha, config, history } = setup();
-  config.settings.outdoor = { ...config.settings.outdoor, sensorEntityId: 'sensor.outdoor', weatherEntityId: 'weather.home' };
+  config.settings.outdoor = { ...config.settings.outdoor, sensorEntityIds: ['sensor.outdoor'], weatherEntityId: 'weather.home' };
   ha.statisticsFn = (ids, start) => ({ 'sensor.outdoor': Array.from({ length: 72 }, (_, i) => ({ start: start + i * HOUR, mean: i < 36 ? 4 : 6, min: 3, max: 7 })) });
   const o = await history.outdoor(3);
   assert.equal(o.days, 3);
@@ -270,7 +270,7 @@ test('outdoor: hourly statistics and the N-day mean', async () => {
 
 test('outdoor: no statistics → hourly means from the weather entity history', async () => {
   const { ha, config, history } = setup();
-  config.settings.outdoor = { ...config.settings.outdoor, sensorEntityId: null, weatherEntityId: 'weather.home' };
+  config.settings.outdoor = { ...config.settings.outdoor, sensorEntityIds: [], weatherEntityId: 'weather.home' };
   ha.set(state('weather.home', 'cloudy', { temperature: 41, temperature_unit: '°F' }));
   ha.historyFn = () => ({ 'weather.home': [{ s: 'cloudy', lu: sec(NOW - 30 * HOUR), a: { temperature: 41, temperature_unit: '°F' } }] });
   const o = await history.outdoor(1);

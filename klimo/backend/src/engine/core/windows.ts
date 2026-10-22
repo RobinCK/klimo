@@ -164,8 +164,11 @@ export function windowOpenLong(
       active = true;
     }
   }
+  // which window: the first open contact names the alert, the count says whether there are more
+  const open = state.contacts.filter((c) => c.open === true);
+  const which: Detection['facts'] = open.length ? { entityId: open[0].entityId, openCount: open.length } : {};
   return {
-    detection: { kind: 'window_open_long', dedupKey: `window:${room.id}`, active, roomId: room.id, facts: { minutes, since, reaction: room.windows.reaction } },
+    detection: { kind: 'window_open_long', dedupKey: `window:${room.id}`, active, roomId: room.id, facts: { minutes, since, reaction: room.windows.reaction, ...which } },
     memory: next,
   };
 }

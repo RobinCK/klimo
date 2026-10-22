@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Combobox, useCombobox } from '@mantine/core';
 import type { HaEntityDto } from '@api/model';
 import { useUiText } from '../../UiTextContext';
@@ -78,9 +78,11 @@ interface SearchBoxProps {
   clear?: { label: string; onClear: () => void };
   ariaLabel?: string;
   autoFocus?: boolean;
+  /** Id of the error line under the field (marks the input invalid). */
+  errorId?: string;
 }
 
-function SearchBox({ search, placeholder, display, selected, onPick, stayOpen, clear, ariaLabel, autoFocus }: SearchBoxProps) {
+function SearchBox({ search, placeholder, display, selected, onPick, stayOpen, clear, ariaLabel, autoFocus, errorId }: SearchBoxProps) {
   const ut = useUiText();
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState(false);
@@ -131,6 +133,8 @@ function SearchBox({ search, placeholder, display, selected, onPick, stayOpen, c
               type="text"
               role="combobox"
               aria-label={ariaLabel ?? placeholder}
+              aria-invalid={errorId ? true : undefined}
+              aria-describedby={errorId}
               aria-autocomplete="list"
               autoComplete="off"
               spellCheck={false}
@@ -184,11 +188,14 @@ export interface EntityPickerProps {
   entity?: HaEntityDto | null;
   ariaLabel?: string;
   autoFocus?: boolean;
+  /** Why this entity cannot be used (the server's objection), under the field. */
+  error?: string;
 }
 
 /** Searchable Home Assistant entity choice: name, id, area, live state and who already uses it. */
-export function EntityPicker({ value, onChange, search, placeholder, clearable, entity, ariaLabel, autoFocus }: EntityPickerProps) {
+export function EntityPicker({ value, onChange, search, placeholder, clearable, entity, ariaLabel, autoFocus, error }: EntityPickerProps) {
   const ut = useUiText();
+  const errorId = `${useId()}-err`;
   const [picked, setPicked] = useState<HaEntityDto | null>(null);
   const known = entity ?? (picked && picked.entityId === value ? picked : null);
   return (
@@ -200,6 +207,7 @@ export function EntityPicker({ value, onChange, search, placeholder, clearable, 
         selected={new Set(value ? [value] : [])}
         ariaLabel={ariaLabel}
         autoFocus={autoFocus}
+        errorId={error ? errorId : undefined}
         onPick={(e) => {
           setPicked(e);
           onChange(e.entityId, e);
@@ -211,6 +219,12 @@ export function EntityPicker({ value, onChange, search, placeholder, clearable, 
           {[known.name, known.areaName, !known.available ? ut('unavailable') : known.state != null ? `${known.state}${known.unit ? ` ${known.unit}` : ''}` : null]
             .filter(Boolean)
             .join(' · ')}
+        </span>
+      ) : null}
+      {error ? (
+        <span id={errorId} className={s.error} role="alert">
+          <Icon name="alert" size={14} />
+          {error}
         </span>
       ) : null}
     </div>

@@ -13,6 +13,7 @@ export {
 } from './live';
 export { invalidate, setResourceData, useResource, type ResourceSnapshot, type ResourceState, type UseResourceOptions } from './resource';
 export {
+  formErrorsOf,
   useAutosave,
   useCommandResult,
   useConnection,
@@ -37,10 +38,13 @@ export {
   type Autosave,
   type AutosaveState,
   type ConnectionInfo,
+  type FormErrors,
   type EntitySearchContext,
   type Layout,
   type Mutation,
+  type MutationErrors,
   type MutationOptions,
   type RoomResource,
 } from './hooks';
 export { sourceLabels, useCodeContext, type NameDirectory } from './names';
+export { pathMatches, splitIssues, type FieldPaths, type SplitIssues } from './issues';

@@ -5,7 +5,10 @@ import { sourceLabels } from '../config/source-labels';
 import type {
   CardTextKey,
   ClockPort,
+  Detection,
+  EngineConfig,
   EpochMs,
+  EventKind,
   HaPort,
   IConfigStore,
   IEngine,
@@ -17,6 +20,7 @@ import type {
   ReasonParams,
   RoomIssue,
   SourceAdapter,
+  Trigger,
 } from '../shared/model';
 import { CLOCK, CONFIG_STORE, ENGINE, HA_PORT } from '../tokens';
 import {
@@ -45,7 +49,56 @@ interface NameCache {
   instances: Map<string, string>;
   devices: Map<string, string>;
   entities: Map<string, string>;
+  /** Every entity Klimo is bound to: what it is called in Klimo, where it is and what it does. */
+  bound: Map<string, Bound>;
+  /** Labels given on the Devices page, by device key. */
+  labels: Map<string, string>;
+  triggerList: readonly Trigger[];
+  safeC: number | null;
 }
+
+interface Bound {
+  name: string;
+  roomId: string | null;
+  /** HA device id, or `entity:<id>` for a bare entity. */
+  deviceKey: string;
+  role: string;
+  /** A room has radiator valves (they hold a safe setpoint while the room has no data). */
+  roomHasTrv?: boolean;
+}
+
+/** Alerts about one device or entity: their facts carry what people call it. */
+const SUBJECT_KINDS: ReadonlySet<EventKind> = new Set<EventKind>([
+  'sensor_offline',
+  'trv_not_confirmed',
+  'battery_low',
+  'signal_weak',
+  'entity_unavailable',
+  'entity_missing',
+  'relay_mismatch',
+  'actuator_conflict',
+  'manual_override',
+  'window_open_long',
+]);
+
+/** Words that name a kind of device rather than this device («Temperature», «Датчик», «Радіатор»). */
+const GENERIC_WORDS = new Set([
+  'sensor', 'датчик', 'temperature', 'temp', 'температура', 'температури', 'humidity', 'вологість', 'вологості', 'thermometer',
+  'термометр', 'hygrometer', 'гігрометр', 'window', 'вікно', 'вікна', 'door', 'двері', 'contact', 'контакт', 'radiator', 'радіатор',
+  'valve', 'головка', 'клапан', 'trv', 'thermostat', 'термостат', 'climate', 'relay', 'реле', 'switch', 'вимикач', 'plug', 'розетка',
+  'battery', 'батарея', 'device', 'пристрій', 'zigbee', 'aqara', 'sonoff', 'xiaomi', 'tuya', 'lumi', 'moes', 'ikea', 'room', 'кімната',
+  'the', 'a', 'of', 'in', 'and', 'у', 'в', 'і', 'й', 'та', 'на',
+]);
+
+const words = (s: string): string[] => s.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+
+/** A name that says only what the device is (or repeats its room) does not tell two devices apart. */
+export function isGenericName(name: string, roomName: string | null): boolean {
+  const room = new Set(roomName ? words(roomName) : []);
+  return words(name).every((w) => room.has(w) || GENERIC_WORDS.has(w) || /^\d+$/.test(w));
+}
+
+const sameName = (a: string, b: string) => a.trim().toLocaleLowerCase() === b.trim().toLocaleLowerCase();
 
 /**
  * `ITexts`: notification, card and journal texts in the house's notification language. Ids are shown
@@ -165,7 +218,12 @@ export class TextsService implements ITexts {
     for (const s of cfg.sources) {
       for (const id of commandEntities(s.adapter)) if (!entities.has(id)) entities.set(id, sources.get(s.id) ?? s.name);
     }
-    for (const m of this.config.deviceMeta()) if (m.label) devices.set(m.key, m.label);
+    const labels = new Map<string, string>();
+    for (const m of this.config.deviceMeta()) {
+      if (!m.label) continue;
+      devices.set(m.key, m.label);
+      labels.set(m.key, m.label);
+    }
     const z2m = this.config.list('z2m');
     this.cache = {
       rev,
@@ -179,9 +237,135 @@ export class TextsService implements ITexts {
       instances: new Map(z2m.map((z) => [z.id, z.name])),
       devices,
       entities,
+      bound: boundEntities(cfg, sources),
+      labels,
+      triggerList: cfg.triggers,
+      safeC: cfg.safety.noDataTrvSetpointC,
     };
     return this.cache;
   }
+
+  /* ── what an alert is about ─────────────────────────────────────────────────────────────────── */
+
+  /**
+   * Facts that name the device a detection is about, as the Devices page names it: `name`, `showEntity`
+   * when that name alone does not tell it apart in its room (two «Температура» sensors, a name that only
+   * says what it is), its `role`, and what Klimo does meanwhile when that depends on live state (where a
+   * room takes its temperature from, the outdoor fallback, a trigger's rule for missing data).
+   */
+  subjectFacts(d: Pick<Detection, 'kind' | 'roomId' | 'entityId' | 'deviceKey' | 'facts'>): ReasonParams {
+    if (!SUBJECT_KINDS.has(d.kind)) return {};
+    const f = d.facts ?? {};
+    const entityId = (typeof f.entityId === 'string' && f.entityId) || d.entityId || null;
+    if (!entityId && !d.deviceKey) return {};
+    const c = this.nameCache();
+    const bound = entityId ? c.bound.get(entityId) : undefined;
+    const key = d.deviceKey ?? bound?.deviceKey ?? (entityId ? `entity:${entityId}` : null);
+    const given = typeof f.name === 'string' && f.name.trim() ? f.name.trim() : null;
+    const name =
+      (key ? c.labels.get(key) : undefined) ??
+      (entityId ? c.labels.get(`entity:${entityId}`) : undefined) ??
+      (bound?.name || given || this.haDeviceName(key) || (entityId ? this.friendly(entityId) : null) || entityId || key);
+    if (!name) return {};
+    const out: Record<string, string | number | boolean | null> = { name };
+    const roomId = d.roomId ?? bound?.roomId ?? null;
+    if (entityId && name !== entityId && this.ambiguous(c, name, entityId, key, roomId)) out.showEntity = true;
+    const role = typeof f.role === 'string' ? f.role : bound?.role;
+    if (role) out.role = role;
+    if (entityId && d.kind === 'entity_unavailable' && f.triggerId === undefined) {
+      // a trigger's input that is gone: the trigger's rule for missing data decides what happens
+      const t = c.triggerList.find((x) => x.enabled && JSON.stringify(x.condition).includes(JSON.stringify(entityId)));
+      if (t) {
+        out.triggerId = t.id;
+        out.unknownAs = t.whenUnknown;
+      }
+    }
+    if (d.kind === 'sensor_offline' && roomId && role === 'temperature' && f.left === 0) {
+      const fallback = this.roomFallback(roomId);
+      if (fallback) out.fallback = fallback;
+      if (fallback !== 'trv' && bound?.roomHasTrv && c.safeC !== null) out.safeC = c.safeC;
+    }
+    if (f.outdoor === true || role === 'outdoor') {
+      try {
+        const s = this.engine()?.season();
+        if (s) {
+          out.outdoorSource = s.outdoorSource;
+          if (s.outdoorC !== null) out.outdoorC = s.outdoorC;
+        }
+      } catch {
+        // no engine yet: the text says what usually happens
+      }
+    }
+    if (d.kind === 'battery_low') out.reminderPct = this.config.singleton('deviceHealth').batteryLow.reminderPct;
+    return out;
+  }
+
+  /** Another device in the same place with the same name, or a name that only says what it is. */
+  private ambiguous(c: NameCache, name: string, entityId: string, key: string | null, roomId: string | null): boolean {
+    if (isGenericName(name, roomId ? (c.rooms.get(roomId) ?? null) : null)) return true;
+    for (const [id, b] of c.bound) {
+      if (id === entityId || b.deviceKey === key || b.roomId !== roomId) continue;
+      const other = c.labels.get(b.deviceKey) ?? (b.name || this.friendly(id) || id);
+      if (sameName(other, name)) return true;
+    }
+    return false;
+  }
+
+  private roomFallback(roomId: string): 'trv' | 'no_data' | null {
+    try {
+      const f = this.engine()?.room(roomId)?.aggregation.fallback;
+      return f === 'trv' || f === 'no_data' ? f : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private haDeviceName(key: string | null): string | null {
+    if (!key || key.startsWith('entity:') || key.startsWith('z2m:')) return null;
+    try {
+      const d = this.ha.registries().devices.find((x) => x.id === key);
+      const n = d?.name_by_user ?? d?.name;
+      return n?.trim() || null;
+    } catch {
+      return null;
+    }
+  }
+
+  private friendly(id: string): string | null {
+    const n = this.ha.getState(id)?.attributes.friendly_name;
+    return typeof n === 'string' && n.trim() ? n.trim() : null;
+  }
+}
+
+/** Every entity bound in the configuration, by entity id; a room's own devices first. */
+function boundEntities(cfg: EngineConfig, sourceNames: Map<string, string>): Map<string, Bound> {
+  const out = new Map<string, Bound>();
+  const add = (entityId: string | null | undefined, b: Omit<Bound, 'deviceKey'> & { deviceKey?: string | null }) => {
+    if (!entityId || entityId.startsWith('z2m:') || out.has(entityId)) return;
+    out.set(entityId, { ...b, deviceKey: b.deviceKey ?? `entity:${entityId}` });
+  };
+  for (const room of cfg.rooms) {
+    const devices = (cfg.emittersByRoom[room.id] ?? []).flatMap((e) => cfg.devicesByEmitter[e.id] ?? []);
+    const roomHasTrv = devices.some((d) => d.kind === 'trv');
+    for (const s of cfg.sensorsByRoom[room.id] ?? []) add(s.entityId, { name: s.name, roomId: room.id, deviceKey: s.haDeviceId, role: s.role, roomHasTrv });
+    for (const d of devices) {
+      const b = { name: d.label || d.name, roomId: room.id, deviceKey: d.haDeviceId ?? `entity:${d.entityId}`, role: d.kind === 'trv' ? 'trv' : 'zone' };
+      add(d.entityId, b);
+      for (const sib of [d.siblings?.battery, d.siblings?.linkquality]) add(sib, b);
+    }
+    if (room.humidity.dehumidifier) add(room.humidity.dehumidifier.entityId, { name: '', roomId: room.id, role: 'dehumidifier' });
+  }
+  for (const s of cfg.sources) {
+    const roomId = s.scope === 'room' ? s.roomId : null;
+    for (const id of commandEntities(s.adapter)) add(id, { name: sourceNames.get(s.id) ?? s.name, roomId, role: 'source' });
+  }
+  for (const p of cfg.pumps) add(p.entityId, { name: p.name, roomId: null, role: 'pump' });
+  for (const c of cfg.circuits) {
+    for (const id of [c.supply.sensorEntityId, c.supply.returnEntityId, c.mixingValve?.entityId]) add(id, { name: c.name, roomId: null, role: 'circuit' });
+  }
+  for (const m of cfg.manifolds) for (const id of [m.supplySensorEntityId, m.returnSensorEntityId]) add(id, { name: m.name, roomId: null, role: 'circuit' });
+  for (const id of Object.values(cfg.energy.entities)) add(id, { name: '', roomId: null, role: 'energy' });
+  return out;
 }
 
 /** The entities that command a source (its «main» entity for names and watch rules). */

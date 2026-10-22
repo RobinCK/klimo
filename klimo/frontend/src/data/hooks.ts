@@ -18,8 +18,9 @@ import type {
 } from '@api/model';
 import { api, type IncidentScope } from '@api/endpoints';
 import { isApiError } from '@api/client';
-import { errorText, issuesByPath, setFormatContext, t } from '@i18n';
+import { errorText, issueSummary, issueText, issuesByPath, setFormatContext, t } from '@i18n';
 import { toast, undoToast } from '@ui';
+import { splitIssues, type FieldPaths } from './issues';
 import { liveStore, type CommandResult, type ConnectionStatus, type LiveEventName, type LiveEvents, type LiveState, type SimClock, type SyncSlice } from './live';
 import { useResource, type ResourceState } from './resource';
 
@@ -207,13 +208,41 @@ export interface MutationOptions<A extends unknown[], R> {
   errorToast?: boolean;
 }
 
-export interface Mutation<A extends unknown[], R> {
+/** A form's share of a failed write: texts for its own fields, and a message for everything else. */
+export interface FormErrors<F extends string> {
+  fields: Partial<Record<F, string>>;
+  /** For an inline banner: problems no field of the form shows, or why the write failed at all. */
+  message: string | null;
+}
+
+/** The failure state of a write, as a form needs it (also what a dialog takes to show it). */
+export interface MutationErrors {
+  error: unknown;
+  /** The whole failure in words, for a banner where there are no fields. Null when nothing failed. */
+  message: string | null;
+  /** Splits the failure between the form's fields (paths per field, `*` for a list index or id) and its banner. */
+  formErrors: <F extends string>(fields: FieldPaths<F>) => FormErrors<F>;
+  reset: () => void;
+}
+
+export interface Mutation<A extends unknown[], R> extends MutationErrors {
   run: (...args: A) => Promise<R | undefined>;
   pending: boolean;
-  error: unknown;
   /** Field problems of a 400, by path ('tolerance.heat.below' → «Від 0.1 до 1»). */
   issues: Record<string, string>;
-  reset: () => void;
+}
+
+/** The FormErrors of `error` (an ApiClientError or anything thrown) for a form with these fields. */
+export function formErrorsOf<F extends string>(error: unknown, fields: FieldPaths<F>): FormErrors<F> {
+  if (error === undefined || error === null) return { fields: {}, message: null };
+  if (!isApiError(error) || !error.issues.length) return { fields: {}, message: errorText(error) || null };
+  const split = splitIssues(error.issues, fields);
+  const texts: Partial<Record<F, string>> = {};
+  for (const f of Object.keys(split.fields) as F[]) {
+    const issue = split.fields[f];
+    if (issue) texts[f] = issueText(issue);
+  }
+  return { fields: texts, message: split.rest.length ? issueSummary(split.rest) : null };
 }
 
 /** Wraps a write: pending flag, red toast with the server's reason, field issues, optional undo. */
@@ -264,7 +293,10 @@ export function useMutation<A extends unknown[], R>(fn: (...args: A) => Promise<
     setIssues({});
   }, []);
 
-  return { run, pending, error, issues, reset };
+  const formErrors = useCallback(<F extends string>(fields: FieldPaths<F>) => formErrorsOf(error, fields), [error]);
+  const message = useMemo(() => formErrorsOf(error, {}).message, [error]);
+
+  return { run, pending, error, message, formErrors, issues, reset };
 }
 
 /* ---------------- autosave ---------------- */
@@ -276,6 +308,8 @@ export interface Autosave<T> {
   value: T;
   set: (next: T | ((prev: T) => T)) => void;
   state: AutosaveState;
+  /** Why the last save failed, in words (the server's reasons); null once a save succeeds. */
+  error: string | null;
   retry: () => void;
   /** Save a pending edit now (e.g. before navigating away). */
   flush: () => Promise<void>;
@@ -293,6 +327,7 @@ export function useAutosave<T>(serverValue: T, save: (next: T) => Promise<unknow
   const [local, setLocal] = useState<T>(serverValue);
   const [dirty, setDirty] = useState(false);
   const [state, setState] = useState<AutosaveState>('idle');
+  const [error, setError] = useState<string | null>(null);
   const saveRef = useRef(save);
   saveRef.current = save;
   const timer = useRef<number | undefined>(undefined);
@@ -322,6 +357,7 @@ export function useAutosave<T>(serverValue: T, save: (next: T) => Promise<unknow
       // a newer edit may already be queued; it owns the dirty flag then
       if (pendingValue.current === null) setDirty(false);
       setState('saved');
+      setError(null);
       window.clearTimeout(savedTimer.current);
       savedTimer.current = window.setTimeout(() => mounted.current && setState('idle'), 2000);
     } catch (e) {
@@ -333,6 +369,7 @@ export function useAutosave<T>(serverValue: T, save: (next: T) => Promise<unknow
       setDirty(false);
       setState('error');
       const text = errorText(e);
+      setError(text || null);
       if (text) toast({ tone: 'err', message: t('Not saved: {reason}', { reason: text }) });
     }
   }, []);
@@ -370,7 +407,7 @@ export function useAutosave<T>(serverValue: T, save: (next: T) => Promise<unknow
     [],
   );
 
-  return { value: local, set, state, retry, flush, dirty };
+  return { value: local, set, state, error, retry, flush, dirty };
 }
 
 /* ---------------- entity search, time, layout ---------------- */

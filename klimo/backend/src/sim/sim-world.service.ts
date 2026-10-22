@@ -40,7 +40,8 @@ import type {
 } from '../shared/model';
 import { CONFIG_STORE, ENGINE, EVALUATE, EVENTS, INCIDENTS, JOURNAL, MEMORY_STORE, OVERRIDE_STORE, SPAN_STORE } from '../tokens';
 import { Autopilot, type Command } from './autopilot';
-import { buildDemoHouse, ROOM_IDS } from './demo-house';
+import { readOutdoorSensors } from '../ha/outdoor';
+import { buildDemoHouse, ROOM_IDS, SUNNY_WALL_ENTITY } from './demo-house';
 import { DEVICES, entityOfRole, entitySpec, ROOM_KEYS, type DeviceSpec, type RoomKey } from './devices';
 import { simText } from './language';
 import { FakeHaService, guestEvents } from './fake-ha.service';
@@ -208,6 +209,7 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
     this.env.setOutdoorNow(now, tempC);
     this.world.outdoorC = this.env.outdoor(now);
     this.ha.report('sensor.outdoor_temperature', round1(this.world.outdoorC).toFixed(1), null, now);
+    this.ha.report(SUNNY_WALL_ENTITY, round1(this.env.sunnyWallC(now)).toFixed(1), null, now);
     return this.state();
   }
 
@@ -489,8 +491,8 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
   }
 
   private snapshotAt(cfg: EngineConfig, t: EpochMs, roomTemps: Record<Id, [EpochMs, number][]>, prev: InputSnapshot['prev']): InputSnapshot {
-    const outdoorNow = this.ha.getState('sensor.outdoor_temperature');
-    const now = outdoorNow ? Number(outdoorNow.state) : null;
+    const combined = readOutdoorSensors(cfg.settings.outdoor, (id) => this.ha.getState(id), t, '°C').valueC;
+    const now = combined === null ? null : round1(combined);
     const calendars = cfg.activationRules.filter((r) => r.enabled && r.config.type === 'calendar').map((r) => (r.config.type === 'calendar' ? r.config.calendarEntityId : ''));
     const calendarEvents: InputSnapshot['calendarEvents'] = {};
     for (const c of new Set(calendars)) {
@@ -503,7 +505,7 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
       states: this.ha.allStates(),
       host: this.ha,
       roomTempHistory: roomTemps,
-      outdoor: { nowC: now !== null && Number.isFinite(now) ? now : null, avg10C: this.outdoorMean(t, 10 * MIN), avgNC: this.outdoorAvgDays(t, cfg.season.avgDays), source: 'sensor' },
+      outdoor: { nowC: now, avg10C: this.outdoorMean(t, 10 * MIN), avgNC: this.outdoorAvgDays(t, cfg.season.avgDays), source: 'sensor' },
       humidHours24h: this.humidHours(t),
       calendarEvents,
       forecasts: { 'weather.home': { highToday: round1(mean + 3), lowToday: round1(mean - 3), highTomorrow: round1(mean + 2.5), condition: this.ha.getState('weather.home')?.state ?? null } },
@@ -838,11 +840,13 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
         case 'outdoor': {
           const t = round1(w.outdoorC);
           const rh = Math.round(this.env.outdoorRh(at));
-          this.outdoorSamples.push([at, w.outdoorC]);
+          // the means the warm-up decides by follow the configured outdoor sensors, combined
+          const combined = this.combinedOutdoor(at) ?? w.outdoorC;
+          this.outdoorSamples.push([at, combined]);
           while (this.outdoorSamples.length && this.outdoorSamples[0][0] < at - HOUR) this.outdoorSamples.shift();
           const lastHour = this.outdoorHourly[this.outdoorHourly.length - 1];
           if (!lastHour || at - lastHour[0] >= HOUR) {
-            this.outdoorHourly.push([at, w.outdoorC]);
+            this.outdoorHourly.push([at, combined]);
             while (this.outdoorHourly.length && this.outdoorHourly[0][0] < at - 10 * DAY) this.outdoorHourly.shift();
             for (const k of ROOM_KEYS) {
               const ring = this.rhHourly[k];
@@ -853,6 +857,17 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
           if (!due(d.id, [t, rh], '', [0.1, 2], 10 * MIN)) break;
           this.ha.report('sensor.outdoor_temperature', t.toFixed(1), null, at);
           this.ha.report('sensor.outdoor_humidity', String(rh), null, at);
+          break;
+        }
+        case 'sunny_wall': {
+          const t = round1(this.env.sunnyWallC(at) + noise(0.05));
+          const rh = Math.round(this.env.outdoorRh(at) - 6 + noise(0.4));
+          if (!due(d.id, [t, rh], '', [0.1, 2], 10 * MIN)) break;
+          if (this.ha.report(entityOfRole(d, 'temperature')!.entityId, t.toFixed(1), null, at)) {
+            this.ha.report(entityOfRole(d, 'humidity')!.entityId, String(rh), null, at);
+            link(d);
+            zigbee(d, { temperature: t, humidity: rh });
+          }
           break;
         }
         case 'energy': {
@@ -901,6 +916,11 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
     const upcoming = guestEvents(at, at + 7 * DAY, this.simClock.tz())[0];
     const shown = ev ?? upcoming;
     this.ha.setEntity('calendar.family', ev ? 'on' : 'off', { message: shown ? simText('Гості', env.sim.lang) : '', start_time: shown ? new Date(shown.start).toISOString() : null, end_time: shown ? new Date(shown.end).toISOString() : null }, at);
+  }
+
+  /** The configured outdoor sensors combined as Klimo reads them (null when none reports). */
+  private combinedOutdoor(at: EpochMs): number | null {
+    return readOutdoorSensors(this.config.engineConfig().settings.outdoor, (id) => this.ha.getState(id), at, '°C').valueC;
   }
 
   /** Mean of the outdoor sensor over the last `span` (the 10-min mean the plant decides by). */

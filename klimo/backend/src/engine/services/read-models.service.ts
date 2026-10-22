@@ -41,6 +41,7 @@ import type {
   TodayDto,
   TriggerDto,
 } from '../../shared/model';
+import { outdoorSensorIds } from '../../shared/model';
 import { CLOCK, CONFIG_STORE, HA_PORT, HOUSE_ACTIONS, OVERRIDE_STORE, ROOM_ACTIONS, SPAN_STORE } from '../../tokens';
 import { addDays, fromLocal, isLocalDate, toLocal } from '../core/time';
 import {
@@ -105,6 +106,7 @@ export class ReadModelsService implements IReadModels {
       today: await this.today(),
       durations: this.houseActions.durations(),
       onboarding: this.onboarding(),
+      outdoor: this.access.inputs()?.outdoorReadout() ?? null,
     };
   }
 
@@ -422,7 +424,7 @@ export class ReadModelsService implements IReadModels {
     if (cfg.settings.onboardingDismissed) return null;
     const lovelace = this.access.cards()?.status() ?? null;
     const steps: OnboardingDto['steps'] = [
-      { key: 'outdoor', done: !!(cfg.settings.outdoor.sensorEntityId || cfg.settings.outdoor.weatherEntityId) },
+      { key: 'outdoor', done: outdoorSensorIds(cfg.settings.outdoor).length > 0 || !!cfg.settings.outdoor.weatherEntityId },
       { key: 'sources', done: cfg.sources.some((s) => s.enabled) },
       { key: 'room', done: cfg.rooms.length > 0 },
       { key: 'notifications', done: this.config.list('targets').some((t) => t.enabled && (t.channel === 'ha_mobile' || t.channel === 'telegram')) },

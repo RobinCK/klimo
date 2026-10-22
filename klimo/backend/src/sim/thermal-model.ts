@@ -107,6 +107,20 @@ function panelIncidence(t: EpochMs): number {
   return Math.max(0, c) * clamp(elevation / 8, 0, 1);
 }
 
+/** How much warmer than the air a thermometer on a fully sunlit wall reads, °C. */
+const SUNNY_WALL_C = 6;
+/** The sunlit wall faces south-west: the sun reaches it in the afternoon. */
+const SUNNY_WALL_AZIMUTH = 225;
+
+/** Share of full sun on a vertical wall facing SUNNY_WALL_AZIMUTH. */
+function wallIncidence(t: EpochMs): number {
+  const { elevation, azimuth } = sunPosition(t);
+  if (elevation <= 0) return 0;
+  const rad = Math.PI / 180;
+  const c = Math.cos(elevation * rad) * Math.cos((azimuth - SUNNY_WALL_AZIMUTH) * rad);
+  return Math.max(0, c) * clamp(elevation / 5, 0, 1);
+}
+
 const LOAD_PROFILE_KW = [0.7, 0.7, 0.7, 0.7, 0.7, 0.8, 1.2, 1.8, 1.6, 1.0, 1.0, 1.1, 1.3, 1.2, 1.0, 1.0, 1.1, 1.8, 3.0, 3.2, 3.0, 2.0, 1.6, 1.0];
 
 /** Outdoor temperature, sun, PV, the household's own load and the grid, as functions of time. */
@@ -174,6 +188,21 @@ export class Environment {
     if (elevation <= 0) return 0;
     const shade = this.outdoor(t) > 24 ? 0.45 : 1;
     return ROOM_PHYSICS[room].sunGain * Math.sin((elevation * Math.PI) / 180) * Math.min(1, this.cloud) * shade;
+  }
+
+  /**
+   * A thermometer on the sunlit wall: the air plus the warmth the sun leaves in the wall — highest in
+   * the afternoon, fading over about an hour after the sun has moved on.
+   */
+  sunnyWallC(t: EpochMs): number {
+    let heat = 0;
+    let norm = 0;
+    for (let k = 0; k < 18; k++) {
+      const w = Math.exp(-k / 6);
+      heat += w * wallIncidence(t - k * 10 * MIN);
+      norm += w;
+    }
+    return this.outdoor(t) + SUNNY_WALL_C * Math.min(1, this.cloud) * (heat / norm);
   }
 
   /** People, cooking and showers, °C/h. */

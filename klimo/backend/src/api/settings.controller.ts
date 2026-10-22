@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Inject, Patch, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Inject, Optional, Patch, Post, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { AdminOnly } from '../common/admin.guard';
 import { ApiException } from '../common/http';
@@ -10,11 +10,13 @@ import type {
   DeviceHealthSettings,
   ExportBundle,
   IConfigStore,
+  IHaInputs,
   ImportResult,
   MqttStatus,
+  OutdoorReadout,
   SettingsBundle,
 } from '../shared/model';
-import { CLOCK, CONFIG_STORE } from '../tokens';
+import { CLOCK, CONFIG_STORE, HA_INPUTS } from '../tokens';
 import { deviceHealthPatch, generalSettingsPatch, importBundle, importQuery, safetySettingsPatch } from './schemas';
 import { ApiRefs, localToday } from './support';
 
@@ -25,6 +27,7 @@ export class SettingsController {
     @Inject(CONFIG_STORE) private readonly config: IConfigStore,
     @Inject(CLOCK) private readonly clock: ClockPort,
     @Inject(ApiRefs) private readonly refs: ApiRefs,
+    @Optional() @Inject(HA_INPUTS) private readonly inputs?: IHaInputs,
   ) {}
 
   @Get('settings')
@@ -36,7 +39,14 @@ export class SettingsController {
       deviceHealth: this.config.singleton('deviceHealth'),
       mqtt: this.refs.mqttStatus(),
       lovelace: this.refs.lovelace(),
+      outdoor: this.inputs?.outdoorReadout() ?? null,
     };
+  }
+
+  /** The outdoor temperature and each of its sensors right now (Settings → House refreshes it). */
+  @Get('settings/outdoor')
+  outdoor(): OutdoorReadout | null {
+    return this.inputs?.outdoorReadout() ?? null;
   }
 
   @Patch('settings/general')

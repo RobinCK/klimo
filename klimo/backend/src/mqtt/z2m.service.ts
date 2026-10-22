@@ -7,6 +7,10 @@ const LQI_WINDOW_MS = 6 * 60 * 60_000;
 /** One link-quality sample per device per minute is plenty for a 6-hour median. */
 const LQI_SAMPLE_MS = 60_000;
 const MAX_DEVICES = 2_000;
+/** A device heard again after this long is news for device health (it may have been reported offline). */
+const QUIET_MS = 5 * 60_000;
+/** A `last_seen` this far ahead of our clock is a clock skew, not the future. */
+const SKEW_MS = 60_000;
 
 const SYSTEM: Actor = { via: 'system', userId: null, userName: null, contextId: null };
 
@@ -27,14 +31,19 @@ export interface Z2mDeviceLink {
   /** Median of the last 6 h (device health uses it for «слабкий сигнал»). */
   lqiMedian: number | null;
   lqiSamples: number;
+  /** When the latest link quality was reported. */
+  lqiAt: EpochMs | null;
   batteryPct: Pct | null;
+  batteryAt: EpochMs | null;
   lastSeenAt: EpochMs | null;
   available: boolean | null;
 }
 
 interface Link {
   samples: [EpochMs, number][];
+  lqiAt: EpochMs | null;
   battery: Pct | null;
+  batteryAt: EpochMs | null;
   lastSeenAt: EpochMs | null;
   available: boolean | null;
 }
@@ -48,6 +57,14 @@ type Json = Record<string, unknown>;
 const isObj = (v: unknown): v is Json => !!v && typeof v === 'object' && !Array.isArray(v);
 const str = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+/** Zigbee2MQTT's `last_seen` in any of its formats: ISO 8601 (UTC or local offset) or epoch ms. */
+export function parseLastSeen(v: unknown): EpochMs | null {
+  if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v < 1e11 ? v * 1000 : v;
+  if (typeof v !== 'string' || !v.trim()) return null;
+  const t = Date.parse(v);
+  return Number.isFinite(t) ? t : null;
+}
 
 /** `online` / `offline`, plain (Z2M < 1.29) or `{"state": …}`. */
 export function parseOnline(payload: string): boolean | null {
@@ -163,9 +180,9 @@ export class Z2mService {
     return /^[^/]+\/bridge\/state$/.test(topic) || !!this.instanceOf(topic);
   }
 
-  onMessage(topic: string, payload: string): void {
+  onMessage(topic: string, payload: string, retained = false): void {
     try {
-      this.route(topic, payload);
+      this.route(topic, payload, retained);
     } catch (e) {
       this.once.warn(`msg:${topic}`, `cannot read ${topic}: ${errorText(e)}`);
     }
@@ -188,7 +205,7 @@ export class Z2mService {
     if (!info && !link) return null;
     return {
       ...(info ?? { ieee: null, friendlyName, model: null, vendor: null, powerSource: null, trv: null }),
-      ...(link ?? { lqi: null, lqiMedian: null, lqiSamples: 0, batteryPct: null, lastSeenAt: null, available: null }),
+      ...(link ?? { lqi: null, lqiMedian: null, lqiSamples: 0, lqiAt: null, batteryPct: null, batteryAt: null, lastSeenAt: null, available: null }),
     };
   }
 
@@ -196,19 +213,32 @@ export class Z2mService {
     const l = this.links.get(key(instanceId, friendlyName));
     if (!l) return null;
     const recent = l.samples.filter(([at]) => at >= this.clock.now() - LQI_WINDOW_MS).map(([, v]) => v);
+    const last = l.samples[l.samples.length - 1];
     return {
-      lqi: l.samples.length ? l.samples[l.samples.length - 1][1] : null,
+      lqi: last ? last[1] : null,
       lqiMedian: median(recent),
       lqiSamples: recent.length,
+      lqiAt: l.lqiAt,
       batteryPct: l.battery,
+      batteryAt: l.batteryAt,
       lastSeenAt: l.lastSeenAt,
       available: l.available,
     };
   }
 
+  /**
+   * Link data of a device as Home Assistant names it: by IEEE address through the bridge's device list
+   * (a device renamed in Zigbee2MQTT keeps it), else by friendly name.
+   */
+  deviceLink(instanceId: Id, ieee: string | null, friendlyName: string): Z2mDeviceLink | null {
+    const want = ieee?.toLowerCase();
+    const byIeee = want ? [...(this.bridges.get(instanceId)?.devices.values() ?? [])].find((d) => d.ieee?.toLowerCase() === want) : undefined;
+    return (byIeee ? this.link(instanceId, byIeee.friendlyName) : null) ?? this.link(instanceId, friendlyName);
+  }
+
   /* ── routing ────────────────────────────────────────────────────────────────────────────────── */
 
-  private route(topic: string, payload: string): void {
+  private route(topic: string, payload: string, retained: boolean): void {
     const instance = this.instanceOf(topic);
     if (!instance) {
       const m = /^([^/]+)\/bridge\/state$/.exec(topic);
@@ -221,7 +251,7 @@ export class Z2mService {
     if (rest.startsWith('bridge/')) return;
     if (/\/(set|get)(\/.*)?$/.test(rest)) return;
     if (rest.endsWith('/availability')) return this.availability(instance, rest.slice(0, -'/availability'.length), parseOnline(payload));
-    this.deviceMessage(instance, rest, payload);
+    this.deviceMessage(instance, rest, payload, retained);
   }
 
   private bridgeState(instance: Z2mInstance, online: boolean | null): void {
@@ -261,24 +291,36 @@ export class Z2mService {
     if (l) l.available = online;
   }
 
-  private deviceMessage(instance: Z2mInstance, friendlyName: string, payload: string): void {
+  private deviceMessage(instance: Z2mInstance, friendlyName: string, payload: string, retained: boolean): void {
     if (!payload.trim().startsWith('{')) return;
     const msg: unknown = JSON.parse(payload);
     if (!isObj(msg)) return;
+    const now = this.clock.now();
+    // `last_seen` (when enabled in Zigbee2MQTT) says when the device really spoke; without it only a live
+    // message is news — a retained one replayed on subscribe may be days old
+    const stamped = parseLastSeen(msg.last_seen);
+    const at = stamped !== null ? Math.min(stamped, now + SKEW_MS) : retained ? null : now;
+    if (at === null) return;
     const l = this.linkOf(instance.id, friendlyName);
     if (!l) return;
-    const now = this.clock.now();
-    l.lastSeenAt = now;
+    const before = l.lastSeenAt;
+    if (before === null || at > before) l.lastSeenAt = at;
     l.available ??= true;
     const battery = num(msg.battery);
-    if (battery !== null) l.battery = battery;
+    if (battery !== null && (l.batteryAt === null || at >= l.batteryAt)) {
+      l.battery = battery;
+      l.batteryAt = at;
+    }
     const lqi = num(msg.linkquality);
-    if (lqi !== null) {
-      const last = l.samples[l.samples.length - 1];
-      if (last && now - last[0] < LQI_SAMPLE_MS) last[1] = lqi;
-      else l.samples.push([now, lqi]);
+    const last = l.samples[l.samples.length - 1];
+    if (lqi !== null && (!last || at >= last[0])) {
+      if (last && at - last[0] < LQI_SAMPLE_MS) last[1] = lqi;
+      else l.samples.push([at, lqi]);
+      l.lqiAt = at;
       while (l.samples.length && l.samples[0][0] < now - LQI_WINDOW_MS) l.samples.shift();
     }
+    // back after a silence: device health re-checks now instead of on its next pass
+    if ((before === null || at - before >= QUIET_MS) && now - at < QUIET_MS) this.bus.emit('z2m.device', { instanceId: instance.id, friendlyName, at });
   }
 
   /** A bridge on a base topic Klimo does not know yet: remember it as a Zigbee2MQTT instance. */
@@ -355,7 +397,7 @@ export class Z2mService {
     let l = this.links.get(k);
     if (!l) {
       if (this.links.size >= MAX_DEVICES) return null;
-      l = { samples: [], battery: null, lastSeenAt: null, available: null };
+      l = { samples: [], lqiAt: null, battery: null, batteryAt: null, lastSeenAt: null, available: null };
       this.links.set(k, l);
     }
     return l;

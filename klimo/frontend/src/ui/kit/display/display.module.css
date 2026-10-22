@@ -27,6 +27,12 @@
   color: var(--ui-text-3);
 }
 
+.kvKeyHint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .kvEnd {
   display: inline-flex;
   align-items: center;

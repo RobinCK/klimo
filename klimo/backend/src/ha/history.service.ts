@@ -4,7 +4,7 @@ import { ApiException, notFound, validationError } from '../common/http';
 import { errorText, LogOnce } from '../common/logger';
 import { lazyRef } from '../common/refs';
 import { addDays, fromLocal, isLocalDate } from '../engine/core/time';
-import { round1 } from '../shared/model';
+import { outdoorSensorIds, round1 } from '../shared/model';
 import type {
   ApiErrorIssue,
   ClockPort,
@@ -23,6 +23,7 @@ import type {
   ISpanStore,
   LocalDate,
   Mode,
+  OutdoorAggregation,
   OutdoorHistoryDto,
   RoomConfig,
   RoomDayDto,
@@ -33,6 +34,7 @@ import type {
   TargetLayer,
 } from '../shared/model';
 import { BUS, CLOCK, CONFIG_STORE, HA_PORT, READ_MODELS, SPAN_STORE } from '../tokens';
+import { combineBuckets } from './outdoor';
 import { bucketize, combine, downsample, type Point, roundTo, valueAt } from './series';
 import { domainOf, entityTempUnit, fToC, isAvailableState, parseNumber, systemTempUnit, type TempUnit } from './units';
 
@@ -661,21 +663,24 @@ export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, 
   async outdoor(days: number): Promise<OutdoorHistoryDto> {
     const d = Math.min(31, Math.max(1, Math.round(Number.isFinite(days) ? days : 3)));
     this.requireHa();
-    const { sensorEntityId, weatherEntityId } = this.config.engineConfig().settings.outdoor;
+    const o = this.config.engineConfig().settings.outdoor;
+    const ids = outdoorSensorIds(o);
+    const method = o.aggregation ?? 'median';
+    const weatherEntityId = o.weatherEntityId;
     const now = this.clock.now();
     const end = Math.floor(now / HOUR) * HOUR + HOUR;
     const from = end - d * DAY;
-    const key = `outdoor|${d}|${sensorEntityId ?? ''}|${weatherEntityId ?? ''}|${minuteOf(end)}`;
+    const key = `outdoor|${d}|${ids.join(',')}|${method}|${weatherEntityId ?? ''}|${minuteOf(end)}`;
     return this.cached(key, STATISTICS_TTL, async () => {
       let series: OutdoorHistoryDto['series'] = [];
       const known = () => series.some((p) => p.mean !== null);
       try {
-        if (sensorEntityId) {
-          const stats = await this.ha.statistics([sensorEntityId], from, end, 'hour', ['mean', 'min', 'max']);
-          series = toStatPoints(stats[sensorEntityId] ?? []);
+        if (ids.length) {
+          const stats = await this.ha.statistics(ids, from, end, 'hour', ['mean', 'min', 'max']);
+          series = combineHourly(ids.map((id) => toStatPoints(stats[id] ?? [])), method);
           if (!known()) {
-            const raw = await this.ha.history([sensorEntityId], from, now, { minimal: true, noAttributes: true });
-            series = toBuckets(bucketize(this.numericPoints(raw[sensorEntityId], this.tempUnitOf(sensorEntityId)), from, end, HOUR));
+            const raw = await this.ha.history(ids, from, now, { minimal: true, noAttributes: true });
+            series = combineHourly(ids.map((id) => toBuckets(bucketize(this.numericPoints(raw[id], this.tempUnitOf(id)), from, end, HOUR))), method);
           }
         }
         if (!known() && weatherEntityId) {
@@ -697,6 +702,25 @@ export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, 
       return { series, avgC: avg === null ? null : round1(avg), days: d };
     });
   }
+}
+
+/**
+ * The outdoor sensors' hourly points as one series: mean, min and max of each hour are combined
+ * across the sensors that have them, by the outdoor method (one sensor passes through unchanged).
+ */
+function combineHourly(perSensor: StatisticsSeriesDto['points'][], method: OutdoorAggregation): StatisticsSeriesDto['points'] {
+  if (perSensor.length === 1) return perSensor[0];
+  const field = (k: 'mean' | 'min' | 'max') => combineBuckets(perSensor.map((pts) => pts.map((p) => ({ start: p.start, value: p[k] }))), method);
+  const mins = new Map(field('min'));
+  const maxs = new Map(field('max'));
+  return field('mean').map(([start, mean]) => ({
+    start,
+    mean: roundTo(mean, 2),
+    min: roundTo(mins.get(start) ?? null, 2),
+    max: roundTo(maxs.get(start) ?? null, 2),
+    state: null,
+    sum: null,
+  }));
 }
 
 function toStatPoints(rows: StatRows[string]): StatisticsSeriesDto['points'] {

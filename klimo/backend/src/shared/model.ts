@@ -100,6 +100,8 @@ export type Season = 'heating' | 'neutral' | 'cooling';
 export type RoomStateKind = 'heat' | 'cool' | 'hold' | 'wait' | 'window' | 'off' | 'frost' | 'error' | 'monitor';
 
 export type AggregationMethod = 'median' | 'average' | 'weighted' | 'min' | 'max' | 'primary';
+/** Outdoor sensors carry no weights: the room methods without 'weighted'. */
+export type OutdoorAggregation = Exclude<AggregationMethod, 'weighted'>;
 export type HumidityMethod = 'average' | 'median' | 'max' | 'min';
 /** One HA entity per row. A combined Zigbee sensor yields two rows (temperature + humidity). */
 export type SensorRole = 'temperature' | 'humidity' | 'contact' | 'floor_probe' | 'glass';
@@ -419,7 +421,11 @@ export interface RoomDefaults {
 export interface GeneralSettings {
   houseName: string; // 'Home'
   outdoor: {
-    sensorEntityId: EntityId | null; // auto-picked on first boot
+    /** Outdoor thermometers, combined by `aggregation`; the first one is auto-picked on first boot. */
+    sensorEntityIds: EntityId[];
+    aggregation: OutdoorAggregation; // 'median'; 'min' suits sensors the sun can reach
+    /** Settings saved before several sensors were possible; read once and moved into `sensorEntityIds`. */
+    sensorEntityId?: EntityId | null;
     weatherEntityId: EntityId | null; // fallback temperature + forecasts
     staleAfterMin: number; // 30 → weather fallback, alert sensor_offline
     holdMin: number; // 30 — hold the last value on loss before falling back
@@ -2094,6 +2100,30 @@ export interface SettingsBundle {
   mqtt: MqttStatus;
   /** 'simulated': the simulator serves the bundle itself (`path`); there is no HA config dir to copy it to. */
   lovelace: { deployed: boolean; resource: 'created' | 'updated' | 'exists' | 'unsupported' | 'error' | 'simulated' | null; path: string | null };
+  /** The outdoor temperature right now and the sensors behind it (null without Home Assistant). */
+  outdoor: OutdoorReadout | null;
+}
+
+/** One outdoor sensor as the combined outdoor temperature sees it. */
+export interface OutdoorSensorReading {
+  entityId: EntityId;
+  /** HA friendly name, else the entity id. */
+  name: string;
+  valueC: Celsius | null;
+  lastReportedAt: EpochMs | null;
+  /** ok = counted; stale (silent longer than `outdoor.staleAfterMin`) and unavailable are left out. */
+  status: Extract<SensorStatus, 'ok' | 'stale' | 'unavailable'>;
+}
+
+/** The combined outdoor temperature with its parts (Settings → House, the overview tile). */
+export interface OutdoorReadout {
+  nowC: Celsius | null;
+  avg10C: Celsius | null;
+  avgNC: Celsius | null;
+  source: SeasonState['outdoorSource'];
+  method: OutdoorAggregation;
+  /** In the configured order. */
+  sensors: OutdoorSensorReading[];
 }
 export type GeneralSettingsPatch = Partial<Omit<GeneralSettings, 'updatedAt'>>;
 export type SafetySettingsPatch = Partial<Omit<SafetySettings, 'updatedAt'>>;
@@ -2219,6 +2249,7 @@ export interface OverviewDto {
   today: TodayDto;
   durations: DurationOption[]; // house profile durations with resolved until
   onboarding: OnboardingDto | null; // null when complete or dismissed
+  outdoor: OutdoorReadout | null;
 }
 
 export interface OnboardingDto {
@@ -3007,7 +3038,9 @@ export type WsServerMessage =
   | { type: 'source.test'; payload: SourceTestResult }
   | { type: 'notify.sent'; payload: SentMessage }
   | { type: 'ha'; payload: { connected: boolean; health: EngineHealth } }
-  | { type: 'sim'; payload: { now: EpochMs; speed: number; paused: boolean; scenario: SimScenarioId } };
+  | { type: 'sim'; payload: { now: EpochMs; speed: number; paused: boolean; scenario: SimScenarioId } }
+  /** Devices whose availability or problems changed (the Devices page and its drawer re-read them). */
+  | { type: 'devices'; payload: { keys: string[] } };
 
 /* ─────────────────────────── 9 MQTT payloads (HA entities + Lovelace card transport) ──────────────── */
 /* All attributes below are retained JSON. Texts
@@ -3302,6 +3335,9 @@ export interface Detection {
   dedupKey: string;
   /** false → resolve candidate (resolves after 120 s continuously inactive). One-shot events: true once. */
   active: boolean;
+  /** With `active: false`: the subject is verifiably back (a real state again), so the incident resolves
+   *  at once instead of after the flap guard. */
+  recovered?: boolean;
   roomId?: Id | null;
   sourceId?: Id | null;
   entityId?: EntityId | null;
@@ -3503,7 +3539,8 @@ export interface MqttTransport {
   readonly connected: boolean;
   publish(topic: string, payload: string, opts: { retain: boolean; qos: 0 | 1 }): Promise<void>;
   subscribe(topics: string[]): Promise<void>;
-  onMessage(cb: (topic: string, payload: string) => void): void;
+  /** `retained`: the broker replayed a stored message to a new subscription (it is not news). */
+  onMessage(cb: (topic: string, payload: string, retained?: boolean) => void): void;
   onConnect(cb: () => void): void;
   onClose(cb: () => void): void;
   end(): Promise<void>;
@@ -3615,6 +3652,8 @@ export interface BusEvents {
   'ha.connection': { connected: boolean };
   'mqtt.connection': { connected: boolean };
   'z2m.bridge': { instanceId: Id; online: boolean };
+  /** A Zigbee2MQTT device spoke after a silence (or for the first time since the add-on started). */
+  'z2m.device': { instanceId: Id; friendlyName: string; at: EpochMs };
   'journal.added': JournalEntry;
   'command.result': { reqId: string; ok: boolean; code: ApiErrorCode | null; error: Reason | null; via: ActorVia };
 }
@@ -3781,6 +3820,8 @@ export interface IHistory {
 /** Inputs the shell needs besides plain states (Home Assistant services; values are cached, cheap to read). */
 export interface IHaInputs {
   outdoor(): InputSnapshot['outdoor'];
+  /** The same with every configured sensor's reading (read models). */
+  outdoorReadout(): OutdoorReadout;
   forecasts(): InputSnapshot['forecasts'];
   calendarEvents(): InputSnapshot['calendarEvents'];
   templateResults(): InputSnapshot['templateResults'];
@@ -3928,6 +3969,9 @@ export interface IDeviceHealth {
   replace(key: string, req: DeviceReplaceRequest, actor: Actor): Promise<DeviceHealth>;
   /** Detections for device problems (offline, battery, weak signal, z2m) — called by the shell each tick. */
   detect(now: EpochMs): Detection[];
+  /** When the device behind an entity last spoke: the freshest report of any of its entities or
+   *  Zigbee2MQTT's own last seen. Null for an entity of no known device. */
+  lastSeen(entityId: EntityId): EpochMs | null;
 }
 
 /* Notifications */
@@ -4020,6 +4064,7 @@ export interface ITexts {
 
 export const ROOM_STATES = ['heat', 'cool', 'hold', 'wait', 'window', 'off', 'frost', 'error', 'monitor'] as const;
 export const AGGREGATION_METHODS = ['median', 'average', 'weighted', 'min', 'max', 'primary'] as const;
+export const OUTDOOR_AGGREGATIONS = ['median', 'average', 'min', 'max', 'primary'] as const;
 export const HOUSE_MODES = ['auto', 'heat', 'cool', 'off'] as const;
 export const SEASONS = ['heating', 'neutral', 'cooling'] as const;
 export const SOURCE_KINDS = ['gas_boiler', 'electric_boiler', 'heat_pump', 'ac', 'electric_radiator', 'electric_floor', 'ir_panel', 'custom'] as const;
@@ -4117,4 +4162,10 @@ export function overrideGroupOf(kind: OverrideKind): OverrideGroup {
 /** Round half away from zero to 0.1 (the value every comparison uses: «19.8° ≤ 19.8°»). */
 export function round1(x: number): number {
   return (Math.sign(x) * Math.floor(Math.abs(x) * 10 + 0.5)) / 10;
+}
+
+/** The outdoor sensors in order; settings from before several sensors name a single `sensorEntityId`. */
+export function outdoorSensorIds(o: Pick<GeneralSettings['outdoor'], 'sensorEntityIds' | 'sensorEntityId'>): EntityId[] {
+  if (Array.isArray(o.sensorEntityIds) && o.sensorEntityIds.length) return [...o.sensorEntityIds];
+  return o.sensorEntityId ? [o.sensorEntityId] : [];
 }

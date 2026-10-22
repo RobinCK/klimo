@@ -68,7 +68,8 @@ export function roomIssues(x: IssueInput): RoomIssue[] {
   if (s.tempC === null && x.room.controlEnabled) add('no_data', {}, x.noDataSince);
   const temps = s.sensors.filter((r) => r.role === 'temperature' && r.status !== 'excluded');
   const lost = temps.filter((r) => r.status === 'stale' || r.status === 'unavailable');
-  if (lost.length) add('sensor_offline', { left: s.aggregation.activeCount, total: s.aggregation.totalCount });
+  // the chip names the silent sensor (and how many more), not only how many of the room's are left
+  if (lost.length) add('sensor_offline', { left: s.aggregation.activeCount, total: s.aggregation.totalCount, entityId: lost[0].entityId, more: lost.length - 1 });
 
   // a source that should serve this room is broken; name whoever took over
   const roomSources = new Set<Id>();
@@ -77,7 +78,7 @@ export function roomIssues(x: IssueInput): RoomIssue[] {
   if (faulted) add('source_fault', { sourceId: faulted.sourceId, fallbackId: x.verdict.servingSourceIds.find((id) => id !== faulted.sourceId) ?? null }, faulted.fault?.since);
 
   for (const t of x.trvs) {
-    if (t.sync.status === 'failed') add('trv_failed', { deviceId: t.deviceId });
+    if (t.sync.status === 'failed') add('trv_failed', { deviceId: t.deviceId, entityId: t.entityId });
   }
   const missing = !x.haConnected ? undefined : [...s.sensors.filter((r) => r.status !== 'excluded').map((r) => r.entityId), ...x.trvs.map((t) => t.entityId)].find(
     (id) => !(id in x.entities),
@@ -88,7 +89,7 @@ export function roomIssues(x: IssueInput): RoomIssue[] {
   if (x.comfort.tooHot.active) add('too_hot', { deltaC: x.comfort.tooHot.deltaC, minutes: x.comfort.tooHot.minutes }, x.comfort.tooHotSince);
 
   const retrying = x.trvs.find((t) => t.sync.status === 'retrying');
-  if (retrying) add('trv_retry', { attempt: retrying.sync.attempt, of: retrying.sync.maxAttempts });
+  if (retrying) add('trv_retry', { attempt: retrying.sync.attempt, of: retrying.sync.maxAttempts, deviceId: retrying.deviceId, entityId: retrying.entityId });
   if (x.overheat) add('overheat', { t: s.tempC });
 
   const wait = x.verdict.waitReason;
@@ -110,18 +111,19 @@ export function roomIssues(x: IssueInput): RoomIssue[] {
     const pct = r.batteryPct;
     if (pct !== null && pct < BATTERY_LOW_PCT) {
       const sensor = (x.cfg.sensorsByRoom[x.room.id] ?? []).find((q) => q.id === r.sensorId);
-      add('battery_low', { deviceKey: sensor?.haDeviceId ?? `entity:${r.entityId}`, pct });
+      add('battery_low', { deviceKey: sensor?.haDeviceId ?? `entity:${r.entityId}`, entityId: r.entityId, pct });
       break;
     }
   }
   const lowTrv = x.trvs.find((t) => t.batteryPct !== null && t.batteryPct < BATTERY_LOW_PCT);
   if (lowTrv && !out.some((i) => i.code === 'battery_low')) {
     const dev = (x.cfg.devicesByEmitter[lowTrv.emitterId] ?? []).find((d) => d.id === lowTrv.deviceId);
-    add('battery_low', { deviceKey: dev?.haDeviceId ?? `entity:${lowTrv.entityId}`, pct: lowTrv.batteryPct });
+    add('battery_low', { deviceKey: dev?.haDeviceId ?? `entity:${lowTrv.entityId}`, entityId: lowTrv.entityId, pct: lowTrv.batteryPct });
   }
 
   if (s.window.anyOpen && s.window.openSince !== null && x.now - s.window.openSince >= x.room.windows.remindAfterMin * MIN_MS) {
-    add('window_long', { since: s.window.openSince }, s.window.openSince);
+    const open = s.window.contacts.filter((c) => c.open === true);
+    add('window_long', { since: s.window.openSince, entityId: open[0]?.entityId ?? null, more: Math.max(0, open.length - 1) }, s.window.openSince);
   }
   if (x.season === 'cooling' && rh !== null && rh > x.room.ac.dry.abovePct && roomHasDryAc(x)) add('humid_dry_hint', { rh });
   const tout = x.toutC;

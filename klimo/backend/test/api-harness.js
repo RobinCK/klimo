@@ -321,6 +321,7 @@ function makeFakes(opts = {}) {
     renderTemplate: async (template) => ({ result: template.length, error: null }),
     z2mBridges: () => ({ z1: true }),
     outdoor: () => ({ nowC: null, avg10C: null, avgNC: null, source: 'none' }),
+    outdoorReadout: () => ({ nowC: null, avg10C: null, avgNC: null, source: 'none', method: 'median', sensors: [] }),
   });
   const overrides = recorder(calls, 'overrides', {
     active: () => [],

@@ -10,6 +10,7 @@ import {
   EMITTER_ROLES,
   EVENT_KINDS,
   HOUSE_MODES,
+  OUTDOOR_AGGREGATIONS,
   PRIORITY_DEFAULT,
   PRIORITY_LOCKED,
   PUMP_RULES,
@@ -716,7 +717,8 @@ export function validateSensor(s: RoomSensor, g: ConfigGraph): Issues {
   if (s.excludedBy !== null) v.oneOf('excludedBy', s.excludedBy, ['user', 'notification']);
   for (const o of g.sensors.values()) {
     if (o.id === s.id || o.entityId !== s.entityId || o.role !== s.role) continue;
-    if (o.roomId === s.roomId) v.push('entityId', 'unique');
+    // named, so the panel can say which row of the room already reads it (a switched-off row is easy to miss)
+    if (o.roomId === s.roomId) v.push('entityId', 'unique', { sensorId: o.id, name: o.name, state: o.included ? 'included' : 'excluded' });
     // a door contact may serve two rooms; a thermometer reports for one
     else if (s.role !== 'contact') v.push('entityId', 'bound_elsewhere', { roomId: o.roomId, room: g.rooms.get(o.roomId)?.name ?? '' });
   }
@@ -1271,11 +1273,25 @@ export function validateDeviceMeta(m: DeviceMeta): Issues {
 
 /* ── singletons ───────────────────────────────────────────────────────────────────────────────── */
 
+/** More outdoor thermometers than this add nothing but load on the recorder queries. */
+export const MAX_OUTDOOR_SENSORS = 8;
+
 export function validateSettings(s: ConfigGraph['settings'], g: ConfigGraph): Issues {
   const v = new V();
   v.str('houseName', s.houseName, 1, 40);
   if (v.obj('outdoor', s.outdoor)) {
-    v.entity('outdoor.sensorEntityId', s.outdoor.sensorEntityId, ['sensor', 'input_number', 'number', 'weather']);
+    const domains = ['sensor', 'input_number', 'number', 'weather'];
+    if (v.arr('outdoor.sensorEntityIds', s.outdoor.sensorEntityIds, MAX_OUTDOOR_SENSORS)) {
+      const seen = new Set<unknown>();
+      s.outdoor.sensorEntityIds.forEach((id, i) => {
+        v.entity(`outdoor.sensorEntityIds.${i}`, id, domains, { required: true });
+        if (seen.has(id)) v.push(`outdoor.sensorEntityIds.${i}`, 'unique');
+        seen.add(id);
+      });
+    }
+    v.oneOf('outdoor.aggregation', s.outdoor.aggregation, OUTDOOR_AGGREGATIONS);
+    // the single sensor of older settings, until it is moved into the list
+    v.entity('outdoor.sensorEntityId', s.outdoor.sensorEntityId, domains);
     v.entity('outdoor.weatherEntityId', s.outdoor.weatherEntityId, ['weather']);
     v.num('outdoor.staleAfterMin', s.outdoor.staleAfterMin, 5, 240);
     v.num('outdoor.holdMin', s.outdoor.holdMin, 0, 240);
@@ -1433,6 +1449,29 @@ export function validateDeviceHealth(d: ConfigGraph['deviceHealth']): Issues {
 }
 
 /* ── dispatch ─────────────────────────────────────────────────────────────────────────────────── */
+
+function valueAt(o: unknown, path: string): unknown {
+  let cur = o;
+  for (const key of path ? path.split('.') : []) {
+    if (cur === null || typeof cur !== 'object') return undefined;
+    cur = (cur as Record<string, unknown>)[key];
+  }
+  return cur;
+}
+
+const sameValue = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * The problems of an edited object that the write itself brought in: new ones, and old ones whose
+ * value it changed. A problem the object already had is carried over and does not block the write —
+ * a room whose own frost floor fell under a later-raised house floor must still take a new sensor or
+ * a new name, while a frost floor edited to another too-low value is still refused.
+ */
+export function introducedIssues(after: Issues, before: Issues, prev: unknown, next: unknown): Issues {
+  if (!before.length) return after;
+  const had = new Set(before.map((i) => `${i.path}\u0000${i.code}`));
+  return after.filter((i) => !had.has(`${i.path}\u0000${i.code}`) || !sameValue(valueAt(prev, i.path), valueAt(next, i.path)));
+}
 
 export function validateCollectionItem(c: ConfigCollectionName, value: unknown, g: ConfigGraph, env: ValidationEnv = {}): Issues {
   switch (c) {

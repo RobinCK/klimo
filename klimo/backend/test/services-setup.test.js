@@ -351,6 +351,12 @@ test('a thermostat without a separate sensor gives the room its own temperature'
     assert.deepEqual(devices.map((d) => [d.kind, d.entityId]), [['trv', TRV]]);
     assert.equal(s.config.room(report.roomId).temperature.method, 'primary');
 
+    // a climate a source already drives cannot become a room's head (found by the search, not the area)
+    const ac = await s.setup.create(request({ name: 'Bedroom', emitterKinds: ['ac'], devices: [{ role: 'ac', entityId: AC }, { role: 'temperature', entityId: BED_T }] }), ACTOR);
+    assert.ok(ac.roomId);
+    const twice = s.setup.validate({ step: 2, draft: request({ name: 'Guest', emitterKinds: ['trv'], devices: [{ role: 'trv', entityId: AC }] }) });
+    assert.ok(twice.issues.some((i) => i.path === 'devices.0.entityId' && i.code === 'in_use'));
+
     // a climate is no humidity sensor
     const bad = s.setup.validate({ step: 2, draft: request({ devices: [{ role: 'trv', entityId: TRV }, { role: 'humidity', entityId: TRV }] }) });
     assert.ok(bad.issues.some((i) => i.path === 'devices.1.entityId' && i.code === 'domain'));

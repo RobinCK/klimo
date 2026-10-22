@@ -1,5 +1,6 @@
 import { newId, ID_PREFIX } from '../common/ids';
 import type { ConditionNode, EntityId, Id, ServiceCallSpec, SourceConfig, UsageRef } from '../shared/model';
+import { outdoorSensorIds } from '../shared/model';
 import type { ConfigGraph } from './graph';
 
 /* =====================================================================================================
@@ -195,7 +196,7 @@ export function entityRefs(g: ConfigGraph): { entityId: EntityId; usage: UsageRe
   const energy: UsageRef = { type: 'energy', id: null, label: '' };
   for (const e of Object.values(g.energy.entities)) add(e, energy);
   const settings: UsageRef = { type: 'settings', id: null, label: '' };
-  add(g.settings.outdoor.sensorEntityId, settings);
+  for (const id of outdoorSensorIds(g.settings.outdoor)) add(id, settings);
   add(g.settings.outdoor.weatherEntityId, settings);
   if (g.settings.presence.enabled) {
     for (const p of g.settings.presence.personEntityIds) add(p, settings);

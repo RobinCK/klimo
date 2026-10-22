@@ -2,6 +2,7 @@ import { useEffect, useRef, type CSSProperties, type KeyboardEvent } from 'react
 import type { Tone } from '../../types';
 import { toneVar } from '../../tokens/vars';
 import { Icon } from '../../basic/Icon';
+import { InfoHint, type InfoHintContent } from '../../basic/InfoHint';
 import { clamp, snap } from '../internal/util';
 import s from './fields.module.css';
 
@@ -89,13 +90,15 @@ export interface StepperProps {
   disabled?: boolean;
   ariaDec: string;
   ariaInc: string;
+  /** What the setting does, behind an «i» after the label. */
+  hint?: InfoHintContent;
 }
 
 /**
  * −/value/+ with a keyboard-operable value (role spinbutton: arrows, PageUp/Down, Home/End).
  * Values are snapped to the step grid, so tenths never accumulate float noise.
  */
-export function Stepper({ value, text, onChange, min, max, step, variant, label, sub, labelTone, disabled, ariaDec, ariaInc }: StepperProps) {
+export function Stepper({ value, text, onChange, min, max, step, variant, label, sub, labelTone, disabled, ariaDec, ariaInc, hint }: StepperProps) {
   const valueRef = useRef(value);
   valueRef.current = value;
   const change = (dir: -1 | 1, jump = 1): boolean => {
@@ -114,8 +117,28 @@ export function Stepper({ value, text, onChange, min, max, step, variant, label,
     <div className={s.stepper} data-variant={variant} data-disabled={disabled ? '' : undefined} style={style}>
       {label || sub ? (
         <span className={s.stepLabel}>
-          {label ? <span className={s.stepLabelText}>{label}</span> : null}
-          {sub ? <span className={s.stepSub}>{sub}</span> : null}
+          {label ? (
+            <span className={s.stepLabelText}>
+              {label}
+              {hint ? (
+                <>
+                  {' '}
+                  <InfoHint content={hint} subject={label} />
+                </>
+              ) : null}
+            </span>
+          ) : null}
+          {sub ? (
+            <span className={s.stepSub}>
+              {sub}
+              {hint && !label ? (
+                <>
+                  {' '}
+                  <InfoHint content={hint} subject={sub} />
+                </>
+              ) : null}
+            </span>
+          ) : null}
         </span>
       ) : null}
       <span className={s.stepControls}>

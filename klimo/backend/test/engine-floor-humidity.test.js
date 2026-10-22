@@ -51,7 +51,7 @@ function floorHouse() {
     house: { mode: 'cool' },
     overrides: rooms.map((r) => coolTarget(r.id, 24)),
   });
-  cfg.settings = { ...cfg.settings, outdoor: { ...cfg.settings.outdoor, sensorEntityId: null } };
+  cfg.settings = { ...cfg.settings, outdoor: { ...cfg.settings.outdoor, sensorEntityIds: [] } };
   for (const r of rooms) {
     const key = r.id.slice(2);
     cfg.sensorsByRoom[r.id] = [sensor(`rs_${key}_t`, r.id, `sensor.${key}_t`, 'temperature'), sensor(`rs_${key}_rh`, r.id, `sensor.${key}_rh`, 'humidity')];

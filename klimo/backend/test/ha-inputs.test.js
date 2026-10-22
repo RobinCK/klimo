@@ -11,7 +11,7 @@ function setup() {
   const ha = new FakeHa();
   const config = new FakeConfig();
   const bus = new Bus();
-  config.settings.outdoor = { sensorEntityId: 'sensor.outdoor', weatherEntityId: 'weather.home', staleAfterMin: 30, holdMin: 30 };
+  config.settings.outdoor = { sensorEntityIds: ['sensor.outdoor'], aggregation: 'median', weatherEntityId: 'weather.home', staleAfterMin: 30, holdMin: 30 };
   const inputs = new HaInputsService(ha, config, clock, bus);
   return { clock, ha, config, bus, inputs };
 }

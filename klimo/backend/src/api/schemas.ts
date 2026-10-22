@@ -29,6 +29,7 @@ import {
   HOUSE_DURATIONS,
   HOUSE_MODES,
   LOCK_DURATIONS,
+  OUTDOOR_AGGREGATIONS,
   PRIORITY_DEFAULT,
   PRIORITY_LOCKED,
   PUMP_RULES,
@@ -40,6 +41,7 @@ import {
   TRV_STRATEGIES,
   WINDOW_REACTIONS,
 } from '../shared/model';
+import { MAX_OUTDOOR_SENSORS } from '../config/validators';
 import type {
   AcControl,
   ActivationRuleConfig,
@@ -397,7 +399,15 @@ const roomDefaultsPatch = patch({
 
 export const generalSettingsPatch: Schema<DeepPartial<GeneralSettingsPatch>> = patch({
   houseName: name(40),
-  outdoor: patch({ sensorEntityId: nullableEntity, weatherEntityId: nullable(entityId(['weather'])), staleAfterMin: minutes(1440), holdMin: minutes(1440) }),
+  outdoor: patch({
+    sensorEntityIds: arr(entityId(), { max: MAX_OUTDOOR_SENSORS }),
+    aggregation: oneOf(OUTDOOR_AGGREGATIONS),
+    // a panel opened before several outdoor sensors still sends the single one
+    sensorEntityId: nullableEntity,
+    weatherEntityId: nullable(entityId(['weather'])),
+    staleAfterMin: minutes(1440),
+    holdMin: minutes(1440),
+  }),
   units: oneOf(['auto', 'C', 'F'] as const),
   notificationLanguage: oneOf(LANGS),
   uiLanguage: oneOf(['auto', 'uk', 'en'] as const),

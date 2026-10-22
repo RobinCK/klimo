@@ -1,11 +1,12 @@
 import type { HumidityMethod } from '@api/model';
 import { api } from '@api/endpoints';
 import { useAutosave, useEntitySearch, useMutation } from '@data';
-import { AutoGrid, Button, ComfortBar, EntityId, EntityPicker, FallbackNote, KeyValueList, Section, SegmentedControl, Stack, StatTile } from '@ui';
+import { AutoGrid, Button, ComfortBar, EntityId, EntityPicker, FallbackNote, KeyValueList, Section, SegmentedControl, SensorRow, Stack, StatTile } from '@ui';
 import { fmtDelta, fmtNum, fmtPct, fmtTemp, humidityMethodLabel, t } from '@i18n';
 import { AddEntityDialog } from '../AddEntityDialog';
 import { closeDialog, openDialog, useOpenDialog } from '../dialogs';
 import { lockable, SettingPill } from './readonly';
+import { EditSensorDialog, readingOf, sensorMeta } from './Sensors';
 import type { SectionDef, SectionProps } from './types';
 
 const METHODS: HumidityMethod[] = ['average', 'median', 'max', 'min'];
@@ -22,12 +23,36 @@ function Body(p: SectionProps) {
       closeDialog();
     },
   });
+  const toggle = useMutation((sid: string, included: boolean) => api.rooms.sensors.patch(id, sid, { included }), { onSuccess: (r) => p.setRoom(r) });
   const h = state.humidity;
-  const count = room.sensors.filter((s) => s.role === 'humidity' && s.included).length;
+  // listed, so it is clear which hygrometers the room reads (a switched-off one included)
+  const sensors = room.sensors.filter((s) => s.role === 'humidity').sort((a, b) => a.order - b.order);
+  const editing = dialog?.startsWith('edit-sensor:') ? (sensors.find((s) => `edit-sensor:${s.id}` === dialog) ?? null) : null;
+  const count = sensors.filter((s) => s.included).length;
   const v = hum.value;
   const dehum = v.dehumidifier;
   return (
     <Stack gap="lg">
+      {sensors.length ? (
+        <Stack gap="xs">
+          {sensors.map((s) => {
+            const r = readingOf(p, s.id);
+            return (
+              <SensorRow
+                key={s.id}
+                included={s.included}
+                onToggle={(on) => p.canEdit && void toggle.run(s.id, on)}
+                name={s.name}
+                entityId={p.phone ? undefined : s.entityId}
+                valueText={fmtPct(r?.humidityPct ?? null)}
+                excluded={!s.included || (r?.status ?? 'ok') !== 'ok'}
+                meta={sensorMeta(p, s, r)}
+                onEdit={p.canEdit ? () => openDialog(`edit-sensor:${s.id}`) : undefined}
+              />
+            );
+          })}
+        </Stack>
+      ) : null}
       {count ? (
         <>
           <AutoGrid min={100} columns={3} gap="sm">
@@ -58,7 +83,14 @@ function Body(p: SectionProps) {
           ) : null}
         </>
       ) : (
-        <FallbackNote icon="droplet" text={t('No humidity sensor in this room — the warnings and the dehumidifier need one.')} />
+        <FallbackNote
+          icon="droplet"
+          text={
+            sensors.length
+              ? t('No humidity sensor counts — tick one in the list; the warnings and the dehumidifier need one.')
+              : t('No humidity sensor in this room — the warnings and the dehumidifier need one.')
+          }
+        />
       )}
       <KeyValueList
         rows={[
@@ -180,7 +212,9 @@ function Body(p: SectionProps) {
         placeholder={t('Search a humidity sensor')}
         onClose={closeDialog}
         onSubmit={(entityId, name) => add.run(entityId, name)}
+        errors={add}
       />
+      <EditSensorDialog p={p} sensor={editing} weight={false} />
     </Stack>
   );
 }

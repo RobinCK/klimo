@@ -107,6 +107,18 @@
   font-size: var(--ui-fs-body);
 }
 
+/* a header label with its «i» right after it */
+.withHint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-space-4);
+  min-width: 0;
+}
+
+.withHint > :first-child {
+  min-width: 0;
+}
+
 .overline {
   font-size: var(--ui-fs-caption);
   font-weight: 700;
@@ -511,6 +523,11 @@
 /* ---------- WizardShell ---------- */
 
 .wizard {
+  /* a phone wizard takes the whole screen: above the page's gutters, never scrolling the page */
+  position: fixed;
+  inset: 0;
+  /* above the phone tab bar (200), below popovers and pickers (300+) */
+  z-index: 250;
   display: flex;
   flex-direction: column;
   height: 100dvh;
@@ -591,9 +608,12 @@
 @media (min-width: 700px) {
   /* inside the centred overlay panel: content-sized, scrolling inside */
   .wizard {
+    position: static;
+    z-index: auto;
     height: auto;
     min-height: 560px;
-    max-height: min(880px, calc(100dvh - 64px));
+    /* the modal around it stops at 90dvh (5dvh above and below) and its 1px border */
+    max-height: min(880px, calc(90dvh - 2px));
     background: var(--ui-surface-1);
   }
   .wizardHead {

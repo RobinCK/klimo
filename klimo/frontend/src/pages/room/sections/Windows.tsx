@@ -161,6 +161,7 @@ function Body(p: SectionProps) {
         placeholder={t('Search a window or door sensor')}
         onClose={closeDialog}
         onSubmit={(entityId, name) => add.run(entityId, name)}
+        errors={add}
         extra={
           <SegmentedControl<ContactKind>
             value={kind}

@@ -5,7 +5,7 @@ import { api } from '@api/endpoints';
 import { useAutosave, useMutation } from '@data';
 import { Button, CheckboxRow, Dialog, FallbackNote, KeyValueList, RadioValueGrid, SensorRow, Stack, Stepper, TextField } from '@ui';
 import { aggregationHint, aggregationLabel, fmtAgo, fmtDelta, fmtDur, fmtNum, fmtTemp, t } from '@i18n';
-import { AddEntityDialog } from '../AddEntityDialog';
+import { AddEntityDialog, SENSOR_FIELDS } from '../AddEntityDialog';
 import { closeDialog, openDialog, useOpenDialog } from '../dialogs';
 import { SettingPill } from './readonly';
 import type { SectionDef, SectionProps } from './types';
@@ -17,11 +17,11 @@ function temperatureSensors(p: SectionProps): RoomSensor[] {
   return p.room.sensors.filter((s) => s.role === 'temperature').sort((a, b) => a.order - b.order);
 }
 
-function readingOf(p: SectionProps, id: string): SensorReading | undefined {
+export function readingOf(p: SectionProps, id: string): SensorReading | undefined {
   return p.state.sensors.find((r) => r.sensorId === id);
 }
 
-function sensorMeta(p: SectionProps, s: RoomSensor, r: SensorReading | undefined): string {
+export function sensorMeta(p: SectionProps, s: RoomSensor, r: SensorReading | undefined): string {
   const parts: string[] = [];
   if (s.model) parts.push(s.model);
   if (r?.status === 'stale' || r?.status === 'unavailable') {
@@ -41,15 +41,10 @@ function sensorNote(r: SensorReading | undefined, outlierC: number): { note?: st
   return {};
 }
 
-function EditSensorDialog({ p, sensor }: { p: SectionProps; sensor: RoomSensor | null }) {
+/** Name and weight of one sensor of the room, or its removal; `weight` false for sensors no average weighs. */
+export function EditSensorDialog({ p, sensor, weight: withWeight = true }: { p: SectionProps; sensor: RoomSensor | null; weight?: boolean }) {
   const [name, setName] = useState('');
   const [weight, setWeight] = useState(1);
-  useEffect(() => {
-    if (sensor) {
-      setName(sensor.name);
-      setWeight(sensor.weight);
-    }
-  }, [sensor]);
   const save = useMutation((id: string) => api.rooms.sensors.patch(p.room.config.id, id, { name: name.trim() || sensor?.name, weight }), {
     onSuccess: (r) => {
       p.setRoom(r);
@@ -63,11 +58,28 @@ function EditSensorDialog({ p, sensor }: { p: SectionProps; sensor: RoomSensor |
     },
     okToast: t('The sensor is no longer used in this room.'),
   });
+  useEffect(() => {
+    if (sensor) {
+      setName(sensor.name);
+      setWeight(sensor.weight);
+    }
+  }, [sensor]);
+  const sensorId = sensor?.id;
+  const { reset: resetSave } = save;
+  const { reset: resetRemove } = remove;
+  // the verdict on the last attempt belongs to that opening, not to the next sensor
+  useEffect(() => {
+    resetSave();
+    resetRemove();
+  }, [sensorId, resetSave, resetRemove]);
+  // the weight stepper has no error line: its problem is said, with its name, above the buttons
+  const shown = save.formErrors({ name: SENSOR_FIELDS.name });
   return (
     <Dialog
       open={sensor != null}
       onClose={closeDialog}
       title={sensor?.name ?? ''}
+      error={shown.message ?? remove.message}
       actions={[
         { label: t('Remove from the room'), variant: 'danger', onClick: () => sensor && void remove.run(sensor.id), loading: remove.pending },
         { label: t('Cancel'), onClick: closeDialog },
@@ -75,20 +87,22 @@ function EditSensorDialog({ p, sensor }: { p: SectionProps; sensor: RoomSensor |
       ]}
     >
       <Stack gap="md">
-        <TextField label={t('Name')} value={name} onChange={setName} maxLength={40} />
-        <Stepper
-          variant="square"
-          label={t('Weight')}
-          sub={t('for the weighted average: a sensor you trust more counts more')}
-          value={weight}
-          text={fmtNum(weight, 1)}
-          min={0.1}
-          max={2}
-          step={0.1}
-          onChange={setWeight}
-          ariaDec={t('Lower the weight')}
-          ariaInc={t('Raise the weight')}
-        />
+        <TextField label={t('Name')} value={name} onChange={setName} maxLength={40} error={shown.fields.name} />
+        {withWeight ? (
+          <Stepper
+            variant="square"
+            label={t('Weight')}
+            sub={t('for the weighted average: a sensor you trust more counts more')}
+            value={weight}
+            text={fmtNum(weight, 1)}
+            min={0.1}
+            max={2}
+            step={0.1}
+            onChange={setWeight}
+            ariaDec={t('Lower the weight')}
+            ariaInc={t('Raise the weight')}
+          />
+        ) : null}
       </Stack>
     </Dialog>
   );
@@ -225,6 +239,7 @@ function Body(p: SectionProps) {
         placeholder={t('Search a temperature sensor')}
         onClose={closeDialog}
         onSubmit={(entityId, name) => add.run(entityId, name)}
+        errors={add}
       />
       <EditSensorDialog p={p} sensor={editing} />
     </Stack>

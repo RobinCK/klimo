@@ -1,4 +1,4 @@
-import { deepClone, isPlainObject } from '../shared/defaults';
+import { deepClone, isPlainObject, normalizeOutdoor } from '../shared/defaults';
 import type {
   ApiErrorIssue,
   ConfigCollectionName,
@@ -94,6 +94,8 @@ export function graphFromBundle(bundle: unknown): ParsedBundle {
   const notify = isPlainObject(bundle.notify) ? bundle.notify : {};
   const devices = isPlainObject(bundle.devices) ? bundle.devices : {};
   one('settings', 'settings', bundle.settings);
+  // backups from before several outdoor sensors name one `sensorEntityId`
+  if (isPlainObject(g.settings.outdoor)) g.settings.outdoor = normalizeOutdoor(g.settings.outdoor);
   one('safety', 'safety', bundle.safety);
   one('house', 'house', bundle.house);
   one('heat', 'heatStrategy', bundle.heatStrategy);

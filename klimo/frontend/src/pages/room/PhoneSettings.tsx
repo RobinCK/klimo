@@ -3,6 +3,7 @@ import { Accordion, MobileTopBar, Stack } from '@ui';
 import { navigate, paths, usePref } from '@app';
 import { t } from '@i18n';
 import { DangerZone, PHONE_DEFAULT_OPEN, PHONE_SECTIONS, type SectionProps } from './sections';
+import { SectionBody } from './SectionBody';
 
 /** Phone room settings: one accordion per section with a live summary; open ones are remembered. */
 export function PhoneSettings({ p, section }: { p: SectionProps; section: string | undefined }) {
@@ -27,7 +28,6 @@ export function PhoneSettings({ p, section }: { p: SectionProps; section: string
         onBack={() => navigate(paths.room(roomId))}
       />
       {PHONE_SECTIONS.filter((def) => !def.hidden?.(p)).map((def) => {
-        const Body = def.Body;
         return (
           <Accordion
             key={def.key}
@@ -38,7 +38,7 @@ export function PhoneSettings({ p, section }: { p: SectionProps; section: string
             open={open.includes(def.key)}
             onToggle={() => toggle(def.key)}
           >
-            <Body {...p} />
+            <SectionBody def={def} p={p} />
           </Accordion>
         );
       })}

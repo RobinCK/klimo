@@ -45,6 +45,7 @@ export type Binding =
   | { kind: 'ac'; room: RoomKey }
   | { kind: 'manifold' }
   | { kind: 'outdoor' }
+  | { kind: 'sunny_wall' }
   | { kind: 'energy' }
   | { kind: 'bridge'; instance: 1 | 2 }
   | { kind: 'phone'; personId: string }
@@ -430,6 +431,8 @@ function buildDevices(): DeviceSpec[] {
     },
     thermo({ base: 'garage', label: 'Датчик у гаражі', room: null, model: 'SONOFF SNZB-02', instance: 1, lqi: 76, battery: 64 }),
     zigbeeRelay('garage_plug', 'Розетка в гаражі', 'garazh', 'garage_plug', 'Zigbee-розетка 16 А', 2, 101, 0, true),
+    // a second outdoor thermometer, on the south-west wall: the afternoon sun warms it
+    { ...thermo({ base: 'south_wall', label: 'Південна стіна', room: null, model: 'SONOFF SNZB-02D', instance: 2, lqi: 83, battery: 78 }), area: null, binding: { kind: 'sunny_wall' } },
   ];
 }
 

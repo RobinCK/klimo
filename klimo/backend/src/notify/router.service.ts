@@ -37,7 +37,7 @@ import { ChannelHealth } from './channels/health';
 import { TelegramChannel } from './channels/telegram.channel';
 import { IncidentService } from './incidents.service';
 import type { IncidentChange } from './incidents.service';
-import { actionLabel, renderGroupTitle, renderIncident, renderResolved, systemText } from './messages';
+import { actionLabel, renderGroup, renderIncident, renderLines, renderResolved, systemText } from './messages';
 import type { TextContext } from './messages';
 import { TextsService } from './texts.service';
 
@@ -517,7 +517,7 @@ export class NotifyRouter implements OnApplicationBootstrap, OnModuleDestroy {
     const lines: string[] = [];
     if (open.length) {
       lines.push(systemText('digestOpen', { n: open.length }, ctx));
-      for (const i of open) lines.push(`• ${renderIncident(i, ctx, this.texts.extras(i)).title}`);
+      for (const l of renderLines(open.map((i) => ({ incident: i, extra: this.texts.extras(i) })), ctx)) lines.push(`• ${l}`);
     }
     if (events.length) {
       if (lines.length) lines.push('');
@@ -627,11 +627,11 @@ export class NotifyRouter implements OnApplicationBootstrap, OnModuleDestroy {
   private compose(d: Dispatch, ctx: TextContext): { title: string; body: string } {
     if (d.text) return d.text;
     if (d.incidents.length > 1 && d.eventKind) {
-      const lines = d.incidents.map((i) => {
-        const t = renderIncident(i, ctx, this.texts.extras(i));
-        return `• ${t.title}`;
-      });
-      return { title: renderGroupTitle(d.eventKind, d.incidents.length, ctx), body: lines.join('\n') };
+      return renderGroup(
+        d.eventKind,
+        d.incidents.map((i) => ({ incident: i, extra: this.texts.extras(i) })),
+        ctx,
+      );
     }
     const inc = d.incidents[0];
     const t = renderIncident(inc, ctx, this.texts.extras(inc));

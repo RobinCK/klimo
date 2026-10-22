@@ -110,7 +110,9 @@ export function incidentVars(i: IncidentLike, ctx: TextContext, extra: Vars = {}
   const circuitId = str(f.circuitId);
   const instanceId = str(f.instanceId);
   const label = str(f.name);
-  const subject = label ?? (entity ? names.entity(entity) : null) ?? (i.deviceKey ? names.device(i.deviceKey) : null) ?? entity;
+  const name = label ?? (entity ? names.entity(entity) : null) ?? (i.deviceKey ? names.device(i.deviceKey) : null) ?? entity;
+  // two sensors both called «Температура» in one room read the same: the entity id tells them apart
+  const subject = name && entity && f.showEntity === true && name !== entity ? `${name} (${entity})` : name;
   const since = num(f.since);
   const minutes = num(f.minutes) ?? (since !== null ? minutesSince(since, ctx.now) : minutesSince(i.openedAt, ctx.now));
   const lastAt = num(f.lastAt) ?? num(f.lastReportedAt) ?? (num(f.minutes) !== null ? ctx.now - (num(f.minutes) as number) * MINUTE_MS : null);
@@ -125,6 +127,7 @@ export function incidentVars(i: IncidentLike, ctx: TextContext, extra: Vars = {}
     sensor: subject,
     device: subject,
     duration: minutes,
+    sinceAt: since ?? (num(f.minutes) !== null ? ctx.now - (num(f.minutes) as number) * MINUTE_MS : null),
     lastAt,
   };
   if (i.progress) {
@@ -162,10 +165,52 @@ export function renderResolved(i: IncidentLike, ctx: TextContext, extra: Vars = 
   return renderRow(EVENTS[i.kind].resolved, incidentVars(i, ctx, extra), ctx);
 }
 
-/** Title of a grouped message («3 датчики не на зв’язку»). */
-export function renderGroupTitle(kind: EventKind, count: number, ctx: TextContext): string {
+/** Title of a grouped message («3 датчики не на зв’язку»), with the places it is about after a dot. */
+export function renderGroupTitle(kind: EventKind, count: number, ctx: TextContext, places: readonly string[] = []): string {
   const row = EVENTS[kind].group ?? SYSTEM_TEXTS.groupDefault;
-  return renderRow(row, { n: count, kind }, ctx);
+  const head = renderRow(row, { n: count, kind }, ctx);
+  return places.length ? clip(`${head} · ${places.join(', ')}`, 80) : head;
+}
+
+/** One incident among several (a grouped message, the morning digest): place, device, state, what Klimo does. */
+export function renderLine(i: IncidentLike, ctx: TextContext, extra: Vars = {}): string {
+  const t = EVENTS[i.kind];
+  return renderRow(t.line ?? t.title, incidentVars(i, ctx, extra), ctx);
+}
+
+/** Where an incident is, for the title of a grouped message: its room, «Надворі», or its source. */
+function placeOf(i: IncidentLike, ctx: TextContext, extra: Vars): string | null {
+  const v = incidentVars(i, ctx, extra);
+  if (typeof v.room === 'string') return v.room;
+  if (v.outdoor === true || v.role === 'outdoor') return labelOf(['Outdoors', 'Надворі'], ctx.lang);
+  return typeof v.source === 'string' ? v.source : null;
+}
+
+/**
+ * Lines for several incidents, one each. Two lines that would read the same (two unnamed sensors of one
+ * room) get their entity ids, so no two devices ever share a line.
+ */
+export function renderLines(items: readonly { incident: IncidentLike; extra?: Vars }[], ctx: TextContext): string[] {
+  const lines = items.map(({ incident, extra }) => renderLine(incident, ctx, extra));
+  const seen = new Map<string, number>();
+  for (const l of lines) seen.set(l, (seen.get(l) ?? 0) + 1);
+  return lines.map((l, k) => {
+    if ((seen.get(l) ?? 0) < 2) return l;
+    const i = items[k].incident;
+    const ref = i.entityId ?? str(i.facts?.entityId) ?? i.deviceKey;
+    return ref && !l.includes(ref) ? `${l} (${ref})` : l;
+  });
+}
+
+/** A grouped message: «2 датчики не на зв’язку · Кухня, Ванна» over one line per incident. */
+export function renderGroup(kind: EventKind, items: readonly { incident: IncidentLike; extra?: Vars }[], ctx: TextContext): { title: string; body: string } {
+  const places = [...new Set(items.map(({ incident, extra }) => placeOf(incident, ctx, extra ?? {})).filter((p): p is string => !!p))];
+  return {
+    title: renderGroupTitle(kind, items.length, ctx, places),
+    body: renderLines(items, ctx)
+      .map((l) => `• ${l}`)
+      .join('\n'),
+  };
 }
 
 export function eventLabel(kind: EventKind, lang: Lang): string {
@@ -238,6 +283,7 @@ const SAMPLE: Record<Lang, Record<string, string>> = {
     'sensor.bedroom_button_battery': 'Кнопка в спальні',
     'switch.boiler_relay': 'Реле котла',
     'binary_sensor.grid_offline': 'Мережа',
+    'binary_sensor.kitchen_window_contact': 'Вікно біля плити',
   },
   en: {
     r_kitchen: 'Kitchen',
@@ -255,6 +301,7 @@ const SAMPLE: Record<Lang, Record<string, string>> = {
     'sensor.bedroom_button_battery': 'Bedroom button',
     'switch.boiler_relay': 'Boiler relay',
     'binary_sensor.grid_offline': 'Grid',
+    'binary_sensor.kitchen_window_contact': 'Stove window',
   },
 };
 
@@ -290,7 +337,7 @@ export function sampleIncident(kind: EventKind, now: EpochMs): IncidentLike {
     case 'battery_low':
       return room('r_kitchen', { pct: 12, batteryType: 'CR2032', estDays: 9 }, 'sensor.bedroom_button_battery');
     case 'window_open_long':
-      return room('r_kitchen', { minutes: 25, outdoorC: 4.2, reaction: 'pause' });
+      return room('r_kitchen', { minutes: 25, since: now - 25 * min, outdoorC: 4.2, reaction: 'pause', entityId: 'binary_sensor.kitchen_window_contact', openCount: 1 });
     case 'humidity_high':
       return room('r_bath', { rh: 68, minutes: 20 });
     case 'condensation_risk':
@@ -300,7 +347,7 @@ export function sampleIncident(kind: EventKind, now: EpochMs): IncidentLike {
     case 'signal_weak':
       return room('r_bath', { lqi: 54 }, 'climate.bathroom_towel_trv');
     case 'entity_unavailable':
-      return { ...base, entityId: 'binary_sensor.grid_offline', facts: { minutes: 6 } };
+      return { ...base, entityId: 'binary_sensor.grid_offline', facts: { minutes: 6, triggerId: 'blackout', unknownAs: 'false' } };
     case 'entity_missing':
       return { ...base, entityId: 'switch.boiler_relay', facts: {} };
     case 'overheat':
@@ -308,7 +355,7 @@ export function sampleIncident(kind: EventKind, now: EpochMs): IncidentLike {
     case 'relay_mismatch':
       return { ...base, sourceId: 's_boiler', entityId: 'switch.boiler_relay', facts: {} };
     case 'actuator_conflict':
-      return { ...base, entityId: 'switch.boiler_relay', facts: { by: 'automation' } };
+      return { ...base, entityId: 'switch.boiler_relay', facts: { by: 'automation', until: now + 7 * min } };
     case 'room_too_cold':
       return room('r_kitchen', { t: 18.6, T: 21, minutes: 75 });
     case 'room_too_hot':
@@ -332,7 +379,7 @@ export function sampleIncident(kind: EventKind, now: EpochMs): IncidentLike {
     case 'season_changed':
       return { ...base, facts: { from: 'neutral', to: 'heating', avgC: 7.8 } };
     case 'manual_override':
-      return room('r_kitchen', { valueC: 21.5, until: now + 2 * 60 * min, by: 'Оля' });
+      return room('r_bath', { valueC: 23, by: 'Оля', policy: 'slot' }, 'climate.bathroom_towel_trv');
     case 'budget_shed':
       return { ...base, sourceId: 's_hp', facts: { usedKw: 3.6, budgetKw: 4 } };
     case 'report_daily':

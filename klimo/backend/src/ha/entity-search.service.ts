@@ -52,6 +52,10 @@ const NEAR_AREA = 25;
 /** Wizard search for a role: the entities whose likeliest role it is come first. */
 const ROLE_FIRST = 15;
 const ROLE_ALSO = 8;
+/** The plant's own equipment (a source, a pump, a circuit sensor) is rarely a room device: last. */
+const PLANT_LAST = 20;
+/** Another room's device can move here, but the free ones come first. */
+const OTHER_ROOM = 5;
 /** Devices «Не використовуються в Klimo» lists only what is clearly a climate device. */
 const UNASSIGNED_CONFIDENCE = 0.5;
 
@@ -122,6 +126,10 @@ export class EntitySearchService implements IEntitySearch {
       if (nearArea && r.areaId === nearArea) score += SCORE.nearRoom;
       if (q.nearAreaId && r.areaId === q.nearAreaId) score += NEAR_AREA;
       if (wizard && q.wizard && q.wizard !== 'any') score += wizard.suggested[0] === q.wizard ? ROLE_FIRST : wizard.suggested.includes(q.wizard) ? ROLE_ALSO : 0;
+      if (wizard && referenced.has(r.entityId)) {
+        const uses = this.config.usages({ type: 'entity', id: r.entityId });
+        score -= uses.some((u) => u.type === 'source' || u.type === 'pump' || u.type === 'circuit') ? PLANT_LAST : uses.some((u) => u.type === 'room') ? OTHER_ROOM : 0;
+      }
       hits.push({ r, score, name: f.name, wizard });
     }
     hits.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'uk') || a.r.entityId.localeCompare(b.r.entityId));

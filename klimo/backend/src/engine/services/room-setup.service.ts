@@ -532,16 +532,17 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
 
   private takenBy(cfg: EngineConfig, dev: Device): { roomId?: Id; source?: SourceConfig } | null {
     const id = dev.entityId;
+    const source = cfg.sources.find((x) => (x.adapter.type === 'climate' && x.adapter.climate === id) || (x.adapter.type === 'relay' && x.adapter.command === id));
     switch (dev.role) {
       case 'trv':
       case 'floor_zone':
+        // a source's climate or relay is driven by the plant: a room driving it too would fight it
+        if (source) return { source };
         for (const list of Object.values(cfg.devicesByEmitter)) for (const d of list) if (d.entityId === id) return { roomId: d.roomId };
         return null;
       case 'ac':
-      case 'heater': {
-        const s = cfg.sources.find((x) => (x.adapter.type === 'climate' && x.adapter.climate === id) || (x.adapter.type === 'relay' && x.adapter.command === id));
-        return s ? { source: s } : null;
-      }
+      case 'heater':
+        return source ? { source } : null;
       case 'dehumidifier': {
         const r = cfg.rooms.find((x) => x.humidity.dehumidifier?.entityId === id);
         return r ? { roomId: r.id } : null;

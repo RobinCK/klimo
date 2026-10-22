@@ -659,19 +659,21 @@ export function renderJournal(e: JournalEntry, ctx: CodeContext = {}): string {
 
 const ISSUES: Record<IssueCode, (p: P, c: Ctx) => string> = {
   no_data: () => t('No temperature data'),
-  sensor_offline: (p) => {
+  sensor_offline: (p, c) => {
     const total = num(p, 'total') ?? 0;
     const left = num(p, 'left') ?? 0;
-    return t('{off} of {total} sensors offline', { off: Math.max(0, total - left), total });
+    const off = Math.max(0, total - left);
+    // the chip names the silent sensor; the count says how many of the room's are left
+    if (!str(p, 'entityId')) return t('{off} of {total} sensors offline', { off, total });
+    return t('{device}: offline · {off} of {total}', { device: withMore(entity(p, c), p), off, total });
   },
   source_fault: (p, c) =>
     str(p, 'fallbackId')
       ? t('{source} failed — {fallback} took over', { source: source(p, c), fallback: source(p, c, 'fallbackId') })
       : t('{source} failed', { source: source(p, c) }),
   trv_failed: (p, c) => {
-    const id = str(p, 'deviceId');
-    const name = id ? c.device?.(id) : undefined;
-    return name ? t('{device} did not confirm the target', { device: name }) : t('A radiator valve did not confirm the target');
+    const name = deviceName(p, c);
+    return name ? t('{device}: target not confirmed', { device: name }) : t('A radiator valve did not confirm the target');
   },
   entity_missing: (p, c) => t('{entity} is missing in Home Assistant', { entity: entity(p, c) }),
   too_cold: (p) =>
@@ -682,7 +684,11 @@ const ISSUES: Record<IssueCode, (p: P, c: Ctx) => string> = {
     num(p, 'deltaC') != null && num(p, 'minutes') != null
       ? t('{delta} warmer than the target for {dur}', { delta: delta(p, 'deltaC'), dur: fmtDur(num(p, 'minutes')) })
       : t('Warmer than the target'),
-  trv_retry: (p) => t('A radiator valve did not confirm · retry {attempt}/{of}', { attempt: num(p, 'attempt') ?? 0, of: num(p, 'of') ?? 0 }),
+  trv_retry: (p, c) => {
+    const name = deviceName(p, c);
+    const n = { attempt: num(p, 'attempt') ?? 0, of: num(p, 'of') ?? 0 };
+    return name ? t('{device}: target not confirmed · retry {attempt}/{of}', { device: name, ...n }) : t('A radiator valve did not confirm · retry {attempt}/{of}', n);
+  },
   overheat: (p) => t('Overheating: {t}', { t: temp(p, 't') }),
   source_wait: (p, c) => t('{source} is on a pause · starts {in}', { source: source(p, c), in: inn(p, 'until', c) }),
   fallback_sensors: () => t('Using backup sensors'),
@@ -693,14 +699,31 @@ const ISSUES: Record<IssueCode, (p: P, c: Ctx) => string> = {
   humidity_unknown: () => t('Humidity unknown — no floor cooling'),
   battery_low: (p, c) => {
     const key = str(p, 'deviceKey');
-    const name = key ? c.device?.(key) : undefined;
+    const id = str(p, 'entityId');
+    const name = (id ? c.entity?.(id) : undefined) ?? (key ? c.device?.(key) : undefined) ?? id;
     return t('{device}: battery {pct}', { device: name ?? t('Sensor'), pct: pct(p, 'pct') });
   },
-  window_long: (p, c) => t('Window open for {dur}', { dur: fmtSince(num(p, 'since'), c.now ?? nowMs()) }),
+  window_long: (p, c) =>
+    str(p, 'entityId')
+      ? t('{window}: open for {dur}', { window: withMore(entity(p, c), p), dur: fmtSince(num(p, 'since'), c.now ?? nowMs()) })
+      : t('Window open for {dur}', { dur: fmtSince(num(p, 'since'), c.now ?? nowMs()) }),
   signal_weak: (p) => t('Weak signal (LQI {lqi})', { lqi: num(p, 'lqi') ?? '—' }),
   humid_dry_hint: (p) => t('Humidity {rh} — drying would help', { rh: pct(p, 'rh') }),
   airing_hint: (p) => t('Humidity {rh} — time to air the room', { rh: pct(p, 'rh') }),
 };
+
+/** A room device by its emitter device id, else by its entity. */
+function deviceName(p: P, c: Ctx): string | null {
+  const id = str(p, 'deviceId');
+  const entityId = str(p, 'entityId');
+  return (id ? c.device?.(id) : undefined) ?? (entityId ? (c.entity?.(entityId) ?? entityId) : null);
+}
+
+/** «Полиця і ще 1» when more devices than the named one are affected. */
+function withMore(name: string, p: P): string {
+  const more = num(p, 'more') ?? 0;
+  return more > 0 ? t('{name} and {count} more', { name, count: more }) : name;
+}
 
 export function renderIssue(i: RoomIssue, ctx: CodeContext = {}): string {
   const fn = ISSUES[i.code];

@@ -1,13 +1,14 @@
 import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { errorText, LogOnce } from '../common/logger';
 import { fromLocal, isLocalDate, toLocal } from '../engine/core/time';
-import { round1 } from '../shared/model';
+import { outdoorSensorIds, round1 } from '../shared/model';
 import type {
   ClockPort,
   ConditionNode,
   EngineConfig,
   EntityId,
   EpochMs,
+  GeneralSettings,
   HaPort,
   HaStateObj,
   IBus,
@@ -15,10 +16,13 @@ import type {
   Id,
   IHaInputs,
   InputSnapshot,
+  OutdoorReadout,
+  OutdoorSensorReading,
 } from '../shared/model';
 import { BUS, CLOCK, CONFIG_STORE, HA_PORT } from '../tokens';
-import { combine, type Point, timeWeightedMean } from './series';
-import { isAvailableState, lastChangedAt, lastReportedAt, parseNumber, stateValue, systemTempUnit, tempUnit, type TempUnit, toCelsius } from './units';
+import { combineBuckets, readOutdoorSensors } from './outdoor';
+import { bucketize, combine, type Point, timeWeightedMean } from './series';
+import { isAvailableState, lastChangedAt, parseNumber, systemTempUnit, tempUnit, type TempUnit, toCelsius } from './units';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -43,6 +47,8 @@ interface TemplateSub {
   cancelled: boolean;
   unsubscribe: (() => void) | null;
 }
+
+const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 
 function record(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
@@ -96,8 +102,10 @@ export class HaInputsService implements IHaInputs, OnApplicationBootstrap, OnMod
   private readonly timers: { cancel(): void }[] = [];
   private readonly unsubscribers: (() => void)[] = [];
 
-  private lastGood: { entityId: EntityId; value: number; at: EpochMs } | null = null;
+  /** The last combined value and the sensor list it came from (a changed list ends the hold). */
+  private lastGood: { key: string; value: number; at: EpochMs } | null = null;
   private current: Outdoor = { nowC: null, avg10C: null, avgNC: null, source: 'none' };
+  private readings: OutdoorSensorReading[] = [];
   private samples: Point[] = [];
   private avgN: number | null = null;
 
@@ -189,6 +197,12 @@ export class HaInputsService implements IHaInputs, OnApplicationBootstrap, OnMod
     return { ...this.current };
   }
 
+  outdoorReadout(): OutdoorReadout {
+    this.evaluateOutdoor(this.clock.now());
+    const method = this.config.engineConfig().settings.outdoor.aggregation ?? 'median';
+    return { ...this.current, method, sensors: this.readings.map((r) => ({ ...r })) };
+  }
+
   /** Every minute: the current value joins the samples of the 10-min mean. */
   sampleOutdoor(): void {
     const now = this.clock.now();
@@ -198,19 +212,23 @@ export class HaInputsService implements IHaInputs, OnApplicationBootstrap, OnMod
   }
 
   /**
-   * Configured sensor while it is fresh; on loss its last value is held for `outdoor.holdMin`
-   * (counted from the last good reading), then the weather entity's temperature, then nothing.
+   * The configured sensors combined while at least one of them is fresh; when none is, the last
+   * combined value is held for `outdoor.holdMin` (counted from the last good reading), then the weather
+   * entity's temperature, then nothing. The 10-min mean runs over the combined minute samples.
    */
   private evaluateOutdoor(now: EpochMs): void {
     const s = this.config.engineConfig().settings.outdoor;
-    const sensor = s.sensorEntityId ? this.freshSensor(s.sensorEntityId, now, s.staleAfterMin * MIN) : null;
+    const ids = outdoorSensorIds(s);
+    const key = ids.join(',');
+    const read = readOutdoorSensors(s, (id) => this.ha.getState(id), now, this.haUnit());
+    this.readings = read.readings;
     let nowC: number | null;
     let source: Outdoor['source'];
-    if (sensor !== null && s.sensorEntityId) {
-      this.lastGood = { entityId: s.sensorEntityId, value: sensor, at: now };
-      nowC = sensor;
+    if (read.valueC !== null) {
+      this.lastGood = { key, value: read.valueC, at: now };
+      nowC = read.valueC;
       source = 'sensor';
-    } else if (this.lastGood && this.lastGood.entityId === s.sensorEntityId && now - this.lastGood.at < s.holdMin * MIN) {
+    } else if (this.lastGood && ids.length && this.lastGood.key === key && now - this.lastGood.at < s.holdMin * MIN) {
       nowC = this.lastGood.value;
       source = 'hold';
     } else {
@@ -228,14 +246,6 @@ export class HaInputsService implements IHaInputs, OnApplicationBootstrap, OnMod
     };
   }
 
-  private freshSensor(entityId: EntityId, now: EpochMs, staleMs: number): number | null {
-    const st = this.ha.getState(entityId);
-    if (!st || !isAvailableState(st.state)) return null;
-    const reported = lastReportedAt(st);
-    if (reported !== null && now - reported > staleMs) return null;
-    return stateValue(st, this.haUnit());
-  }
-
   private weatherNow(entityId: EntityId): number | null {
     const st = this.ha.getState(entityId);
     if (!st || !isAvailableState(st.state)) return null;
@@ -244,38 +254,55 @@ export class HaInputsService implements IHaInputs, OnApplicationBootstrap, OnMod
   }
 
   /**
-   * The N-day mean for the season: hourly means from long-term statistics (needs ≥ 48 of them, or a
-   * full window when N is shorter), else the time-weighted mean of the sensor's history, else the
-   * weather entity's history, else the previous value stays.
+   * The N-day mean for the season, over the combined value hour by hour: hourly means from long-term
+   * statistics (needs ≥ 48 combined hours, or a full window when N is shorter), else the sensors' raw
+   * history in hourly buckets, else the weather entity's history, else the previous value stays.
    */
   async refreshAverage(): Promise<void> {
     await this.exclusive('outdoor average', async () => {
       const cfg = this.config.engineConfig();
-      const { sensorEntityId, weatherEntityId } = cfg.settings.outdoor;
+      const o = cfg.settings.outdoor;
+      const ids = outdoorSensorIds(o);
+      const method = o.aggregation ?? 'median';
       const days = Math.max(1, cfg.season.avgDays);
       const now = this.clock.now();
       const from = now - days * 24 * HOUR;
       let avg: number | null = null;
-      if (sensorEntityId) {
-        const stats = await this.ha.statistics([sensorEntityId], from, now, 'hour', ['mean']);
-        const means = (stats[sensorEntityId] ?? []).flatMap((r) => (typeof r.mean === 'number' ? [r.mean] : []));
-        if (means.length >= Math.min(48, days * 24)) avg = means.reduce((a, b) => a + b, 0) / means.length;
-        if (avg === null) avg = await this.historyMean(sensorEntityId, from, now, null);
+      if (ids.length) {
+        const stats = await this.ha.statistics(ids, from, now, 'hour', ['mean']);
+        const hours = combineBuckets(ids.map((id) => (stats[id] ?? []).map((r) => ({ start: r.start, value: typeof r.mean === 'number' ? r.mean : null }))), method);
+        const means = hours.flatMap(([, v]) => (v === null ? [] : [v]));
+        if (means.length >= Math.min(48, days * 24)) avg = mean(means);
+        if (avg === null) avg = await this.sensorsHistoryMean(ids, method, from, now);
       }
-      if (avg === null && weatherEntityId) avg = await this.historyMean(weatherEntityId, from, now, 'temperature');
+      if (avg === null && o.weatherEntityId) avg = await this.weatherHistoryMean(o.weatherEntityId, from, now);
       if (avg !== null) this.avgN = round1(avg);
       this.current = { ...this.current, avgNC: this.avgN };
     });
   }
 
-  private async historyMean(entityId: EntityId, from: EpochMs, to: EpochMs, attr: string | null): Promise<number | null> {
-    const rows = (await this.ha.history([entityId], from, to, { minimal: !attr, noAttributes: !attr }))[entityId] ?? [];
-    const st = this.ha.getState(entityId);
-    const unit: TempUnit = attr ? tempUnit(st?.attributes.temperature_unit) ?? this.haUnit() : tempUnit(st?.attributes.unit_of_measurement) ?? this.haUnit();
+  /** The sensors' recorded states (each in its own unit) combined per hour, then averaged. */
+  private async sensorsHistoryMean(ids: EntityId[], method: GeneralSettings['outdoor']['aggregation'], from: EpochMs, to: EpochMs): Promise<number | null> {
+    const raw = await this.ha.history(ids, from, to, { minimal: true, noAttributes: true });
+    const series = ids.map((id) => {
+      const unit = tempUnit(this.ha.getState(id)?.attributes.unit_of_measurement) ?? this.haUnit();
+      const points: Point[] = (raw[id] ?? []).map((row) => {
+        const n = parseNumber(row.s);
+        return [Math.round(row.lu * 1000), n === null ? null : toCelsius(n, unit)];
+      });
+      return bucketize(points, from, to, HOUR).map((b) => ({ start: b.start, value: b.mean }));
+    });
+    const hours = combineBuckets(series, method).flatMap(([, v]) => (v === null ? [] : [v]));
+    return hours.length ? mean(hours) : null;
+  }
+
+  private async weatherHistoryMean(entityId: EntityId, from: EpochMs, to: EpochMs): Promise<number | null> {
+    const rows = (await this.ha.history([entityId], from, to, { minimal: false, noAttributes: false }))[entityId] ?? [];
+    const unit = tempUnit(this.ha.getState(entityId)?.attributes.temperature_unit) ?? this.haUnit();
     let attrs: Record<string, unknown> = {};
     const points: Point[] = rows.map((row) => {
       if (row.a) attrs = row.a;
-      const n = parseNumber(attr ? attrs[attr] : row.s);
+      const n = parseNumber(attrs.temperature);
       return [Math.round(row.lu * 1000), n === null ? null : toCelsius(n, unit)];
     });
     return timeWeightedMean(points, from, to);

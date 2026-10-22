@@ -23,10 +23,12 @@ const day = [{ start: 0, end: 420, profileId: 'night' }, { start: 420, end: 1440
 /* ── platform ─────────────────────────────────────────────────────────────────────────────────── */
 
 family('general settings patch', S.generalSettingsPatch, {
-  ok: [{}, { houseName: 'Дім', units: 'F' }, { outdoor: { sensorEntityId: 'sensor.outdoor_t' } }, { presence: { personEntityIds: ['person.ihor'] } }, { defaults: { tolerance: { heat: { below: 0.3 } } } }],
+  ok: [{}, { houseName: 'Дім', units: 'F' }, { outdoor: { sensorEntityId: 'sensor.outdoor_t' } }, { outdoor: { sensorEntityIds: ['sensor.north', 'sensor.south'], aggregation: 'min' } }, { presence: { personEntityIds: ['person.ihor'] } }, { defaults: { tolerance: { heat: { below: 0.3 } } } }],
   bad: [
     [{ units: 'K' }, 'units'],
     [{ outdoor: { sensorEntityId: 'not an entity' } }, 'outdoor.sensorEntityId'],
+    [{ outdoor: { sensorEntityIds: ['sensor.ok', 'not an entity'] } }, 'outdoor.sensorEntityIds.1'],
+    [{ outdoor: { aggregation: 'weighted' } }, 'outdoor.aggregation'],
     [{ presence: { personEntityIds: ['sensor.x'] } }, 'presence.personEntityIds.0'],
     [{ defaults: { tolerance: { heat: { below: 0.05 } } } }, 'defaults.tolerance.heat.below'],
     [[], ''],

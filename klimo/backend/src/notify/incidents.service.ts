@@ -35,6 +35,7 @@ import type {
 import { EVENT_SEVERITY } from '../shared/model';
 import { BUS, CLOCK, CONFIG_STORE, ENGINE, EVENTS, HA_PORT, JOURNAL, ROOM_ACTIONS } from '../tokens';
 import { actionsFor, catalogueEntry, DEVICE_KINDS, dismissFlavour, isOneShot, KIND_ICON, kindEnabled, linkOf, paramNum } from './catalogue';
+import { TextsService } from './texts.service';
 
 const SEC = 1000;
 const MIN = 60 * SEC;
@@ -132,7 +133,10 @@ function mergeDetections(list: readonly Detection[]): Map<string, Detection> {
       const rank = (x: Detection) => SEVERITY_RANK[x.severity ?? EVENT_SEVERITY[x.kind]];
       const keep = rank(d) > rank(prev) ? d : prev;
       const other = keep === d ? prev : d;
-      out.set(d.dedupKey, { ...keep, facts: { ...other.facts, ...keep.facts }, progress: keep.progress ?? other.progress ?? null });
+      const merged: Detection = { ...keep, facts: { ...other.facts, ...keep.facts }, progress: keep.progress ?? other.progress ?? null };
+      // nobody sees the problem and one of them sees the subject back: that is enough to close it
+      if (!d.active) merged.recovered = !!(keep.recovered || other.recovered);
+      out.set(d.dedupKey, merged);
     }
   }
   return out;
@@ -193,6 +197,7 @@ export class IncidentService implements IIncidents, Rewindable, OnModuleInit, On
     @Inject(HA_PORT) private readonly ha: HaPort,
     @Inject(JOURNAL) private readonly journal: IJournal,
     @Optional() moduleRef?: ModuleRef,
+    @Optional() @Inject(TextsService) private readonly texts?: TextsService,
   ) {
     this.engine = lazyRef<IEngine>(moduleRef, ENGINE);
     this.roomActions = lazyRef<IRoomActions>(moduleRef, ROOM_ACTIONS);
@@ -268,8 +273,8 @@ export class IncidentService implements IIncidents, Rewindable, OnModuleInit, On
     const merged = mergeDetections(list);
     const params = this.config.eventParams();
     for (const d of merged.values()) {
-      if (d.active && kindEnabled(params, d.kind)) this.activate(d, now, params);
-      else this.clear(d.dedupKey, now);
+      if (d.active && kindEnabled(params, d.kind)) this.activate(this.named(d), now, params);
+      else this.clear(d.dedupKey, now, !d.active && d.recovered === true);
     }
     // a full tick lists every active problem; a missing one is clear — unless HA is away, when
     // detectors cannot see anything and silence means «unknown», not «solved»
@@ -338,6 +343,21 @@ export class IncidentService implements IIncidents, Rewindable, OnModuleInit, On
 
   private actionsFor(kind: EventKind, severity: Severity): Incident['actions'] {
     return actionsFor(kind, severity);
+  }
+
+  /**
+   * The device a detection is about, named as on the Devices page: every view (cards, the inbox, each
+   * channel, the history) then says which sensor it is, and the name stays with the incident.
+   */
+  private named(d: Detection): Detection {
+    if (!this.texts) return d;
+    try {
+      const extra = this.texts.subjectFacts(d);
+      return Object.keys(extra).length ? { ...d, facts: { ...d.facts, ...extra } } : d;
+    } catch (e) {
+      this.log.warn(`naming ${d.dedupKey} failed: ${errorText(e)}`);
+      return d;
+    }
   }
 
   private update(inc: Incident, d: Detection, severity: Severity, now: EpochMs): void {
@@ -451,10 +471,17 @@ export class IncidentService implements IIncidents, Rewindable, OnModuleInit, On
     this.commit(inc, { op: 'opened', reason: 'oneshot', notify: true, actor: null }, now);
   }
 
-  private clear(key: string, now: EpochMs): void {
+  private clear(key: string, now: EpochMs, recovered = false): void {
     this.candidates.delete(key);
     const inc = this.open.get(key);
-    if (!inc || inc.clearSince !== null) return;
+    if (!inc) return;
+    // a device that reports a real state again is back now; the flap guard is for unclear endings
+    if (recovered) {
+      inc.clearSince ??= now;
+      this.resolve(inc, now);
+      return;
+    }
+    if (inc.clearSince !== null) return;
     inc.clearSince = now;
     this.persist(inc);
   }

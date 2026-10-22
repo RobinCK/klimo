@@ -21,6 +21,7 @@ import {
   isLockedCell,
   mergePatch,
   newSourceConfig,
+  normalizeOutdoor,
   nextProfileLook,
   seedName,
   SOURCE_TEMPLATES,
@@ -92,6 +93,7 @@ import { normalizeDay, replaceProfileInPlan } from './schedule-ops';
 import { OverrideStore } from './override.store';
 import {
   graphIssues,
+  introducedIssues,
   notificationInvariantIssues,
   validateCollectionItem,
   validateDeviceMeta,
@@ -210,6 +212,8 @@ export class ConfigStore implements IConfigStore {
       // once per database: names 0.1.0 seeded in Ukrainian become English (the demo house keeps its language)
       const namesChecked = (await this.db.kvGet(SEED_EN_KEY)) !== null;
       const renamed = !fresh && !namesChecked && !env.simulate ? englishSeedNames(this.graph, this.clock.now()) : 0;
+      // a single outdoor sensor of an older version becomes the list, stored in the new shape
+      this.graph.settings = { ...this.graph.settings, outdoor: normalizeOutdoor(this.graph.settings.outdoor) };
       const changes = diffRows(base, this.graph, (t) => this.cols(t));
       if (changes.length) await this.db.ds.transaction((em) => writeChanges(em, changes));
       if (fresh) await this.db.kvSet(SEED_HA_KEY, 'pending');
@@ -603,11 +607,14 @@ export class ConfigStore implements IConfigStore {
   /** Validates every object the write touched; paths of the edited object stay relative. */
   private validateDraft(d: Draft, changes: TableChange[]): void {
     const g = d.g;
+    const committed = this.graph;
     const env = this.validationEnv();
     const issues: ApiErrorIssue[] = [];
-    const add = (table: string, id: string, list: Issues) => {
+    // `was`: the object as committed with its problems then; only what this write introduced blocks it
+    const add = (table: string, id: string, list: Issues, was?: { value: unknown; issues: Issues; now: unknown }) => {
       const isPrimary = d.primary && d.primary.table === table && d.primary.id === id;
-      for (const i of list) issues.push(isPrimary ? i : { ...i, path: i.path ? `${table}.${id}.${i.path}` : `${table}.${id}` });
+      const own = was ? introducedIssues(list, was.issues, was.value, was.now) : list;
+      for (const i of own) issues.push(isPrimary ? i : { ...i, path: i.path ? `${table}.${id}.${i.path}` : `${table}.${id}` });
     };
     const touchedRooms = new Set<Id>();
     let notifyTouched = false;
@@ -623,12 +630,15 @@ export class ConfigStore implements IConfigStore {
         // HA is asked about entities only for the object being edited: a cascade or an unrelated edit
         // must not fail because some other entity is briefly missing while an integration reloads
         const own = !!d.primary && d.primary.table === t.collection && d.primary.id === ch.key;
-        if (item) add(t.collection, ch.key, validateCollectionItem(t.collection, item, g, own ? env : {}));
+        const prev = (committed[t.collection] as Map<Id, unknown>).get(ch.key);
+        const e = own ? env : {};
+        if (item) add(t.collection, ch.key, validateCollectionItem(t.collection, item, g, e), prev ? { value: prev, issues: validateCollectionItem(t.collection, prev, committed, e), now: item } : undefined);
         if (t.collection === 'emitterDevices' || t.collection === 'sensors') touchedRooms.add((item as { roomId: Id }).roomId);
         if (t.collection === 'rooms') touchedRooms.delete(ch.key);
         if (t.collection === 'targets') notifyTouched = true;
       } else if (t.singleton) {
-        add(t.singleton, 'main', validateSingleton(t.singleton, g, d.primary?.table === t.singleton ? env : {}));
+        const e = d.primary?.table === t.singleton ? env : {};
+        add(t.singleton, 'main', validateSingleton(t.singleton, g, e), { value: committed[t.singleton], issues: validateSingleton(t.singleton, committed, e), now: g[t.singleton] });
         if (t.singleton === 'notify') notifyTouched = true;
         if (t.singleton === 'settings') {
           // room limits must stay inside the house limits
@@ -654,7 +664,8 @@ export class ConfigStore implements IConfigStore {
     }
     for (const roomId of touchedRooms) {
       const r = g.rooms.get(roomId);
-      if (r) add('rooms', roomId, validateRoom(r, g));
+      const prev = committed.rooms.get(roomId);
+      if (r) add('rooms', roomId, validateRoom(r, g), prev ? { value: prev, issues: validateRoom(prev, committed), now: r } : undefined);
     }
     issues.push(...graphIssues(g));
 
@@ -1134,6 +1145,12 @@ export class ConfigStore implements IConfigStore {
     if ('updatedAt' in (next as object)) (next as { updatedAt: number }).updatedAt = now;
     (g as ConfigSingletons)[k] = next;
 
+    if (k === 'settings') {
+      const p = (patch as Partial<ConfigSingletons['settings']>).outdoor;
+      // a panel opened before several sensors existed sends the one sensor it shows: it replaces the list
+      if (p && p.sensorEntityId !== undefined && p.sensorEntityIds === undefined) g.settings.outdoor.sensorEntityIds = p.sensorEntityId ? [p.sensorEntityId] : [];
+      g.settings.outdoor = normalizeOutdoor(g.settings.outdoor);
+    }
     if (k === 'house') {
       const h = g.house;
       if (h.mode !== (before as ConfigSingletons['house']).mode) {

@@ -74,7 +74,7 @@ export class MqttJsTransport implements BrokerTransport, OnModuleDestroy {
   private broker: BrokerSettings | null = null;
   private lastError: string | null = null;
   private wasConnected = false;
-  private readonly messageCbs: ((topic: string, payload: string) => void)[] = [];
+  private readonly messageCbs: ((topic: string, payload: string, retained: boolean) => void)[] = [];
   private readonly connectCbs: (() => void)[] = [];
   private readonly closeCbs: (() => void)[] = [];
 
@@ -116,9 +116,11 @@ export class MqttJsTransport implements BrokerTransport, OnModuleDestroy {
       client.publish(STATUS_TOPIC, 'online', { retain: true, qos: 1 });
       for (const cb of this.connectCbs) this.safe(() => cb());
     });
-    client.on('message', (topic, payload) => {
+    client.on('message', (topic, payload, packet) => {
       const text = payload.toString('utf8');
-      for (const cb of this.messageCbs) this.safe(() => cb(topic, text));
+      // the broker sets the flag only on stored messages replayed to a new subscription
+      const retained = packet.retain === true;
+      for (const cb of this.messageCbs) this.safe(() => cb(topic, text, retained));
     });
     // 'close' also fires for every failed reconnect attempt and for our own stop; listeners only hear
     // the loss of a live link
@@ -150,7 +152,7 @@ export class MqttJsTransport implements BrokerTransport, OnModuleDestroy {
     });
   }
 
-  onMessage(cb: (topic: string, payload: string) => void): void {
+  onMessage(cb: (topic: string, payload: string, retained?: boolean) => void): void {
     this.messageCbs.push(cb);
   }
 

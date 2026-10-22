@@ -167,6 +167,9 @@ function trvSiblings(d: DeviceSpec): TrvSiblings {
   };
 }
 
+/** The second outdoor thermometer of the demo house, on the sunlit south-west wall. */
+export const SUNNY_WALL_ENTITY = 'sensor.south_wall_temperature';
+
 const roomDevices = (key: RoomKey, kind: DeviceSpec['binding']['kind']) => DEVICES.filter((d) => d.binding.kind === kind && 'room' in d.binding && d.binding.room === key);
 
 /**
@@ -181,7 +184,8 @@ export function buildDemoHouse(base: ExportBundle, now: EpochMs, lang: Lang = 'u
     ...b.settings,
     houseName: 'Дім',
     notificationLanguage: lang,
-    outdoor: { ...b.settings.outdoor, sensorEntityId: 'sensor.outdoor_temperature', weatherEntityId: 'weather.home' },
+    // the weather station in the shade and a thermometer the afternoon sun reaches: the colder one counts
+    outdoor: { ...b.settings.outdoor, sensorEntityIds: ['sensor.outdoor_temperature', SUNNY_WALL_ENTITY], aggregation: 'min', weatherEntityId: 'weather.home' },
     presence: { ...b.settings.presence, personEntityIds: ['person.ihor', 'person.olia'] },
     onboardingDismissed: true,
     updatedAt: now,

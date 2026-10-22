@@ -353,7 +353,11 @@ export function wizardRoles(f: EntityFacts, ctx: DeviceContext): WizardRoleHint 
         if (FLOOR_PROBE_HINT.test(text)) return roleHint(['floor_probe'], 'temperature');
         return ctx.hasHumidity ? roleHint(['temp_humidity'], 'temperature', 'floor_probe') : roleHint(['temperature'], 'floor_probe');
       }
-      if (isHumiditySensor(f)) return ctx.hasTemperature ? roleHint(['temp_humidity'], 'humidity') : roleHint(['humidity']);
+      if (isHumiditySensor(f)) {
+        if (has(OUTDOOR_HINT, f.key, searchKey(f.name).replace(/ /g, '_'), searchKey(f.areaName).replace(/ /g, '_'))) return null;
+        // a combined sensor is offered through its temperature entity; its humidity alone is a humidity sensor
+        return roleHint(['humidity'], ...(ctx.hasTemperature ? (['temp_humidity'] as WizardDeviceRole[]) : []));
+      }
       return null;
     }
     case 'binary_sensor': {

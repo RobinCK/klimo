@@ -11,12 +11,14 @@ import type {
   HaPort,
   HaStateObj,
   IConfigStore,
+  IDeviceHealth,
   IEngine,
   Reason,
   WatchRule,
   WatchRuleDto,
 } from '../shared/model';
-import { CLOCK, CONFIG_STORE, ENGINE, HA_PORT } from '../tokens';
+import { outdoorSensorIds } from '../shared/model';
+import { CLOCK, CONFIG_STORE, DEVICE_HEALTH, ENGINE, HA_PORT } from '../tokens';
 import { kindEnabled, paramNum } from './catalogue';
 import { commandEntities } from './texts.service';
 
@@ -93,6 +95,7 @@ export class WatchService {
   private readonly tracks = new Map<string, Track>();
   private lastActive = new Map<string, Detection>();
   private readonly engine: () => IEngine | null;
+  private readonly devices: () => IDeviceHealth | null;
 
   constructor(
     @Inject(CONFIG_STORE) private readonly config: IConfigStore,
@@ -101,6 +104,7 @@ export class WatchService {
     @Optional() moduleRef?: ModuleRef,
   ) {
     this.engine = lazyRef<IEngine>(moduleRef, ENGINE);
+    this.devices = lazyRef<IDeviceHealth>(moduleRef, DEVICE_HEALTH);
   }
 
   /* ── the rule set ─────────────────────────────────────────────────────────────────────────── */
@@ -151,8 +155,7 @@ export class WatchService {
       if (!z.bridgeEntityId) continue;
       add({ entityId: z.bridgeEntityId, name: z.name, role: 'z2m.bridge', ref: { deviceKey: `z2m:${z.id}` }, condition: { type: 'offline', forMin: 1 }, severity: 'critical', eventKind: 'z2m_offline' });
     }
-    const outdoor = cfg.settings.outdoor.sensorEntityId;
-    if (outdoor) {
+    for (const outdoor of outdoorSensorIds(cfg.settings.outdoor)) {
       add({ entityId: outdoor, name: '', role: 'outdoor', ref: null, condition: { type: 'stale', noUpdateMin: cfg.settings.outdoor.staleAfterMin }, severity: 'warning', eventKind: 'sensor_offline' });
     }
     for (const room of cfg.rooms) {
@@ -277,7 +280,13 @@ export class WatchService {
     const facts: Detection['facts'] = { entityId: rule.entityId, minutes: Math.round(ev.minutes) };
     const name = this.subjectName(rule, cfg);
     if (name) facts.name = name;
-    if (rule.role === 'outdoor') facts.outdoor = true;
+    if (rule.role === 'outdoor') {
+      facts.outdoor = true;
+      // with other outdoor sensors still reporting, the message says they carry on
+      const staleMs = cfg.settings.outdoor.staleAfterMin * MIN;
+      const others = outdoorSensorIds(cfg.settings.outdoor).filter((id) => id !== rule.entityId && this.fresh(this.ha.getState(id), now, staleMs));
+      if (others.length) facts.outdoorSource = 'sensor';
+    }
     if (ev.since !== null && rule.condition.type === 'stale') facts.lastAt = ev.since;
     if (room && rule.eventKind === 'sensor_offline') {
       const temps = (cfg.sensorsByRoom[room.id] ?? []).filter((s) => s.role === 'temperature' && s.included);
@@ -332,6 +341,21 @@ export class WatchService {
     }
   }
 
+  /**
+   * A value repeated by the device moves only `last_reported` in HA, which reaches no subscriber; the
+   * device's other entities and Zigbee2MQTT's last seen tell that it is still reporting.
+   */
+  private lastReport(st: HaStateObj): EpochMs | null {
+    const own = parseTs(st.last_reported) ?? parseTs(st.last_updated);
+    let device: EpochMs | null = null;
+    try {
+      device = this.devices()?.lastSeen(st.entity_id) ?? null;
+    } catch {
+      device = null;
+    }
+    return own === null ? device : device === null ? own : Math.max(own, device);
+  }
+
   private fresh(st: HaStateObj | undefined, now: EpochMs, staleMs: number): boolean {
     if (!st || BAD_STATES.has(st.state)) return false;
     const at = parseTs(st.last_reported) ?? parseTs(st.last_updated);
@@ -380,7 +404,7 @@ export class WatchService {
         return { ...none, since: st ? (parseTs(st.last_reported) ?? parseTs(st.last_updated)) : null, text: this.reading(st) };
       }
       case 'stale': {
-        const last = st && !BAD_STATES.has(st.state) ? (parseTs(st.last_reported) ?? parseTs(st.last_updated)) : null;
+        const last = st && !BAD_STATES.has(st.state) ? this.lastReport(st) : null;
         const ageMin = last !== null ? (now - last) / MIN : Infinity;
         const bad = ageMin >= c.noUpdateMin;
         const since = this.mark(rule, bad, last, now);

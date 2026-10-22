@@ -4,6 +4,7 @@ import { toneVar } from '../../tokens/vars';
 import { useUiText } from '../../UiTextContext';
 import { Icon } from '../../basic/Icon';
 import { Button } from '../../basic/Button';
+import { InfoHint, type InfoHintContent } from '../../basic/InfoHint';
 import s from './display.module.css';
 
 /* ---------------- Text ---------------- */
@@ -32,6 +33,8 @@ export interface KeyValueRow {
   mono?: boolean;
   /** A small link-button on the right («Змінити»). */
   action?: Action;
+  /** What the key means, behind an «i» after it. */
+  hint?: InfoHintContent;
 }
 
 export interface KeyValueListProps {
@@ -49,6 +52,14 @@ export function KeyValueList({ rows, variant = 'rows' }: KeyValueListProps) {
             {r.value}
           </span>
         );
+        const key = r.hint ? (
+          <span className={`${s.kvKey} ${s.kvKeyHint}`}>
+            <span>{r.key}</span>
+            <InfoHint content={r.hint} subject={r.key} />
+          </span>
+        ) : (
+          <span className={s.kvKey}>{r.key}</span>
+        );
         const action = r.action ? (
           <Button variant="link" size="sm" onClick={r.action.onClick} to={r.action.to} disabled={r.action.disabled}>
             {r.action.label}
@@ -58,12 +69,12 @@ export function KeyValueList({ rows, variant = 'rows' }: KeyValueListProps) {
           <li key={`${r.key}-${i}`} className={s.kvRow}>
             {variant === 'stacked' ? (
               <span className={s.kvStack}>
-                <span className={s.kvKey}>{r.key}</span>
+                {key}
                 {value}
               </span>
             ) : (
               <>
-                <span className={s.kvKey}>{r.key}</span>
+                {key}
                 <span className={s.kvEnd}>
                   {value}
                   {action}

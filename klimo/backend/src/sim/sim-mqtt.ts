@@ -47,7 +47,7 @@ export class SimMqtt implements MqttTransport, MqttTap {
   private online = true;
   private readonly retainedMap = new Map<string, string>();
   private readonly subscriptions = new Set<string>();
-  private readonly messageCbs: ((topic: string, payload: string) => void)[] = [];
+  private readonly messageCbs: ((topic: string, payload: string, retained?: boolean) => void)[] = [];
   private readonly connectCbs: (() => void)[] = [];
   private readonly closeCbs: (() => void)[] = [];
   private readonly taps: ((topic: string, payload: string, origin: MqttOrigin) => void)[] = [];
@@ -72,7 +72,7 @@ export class SimMqtt implements MqttTransport, MqttTap {
     }
   }
 
-  onMessage(cb: (topic: string, payload: string) => void): void {
+  onMessage(cb: (topic: string, payload: string, retained?: boolean) => void): void {
     this.messageCbs.push(cb);
   }
 
@@ -136,7 +136,9 @@ export class SimMqtt implements MqttTransport, MqttTap {
         for (const tap of this.taps) this.safely(() => tap(d.topic, d.payload, d.origin));
       }
       if ([...this.subscriptions].some((f) => topicMatches(f, d.topic))) {
-        for (const cb of this.messageCbs) this.safely(() => cb(d.topic, d.payload));
+        // a replay to a new subscription carries the retain flag, as a real broker sets it
+        const retained = scope === 'klimo-only';
+        for (const cb of this.messageCbs) this.safely(() => cb(d.topic, d.payload, retained));
       }
     }
     if (this.queue.length) setImmediate(() => this.drain());

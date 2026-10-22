@@ -71,7 +71,7 @@ export function DeviceRow({ title, meta, value, checked, onCheck, disabled, role
       ) : null}
       {actions ? (
         <span className={s.actions}>
-          {role ? <RoleMenu role={role} device={title} /> : null}
+          {role ? <RoleMenu role={role} device={title} /> : <span />}
           {onRemove ? <IconButton icon="close" label={ut('Remove «{name}»', { name: title })} size={36} variant="ghost" onClick={onRemove} /> : null}
         </span>
       ) : null}
@@ -90,7 +90,8 @@ function RoleMenu({ role, device }: { role: DeviceRowRole; device: string }) {
   if (options.length < 2) return <span className={s.role}>{current.label}</span>;
   const menuLabel = ut('Use «{name}» as', { name: device });
   return (
-    <Popover opened={open} onChange={setOpen} position="bottom-start" offset={6} withinPortal trapFocus returnFocus shadow="md">
+    // above the wizard's modal, like the entity picker's list
+    <Popover opened={open} onChange={setOpen} position="bottom-start" offset={6} withinPortal trapFocus returnFocus shadow="md" zIndex={350}>
       <Popover.Target>
         <button
           type="button"

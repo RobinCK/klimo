@@ -41,6 +41,7 @@ export default function WizardPage(): JSX.Element {
       onClose={close}
       back={back}
       next={next}
+      revealKey={w.issueRound}
     >
       {w.step === 1 ? <StepName w={w} /> : null}
       {w.step === 2 ? <StepDevices w={w} ctx={ctx} /> : null}

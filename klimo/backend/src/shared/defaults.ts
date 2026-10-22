@@ -54,7 +54,7 @@ import type {
   WatchRule,
   Z2mInstance,
 } from './model';
-import { EVENT_KINDS, EVENT_SEVERITY, PRIORITY_DEFAULT } from './model';
+import { EVENT_KINDS, EVENT_SEVERITY, OUTDOOR_AGGREGATIONS, outdoorSensorIds, PRIORITY_DEFAULT } from './model';
 
 /* =====================================================================================================
  * Every default of Klimo in one place: configuration defaults, the first-boot seed, source templates,
@@ -153,7 +153,7 @@ export const DEFAULT_ROOM_DEFAULTS: RoomDefaults = {
 export function defaultSettings(lang: Lang = 'en'): GeneralSettings {
   return {
     houseName: lang === 'uk' ? 'Дім' : 'Home',
-    outdoor: { sensorEntityId: null, weatherEntityId: null, staleAfterMin: 30, holdMin: 30 },
+    outdoor: { sensorEntityIds: [], aggregation: 'median', weatherEntityId: null, staleAfterMin: 30, holdMin: 30 },
     units: 'auto',
     notificationLanguage: lang,
     uiLanguage: 'auto',
@@ -176,6 +176,18 @@ export function defaultSettings(lang: Lang = 'en'): GeneralSettings {
     onboardingDismissed: false,
     updatedAt: 0,
   };
+}
+
+/**
+ * Outdoor settings in the current shape. Databases and backups from before several outdoor sensors,
+ * and a panel left open since then, name one `sensorEntityId`: it becomes the list unless a list is
+ * given too. The old field is never written back.
+ */
+export function normalizeOutdoor(o: GeneralSettings['outdoor']): GeneralSettings['outdoor'] {
+  const { sensorEntityId: _legacy, ...rest } = o;
+  const ids = [...new Set(outdoorSensorIds(o))];
+  const aggregation = (OUTDOOR_AGGREGATIONS as readonly string[]).includes(rest.aggregation) ? rest.aggregation : 'median';
+  return { ...rest, sensorEntityIds: ids, aggregation };
 }
 
 export function defaultSafety(): SafetySettings {

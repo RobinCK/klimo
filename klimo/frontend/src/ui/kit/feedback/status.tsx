@@ -90,7 +90,7 @@ const BANNER_ICON: Record<StatusBannerProps['tone'], IconName> = { ok: 'check', 
 /** A full-width line about the state of things («Знайдено 6 пристроїв у зоні», «Симулятор»). */
 export function StatusBanner({ tone, icon, text, action }: StatusBannerProps) {
   return (
-    <div className={s.banner} style={toneVars(tone)} role={tone === 'err' ? 'alert' : 'status'}>
+    <div className={s.banner} style={toneVars(tone)} role={tone === 'err' ? 'alert' : 'status'} data-tone={tone}>
       <span className={s.bannerIcon}>
         <Icon name={icon ?? BANNER_ICON[tone]} size={18} />
       </span>

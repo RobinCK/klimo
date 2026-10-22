@@ -18,7 +18,7 @@ async function plant(h) {
   await h.config.create('sensors', { ...sensor, roomId: room.id, entityId: 'sensor.kitchen_door_temperature', role: 'temperature', name: 'Біля дверей', order: 1 }, ACTOR);
   await h.config.create('sensors', { ...sensor, roomId: room.id, entityId: 'binary_sensor.kitchen_window', role: 'contact', contactKind: 'window', name: 'Вікно', order: 2 }, ACTOR);
   const settings = h.config.singleton('settings');
-  await h.config.patchSingleton('settings', { outdoor: { ...settings.outdoor, sensorEntityId: 'sensor.outdoor_temperature' } }, ACTOR);
+  await h.config.patchSingleton('settings', { outdoor: { ...settings.outdoor, sensorEntityIds: ['sensor.outdoor_temperature'] } }, ACTOR);
   await h.config.create('z2m', { name: 'Z2M #1', baseTopic: 'zigbee2mqtt', frontendUrl: null, bridgeEntityId: 'binary_sensor.zigbee2mqtt_bridge_connection_state', resendOnRestart: true }, ACTOR);
   return { hp, boiler, room };
 }
