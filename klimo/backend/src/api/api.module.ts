@@ -1,45 +1,53 @@
-import { Controller, Get, Global, Inject, Module, Optional } from '@nestjs/common';
-import { ModuleRef } from '@nestjs/core';
-import { lazyRef } from '../common/refs';
-import { env } from '../env';
-import type { ICardDeploy, IConfigStore, IMqtt, SettingsBundle } from '../shared/model';
-import { CARD_DEPLOY, CONFIG_STORE, MQTT } from '../tokens';
+import { Global, Module } from '@nestjs/common';
+import { DevicesController } from './devices.controller';
+import { HaController } from './ha.controller';
+import { HistoryController } from './history.controller';
+import { HouseController } from './house.controller';
+import { IncidentsController } from './incidents.controller';
+import { MetaController } from './meta.controller';
+import { NotificationsController } from './notifications.controller';
+import { PlantController } from './plant.controller';
+import { ProfilesController } from './profiles.controller';
+import { RoomActionsController } from './room-actions.controller';
+import { RoomsController } from './rooms.controller';
+import { SchedulesController } from './schedules.controller';
+import { SettingsController } from './settings.controller';
+import { SourcesController } from './sources.controller';
+import { StateController } from './state.controller';
+import { StrategyController } from './strategy.controller';
+import { SystemController } from './system.controller';
+import { TriggersController } from './triggers.controller';
+import { ApiRefs, ReqIdCache } from './support';
 
-/** Read-only settings while the full REST surface is not registered yet. */
-@Controller('api')
-class SettingsReadController {
-  private readonly mqtt: () => IMqtt | null;
-  private readonly cards: () => ICardDeploy | null;
+/** Every controller of the REST API, in registration order (fixed paths before `:id` ones). */
+export const API_CONTROLLERS = [
+  MetaController,
+  SettingsController,
+  StateController,
+  RoomsController,
+  RoomActionsController,
+  HaController,
+  HistoryController,
+  ProfilesController,
+  HouseController,
+  SchedulesController,
+  SourcesController,
+  PlantController,
+  SystemController,
+  StrategyController,
+  TriggersController,
+  IncidentsController,
+  NotificationsController,
+  DevicesController,
+];
 
-  constructor(
-    @Inject(CONFIG_STORE) private readonly config: IConfigStore,
-    @Optional() moduleRef?: ModuleRef,
-  ) {
-    this.mqtt = lazyRef<IMqtt>(moduleRef, MQTT);
-    this.cards = lazyRef<ICardDeploy>(moduleRef, CARD_DEPLOY);
-  }
-
-  @Get('settings')
-  settings(): SettingsBundle {
-    return {
-      general: this.config.singleton('settings'),
-      safety: this.config.singleton('safety'),
-      house: this.config.singleton('house'),
-      deviceHealth: this.config.singleton('deviceHealth'),
-      mqtt: this.mqtt()?.status() ?? {
-        configured: false,
-        connected: false,
-        broker: null,
-        source: env.simulate ? 'simulator' : 'none',
-        detail: null,
-        publishedEntities: 0,
-      },
-      lovelace: this.cards()?.status() ?? { deployed: false, resource: null, path: null },
-    };
-  }
-}
-
-/** REST controllers. */
+/**
+ * The REST API: thin controllers that parse a request, call the service that owns the behaviour and
+ * answer with a read model. Health and the backup hooks live with the platform and persistence.
+ */
 @Global()
-@Module({ controllers: [SettingsReadController] })
+@Module({
+  controllers: API_CONTROLLERS,
+  providers: [ApiRefs, ReqIdCache],
+})
 export class ApiModule {}
