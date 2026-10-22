@@ -509,6 +509,8 @@
   "all {count} confirmed_many": "усі {count} підтвердили",
   "all {count} confirmed_one": "усі {count} підтвердили",
   "all {count} confirmed_other": "усі {count} підтвердили",
+  "already works as a pump": "вже працює як насос",
+  "already works as the source «{name}»": "вже працює як джерело «{name}»",
   "applies when the window is closed": "діятиме, щойно вікно закриють",
   "auto: between {lo} and {hi}": "авто: між {lo} і {hi}",
   "auto: cooling above {t}": "авто: охолодження вище {t}",

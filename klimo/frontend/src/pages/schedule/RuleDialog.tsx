@@ -11,6 +11,7 @@ import { paths } from '@app';
 import {
   Button,
   CheckboxRow,
+  DateField,
   Dialog,
   RadioCardList,
   SegmentedControl,
@@ -24,7 +25,7 @@ import {
 } from '@ui';
 import { fmtDur, minuteToHhmm, renderReason, t, zonedParts } from '@i18n';
 import type { ScheduleContext } from './data';
-import { atMinute, upcomingDates } from './dates';
+import { atMinute, dayStart, localDate } from './dates';
 
 type Kind = ActivationRuleConfig['type'];
 type Presence = Extract<ActivationRuleConfig, { type: 'presence' }>;
@@ -210,24 +211,14 @@ function CalendarFields({ value, onChange }: { value: Calendar; onChange: (v: Ca
 }
 
 function VacationFields({ c, value, onChange }: { c: ScheduleContext; value: Vacation; onChange: (v: Vacation) => void }) {
-  const dates = useMemo(() => upcomingDates(c.now), [c.now]);
   const untilParts = value.until != null ? zonedParts(value.until) : null;
   const date = untilParts?.date ?? '';
   const minute = untilParts?.minuteOfDay ?? 18 * 60;
-  const setUntil = (d: string, m: number) => {
-    const day = dates.find((x) => x.value === d);
-    onChange({ ...value, until: day ? atMinute(day.start, m) : null });
-  };
+  const setUntil = (d: string, m: number) => onChange({ ...value, until: d ? atMinute(dayStart(d), m) : null });
   const profiles = c.profiles.data ?? [];
   return (
     <Stack gap="md">
-      <Select
-        label={t('Return date')}
-        ariaLabel={t('Return date')}
-        value={date}
-        options={[{ value: '', label: t('Choose a day') }, ...(date && !dates.some((d) => d.value === date) ? [{ value: date, label: date }] : []), ...dates]}
-        onChange={(d) => setUntil(d, minute)}
-      />
+      <DateField label={t('Return date')} value={date} min={localDate(c.now)} onChange={(d) => setUntil(d, minute)} />
       <TimeStepper
         label={t('Arrival time')}
         value={minute}

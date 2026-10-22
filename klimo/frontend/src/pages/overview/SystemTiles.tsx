@@ -1,6 +1,7 @@
 import type { CircuitDto, HouseState, PlantState, SourceDto, TodayDto } from '@api/model';
 import { AutoGrid, Button, LoopTile, ProfileSwatch, RelativeTime, Row, RuntimeBar24h, Stack, StatTile, ToneBadge } from '@ui';
 import { paths } from '@app';
+import type { NameDirectory } from '@data';
 import { fmtDur, fmtTemp, renderReason, startOfLocalDay, t, type CodeContext } from '@i18n';
 import { energyLine, isRunning, profileOrigin, seasonBadge, sourcesTile } from './house';
 import type { ProfileSwitch } from './useProfileSwitch';
@@ -12,7 +13,7 @@ interface Props {
   sources: readonly SourceDto[] | undefined;
   circuits: readonly CircuitDto[] | undefined;
   sw: ProfileSwitch;
-  ctx: CodeContext;
+  ctx: NameDirectory;
 }
 
 function SourcesTile({ house, plant, today, sources, ctx }: Props) {

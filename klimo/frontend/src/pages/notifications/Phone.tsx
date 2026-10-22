@@ -116,6 +116,7 @@ export function PhoneNotifications({
         title={t('Notifications')}
         subtitle={{ text: inboxSubtitle(inbox.openCount), strong: inbox.openCount > 0 }}
         onBack={() => navigate(paths.system())}
+        align="center"
       />
       {inbox.items.length || inbox.loading ? (
         <InboxList inbox={inbox} ctx={ctx} now={now} />

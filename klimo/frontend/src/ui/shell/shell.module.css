@@ -178,6 +178,20 @@
   gap: 1px;
 }
 
+.mobileTop[data-align='center'] .mobileTitle {
+  align-items: center;
+  text-align: center;
+}
+
+.mobileTop[data-align='center'] .mobileTitle h1 {
+  font-size: var(--ui-fs-title);
+}
+
+.mobileSpacer {
+  flex: none;
+  width: 44px;
+}
+
 .mobileTitle h1 {
   margin: 0;
   font-size: var(--ui-fs-title-lg);
@@ -252,6 +266,11 @@
 .pageSubtitle {
   color: var(--ui-text-2);
   font-size: var(--ui-fs-body-lg);
+}
+
+.pageEyebrow {
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-body-sm);
 }
 
 .pageActions {

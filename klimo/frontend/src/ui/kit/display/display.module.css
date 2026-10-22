@@ -132,6 +132,25 @@
   color: var(--ui-tone-ok-fg);
 }
 
+/* ---------- Text ---------- */
+
+.text {
+  margin: 0;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-body-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.text[data-variant='body'] {
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-body);
+}
+
+.text[data-variant='caption'] {
+  font-size: var(--ui-fs-caption);
+}
+
 .time {
   color: var(--time-color, var(--ui-text-2));
   font-size: var(--ui-fs-body-sm);

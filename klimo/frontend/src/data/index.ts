@@ -43,4 +43,4 @@ export {
   type MutationOptions,
   type RoomResource,
 } from './hooks';
-export { useCodeContext, type NameDirectory } from './names';
+export { sourceLabels, useCodeContext, type NameDirectory } from './names';

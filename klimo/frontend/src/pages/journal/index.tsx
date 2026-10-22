@@ -3,10 +3,10 @@
  * New entries arrive live at the top; older ones load page by page. Wide screens show the same
  * log as a section of the System page instead.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { JournalCategory, JournalEntry } from '@api/model';
 import { api } from '@api/endpoints';
-import { useCodeContext, useLiveEvent, useNow, useResource, type NameDirectory } from '@data';
+import { useCodeContext, useLiveEvent, useNow, type NameDirectory } from '@data';
 import { navigate, paths } from '@app';
 import { Button, DecisionLog, FilterPills, MobileTopBar, ScrollX, Skeleton, Stack } from '@ui';
 import { errorText, fmtClock, renderJournal, renderReason, t } from '@i18n';
@@ -70,35 +70,8 @@ function useJournal(filter: Filter) {
   return { items, next, loading, loaded, error, more: () => (next ? load(filter, next) : Promise.resolve()), retry: () => load(filter) };
 }
 
-/**
- * Entries name devices by their entity ids («switch.radiator_pump»); the device list turns those
- * into the names people gave them.
- */
-function useJournalNames(): NameDirectory {
-  const base = useCodeContext();
-  const devices = useResource('devices', () => api.devices.list(), { reloadOn: ['device_meta', 'sensor', 'emitter_device', 'source', 'pump'] });
-  return useMemo(() => {
-    const byEntity = new Map<string, string>();
-    const byKey = new Map<string, string>();
-    for (const d of devices.data?.devices ?? []) {
-      const name = d.label ?? d.name;
-      byKey.set(d.key, name);
-      for (const e of d.entityIds) byEntity.set(e, name);
-    }
-    return {
-      ...base,
-      // a spread copies the clock once; the directory's «now» must stay live
-      get now() {
-        return base.now;
-      },
-      entity: (id: string) => byEntity.get(id) ?? base.entity?.(id),
-      device: (key: string) => byKey.get(key) ?? base.device?.(key),
-    };
-  }, [base, devices.data]);
-}
-
 export default function JournalPage(): JSX.Element {
-  const ctx = useJournalNames();
+  const ctx = useCodeContext();
   const now = useNow(60_000);
   const [filter, setFilter] = useState<Filter>('all');
   const j = useJournal(filter);

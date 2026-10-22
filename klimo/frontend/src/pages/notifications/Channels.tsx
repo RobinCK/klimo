@@ -26,12 +26,12 @@ import {
   StatusBanner,
   TargetRow,
   TestButton,
+  Text,
   TextField,
 } from '@ui';
 import { brand } from '@brand';
 import { channelStatusLabel, errorText, fmtTime, t } from '@i18n';
 import { openTab } from './links';
-import { Note } from './Note';
 import { scopeLabel, type Target } from './texts';
 import type { NotificationsModel } from './useNotifications';
 
@@ -491,10 +491,8 @@ export function ChannelsSection({ dto, model, canEdit }: { dto: NotificationsDto
 
         <ChannelCard icon="bell" title={t('Notifications in Home Assistant')} sub="persistent_notification" status={panelStatus}>
           <Stack gap="xs">
-            <Note text={t('They stay in the HA sidebar until someone closes them. Every user of the house sees them.')} />
-            <Note
-              text={t('{product} closes them itself once the problem is gone: the sensor is back, the valve confirmed.', { product: brand.productName })}
-            />
+            <Text>{t('They stay in the HA sidebar until someone closes them. Every user of the house sees them.')}</Text>
+            <Text>{t('{product} closes them itself once the problem is gone: the sensor is back, the valve confirmed.', { product: brand.productName })}</Text>
             {panel ? (
               <CheckboxRow
                 checked={panel.enabled}
@@ -516,7 +514,7 @@ export function ChannelsSection({ dto, model, canEdit }: { dto: NotificationsDto
         </ChannelCard>
 
         <ChannelCard icon="bolt" title={t('Automations')} sub="klimo_event · MQTT klimo/events" status={statusOf(dto, 'ha_event', event ? [event] : [])}>
-          <Note text={t('Any automation or Node-RED flow receives the same event and does its own thing: blinks a light, speaks on a speaker.')} />
+          <Text>{t('Any automation or Node-RED flow receives the same event and does its own thing: blinks a light, speaks on a speaker.')}</Text>
           <CodeBlock code={example} ariaLabel={t('Example event')} />
         </ChannelCard>
       </AutoGrid>

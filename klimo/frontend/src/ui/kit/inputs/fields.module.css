@@ -48,6 +48,16 @@
   transition: border-color var(--ui-motion) ease-out;
 }
 
+.date {
+  min-height: 48px;
+  font-variant-numeric: tabular-nums;
+}
+
+.date::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.7;
+}
+
 .input::placeholder {
   color: var(--ui-text-3);
 }

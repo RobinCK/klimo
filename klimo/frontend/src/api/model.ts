@@ -437,7 +437,7 @@ export interface GeneralSettings {
   /** Publish config-level MQTT entities (bivalent point, source allowed switches, rule switches).
    *  Their commands are accepted only from HA admins (call_service context), contract G.6. */
   mqttConfigEntities: boolean; // false
-  glassCoefficient: number; // 0.7 — T_glass ≈ T_in − k·(T_in − T_out)
+  glassCoefficient: number; // 0.35 (double glazing) — T_glass ≈ T_in − k·(T_in − T_out)
   presence: PresenceConfig;
   defaults: RoomDefaults;
   onboardingDismissed: boolean; // false
@@ -1273,6 +1273,9 @@ export interface RoomMemory {
   floorLimit: Latch; // floor probe ≥ maxFloorC
   demandMode: ModeOrNone;
   demandSince: EpochMs | null; // min-request timer
+  /** Optimal start under way: held until the block begins, the room reaches its target + tolerance above,
+   *  or the plan changes. The lead shrinks as the room warms, so re-deciding every tick would short-cycle. */
+  preheat: { forBlockAt: EpochMs; profileId: Id; heatC: Celsius; leadMin: number; since: EpochMs } | null;
   window: {
     contactOpenSince: EpochMs | null; // any contact open (raw)
     allClosedSince: EpochMs | null;
@@ -2070,7 +2073,8 @@ export interface SettingsBundle {
   house: HouseSettings;
   deviceHealth: DeviceHealthSettings;
   mqtt: MqttStatus;
-  lovelace: { deployed: boolean; resource: 'created' | 'updated' | 'exists' | 'unsupported' | 'error' | null; path: string | null };
+  /** 'simulated': the simulator serves the bundle itself (`path`); there is no HA config dir to copy it to. */
+  lovelace: { deployed: boolean; resource: 'created' | 'updated' | 'exists' | 'unsupported' | 'error' | 'simulated' | null; path: string | null };
 }
 export type GeneralSettingsPatch = Partial<Omit<GeneralSettings, 'updatedAt'>>;
 export type SafetySettingsPatch = Partial<Omit<SafetySettings, 'updatedAt'>>;

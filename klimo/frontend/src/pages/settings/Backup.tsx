@@ -3,12 +3,11 @@
  * tried without writing anything, so the summary of what would change — and any problems — is
  * seen before the current settings are replaced.
  */
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import type { ExportBundle, ImportResult } from '@api/model';
 import { api } from '@api/endpoints';
-import { Button, ConfirmDialog, Dialog, KeyValueList, Row, Section, Stack, StatusBanner, toast } from '@ui';
+import { Button, ConfirmDialog, Dialog, FileButton, KeyValueList, Row, Section, Stack, StatusBanner, Text, toast } from '@ui';
 import { errorText, issueText, t } from '@i18n';
-import { Note } from './Note';
 
 /** Names of the configuration tables as a person reads them. */
 function tableLabel(key: string): string {
@@ -57,7 +56,6 @@ function isBundle(v: unknown): v is ExportBundle {
 }
 
 export function BackupSection({ canEdit }: { canEdit: boolean }) {
-  const file = useRef<HTMLInputElement>(null);
   const [bundle, setBundle] = useState<ExportBundle | null>(null);
   const [check, setCheck] = useState<ImportResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -67,11 +65,9 @@ export function BackupSection({ canEdit }: { canEdit: boolean }) {
     setBundle(null);
     setCheck(null);
     setConfirm(false);
-    if (file.current) file.current.value = '';
   };
 
-  const pick = async (f: File | undefined) => {
-    if (!f) return;
+  const pick = async (f: File) => {
     setBusy(true);
     try {
       const parsed: unknown = JSON.parse(await f.text());
@@ -111,18 +107,17 @@ export function BackupSection({ canEdit }: { canEdit: boolean }) {
   return (
     <Section title={t('Backup')} icon="copy">
       <Stack gap="md">
-        <Note text={t('Every setting — rooms, profiles, sources, notifications — in one file. History and the journal are not included, nor is the Telegram token.')} />
+        <Text>
+          {t('Every setting — rooms, profiles, sources, notifications — in one file. History and the journal are not included, nor is the Telegram token.')}
+        </Text>
         <Row gap="sm" wrap>
           <Button variant="secondary" onClick={() => window.location.assign(api.exportUrl)}>
             {t('Download a backup')}
           </Button>
           {canEdit ? (
-            <Button variant="outline" icon="undo" loading={busy && !bundle} onClick={() => file.current?.click()}>
-              {t('Restore from a file…')}
-            </Button>
+            <FileButton label={t('Restore from a file…')} accept="application/json,.json" icon="undo" loading={busy && !bundle} onFile={(f) => void pick(f)} />
           ) : null}
         </Row>
-        <input ref={file} type="file" accept="application/json,.json" hidden onChange={(e) => void pick(e.currentTarget.files?.[0])} />
       </Stack>
 
       <Dialog
@@ -145,7 +140,7 @@ export function BackupSection({ canEdit }: { canEdit: boolean }) {
             {check.issues.length ? (
               <Stack gap="2xs">
                 {check.issues.slice(0, 8).map((i, n) => (
-                  <Note key={`${i.path}-${n}`} text={`${i.path}: ${issueText(i)}`} />
+                  <Text key={`${i.path}-${n}`}>{`${i.path}: ${issueText(i)}`}</Text>
                 ))}
               </Stack>
             ) : null}

@@ -96,7 +96,7 @@ const RENDER: Record<EventKind, Render> = {
   trv_not_confirmed: (i, f, ctx) => {
     const attempt = i.progress?.attempt ?? num(f, 'attempt');
     const of = i.progress?.of ?? num(f, 'of');
-    const value = num(f, 'valueC');
+    const value = num(f, 'valueC') ?? num(f, 'targetC');
     const lqi = num(f, 'lqi');
     const parts = [
       value != null
@@ -200,11 +200,15 @@ const RENDER: Record<EventKind, Render> = {
   report_weekly: (i) => ({ short: eventKindLabel(i.kind), text: '' }),
 };
 
+// an entity id («climate.heat_pump») stays as Home Assistant spells it
+const capital = (s: string) => (/^[a-z_]+\.[a-z0-9_]+/.test(s) ? s : `${s.charAt(0).toUpperCase()}${s.slice(1)}`);
+
 /** Title and text of an incident, with the room in front when it belongs to one. */
 export function incidentWords(i: IncidentDto, ctx: CodeContext, now: EpochMs): { title: string; text: string } {
   const w = RENDER[i.kind](i, i.facts ?? {}, ctx, now);
   const room = i.roomId ? (ctx.room?.(i.roomId) ?? null) : null;
-  return { title: room ? `${room} · ${w.short}` : `${w.short.charAt(0).toUpperCase()}${w.short.slice(1)}`, text: w.text };
+  // a text may open with a device's own label («рушникосушка: …»)
+  return { title: room ? `${room} · ${w.short}` : capital(w.short), text: capital(w.text) };
 }
 
 /** Where «Відкрити» leads for an incident. */

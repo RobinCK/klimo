@@ -42,11 +42,13 @@ export {
 export { CheckboxRow, ToggleCard, ToggleChip, type CheckboxRowProps, type ToggleCardProps, type ToggleChipProps } from './inputs/toggles';
 export {
   AreaSelect,
+  DateField,
   NumberField,
   Select,
   TextField,
   TimeRangeInput,
   type AreaSelectProps,
+  type DateFieldProps,
   type NumberFieldProps,
   type SelectOption,
   type SelectProps,
@@ -71,9 +73,11 @@ export {
 export { SortableList, type SortableItem, type SortableListProps } from './inputs/SortableList';
 export {
   DashedAddButton,
+  FileButton,
   QuickActionPill,
   TestButton,
   type DashedAddButtonProps,
+  type FileButtonProps,
   type QuickActionPillProps,
   type TestButtonProps,
 } from './inputs/actions';
@@ -115,6 +119,7 @@ export {
   LegendSwatch,
   NumberedList,
   RelativeTime,
+  Text,
   type CapabilityChipProps,
   type CodeBlockProps,
   type EntityIdProps,
@@ -122,6 +127,7 @@ export {
   type KeyValueRow,
   type LegendSwatchProps,
   type RelativeTimeProps,
+  type TextProps,
 } from './display/text';
 export {
   BigReadout,

@@ -2,8 +2,8 @@
  * Words about the whole house: the headline («Гріють 3 з 7 кімнат»), the line under it, the
  * date, and what the system tiles say about sources, circuits, the weather and energy.
  */
-import type { EpochMs, HouseState, IconName, PlantState, SourceKind, SourceState, Tone } from '@api/model';
-import type { SourceDto } from '@api/model';
+import type { EpochMs, HouseState, IconName, PlantState, SourceDto, SourceKind, SourceState, Tone } from '@api/model';
+import type { NameDirectory } from '@data';
 import {
   fmtKw,
   fmtPct,
@@ -136,12 +136,13 @@ export interface SourcesTile {
 }
 
 /** The lead source in words, and one short phrase for each of the others. */
-export function sourcesTile(house: HouseState, plant: PlantState | null, sources: readonly SourceDto[] | undefined, ctx: CodeContext): SourcesTile {
+export function sourcesTile(house: HouseState, plant: PlantState | null, sources: readonly SourceDto[] | undefined, ctx: NameDirectory): SourcesTile {
   const byId = new Map((sources ?? []).map((s) => [s.config.id, s.config] as const));
   const states = plant?.sources ?? [];
   const leadId = house.leadSourceId ?? plant?.lead.heat ?? plant?.lead.cool ?? states.find(isRunning)?.sourceId ?? states[0]?.sourceId ?? null;
   const lead = states.find((s) => s.sourceId === leadId) ?? null;
-  const name = (id: string) => byId.get(id)?.name ?? ctx.source?.(id) ?? id;
+  const plain = (id: string) => byId.get(id)?.name ?? ctx.source?.(id) ?? id;
+  const name = (id: string) => ctx.sourceLabel(id) ?? plain(id);
   if (!lead) {
     return {
       icon: 'heatPump',
@@ -172,17 +173,23 @@ export function sourcesTile(house: HouseState, plant: PlantState | null, sources
           : s.role === 'reserve' || s.role === 'assist' || s.role === 'trigger_only'
             ? sourceRoleLabel(s.role)
             : sourceStateLabel(s.state);
-      return t('{source} — {what}', { source: name(s.sourceId), what: what.toLowerCase() });
-    })
-    // two air conditioners of the same name doing the same thing read as one phrase
-    .filter((phrase, i, all) => all.indexOf(phrase) === i)
+      return { id: s.sourceId, what: what.toLowerCase() };
+    });
+  // air conditioners of the same name doing the same thing read as one phrase without their rooms
+  const phrase = (o: { id: string; what: string }) => {
+    const alike = others.filter((x) => plain(x.id) === plain(o.id) && x.what === o.what).length > 1;
+    return t('{source} — {what}', { source: alike ? plain(o.id) : name(o.id), what: o.what });
+  };
+  const othersLine = others
+    .map(phrase)
+    .filter((p, i, all) => all.indexOf(p) === i)
     .join(' · ');
   const kind = byId.get(lead.sourceId)?.kind ?? 'custom';
   return {
     icon: SOURCE_ICON[kind],
     name: name(lead.sourceId),
     sub: telemetry.filter(Boolean).join(' · '),
-    others,
+    others: othersLine,
     dot: { tone: lead.fault ? 'err' : isRunning(lead) ? lead.tone : 'off', glow: isRunning(lead) },
     leadId: lead.sourceId,
   };

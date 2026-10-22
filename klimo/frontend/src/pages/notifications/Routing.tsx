@@ -5,9 +5,8 @@
  */
 import { useMemo, useState } from 'react';
 import type { EventCatalogueEntry, EventKind, NotificationsDto, Severity } from '@api/model';
-import { Button, CheckboxRow, Dialog, EmptyState, NumberField, Row, RoutingMatrix, Section, Select, Stack, type MatrixCell } from '@ui';
+import { Button, CheckboxRow, Dialog, EmptyState, NumberField, Row, RoutingMatrix, Section, Select, Stack, Text, type MatrixCell } from '@ui';
 import { eventKindLabel, severityLabel, t } from '@i18n';
-import { Note } from './Note';
 import { columnLabel, kindSub, paramSpec, severityGroup, type Target } from './texts';
 import type { NotificationsModel } from './useNotifications';
 
@@ -57,7 +56,7 @@ function EventParamsDialog({ dto, model, initial, onClose }: { dto: Notification
             .map((c) => ({ value: c.kind, label: `${eventKindLabel(c.kind)} · ${severityLabel(c.severity).toLowerCase()}` }))}
           onChange={pick}
         />
-        {kindSub(kind) ? <Note text={kindSub(kind) as string} /> : null}
+        {kindSub(kind) ? <Text>{kindSub(kind)}</Text> : null}
         <CheckboxRow
           checked={enabled}
           title={t('Raise this alert')}
@@ -146,7 +145,7 @@ export function RoutingSection({ dto, model, canEdit }: { dto: NotificationsDto;
       )}
       {!canEdit ? (
         <Row>
-          <Note text={t('Only a Home Assistant administrator can change the table.')} />
+          <Text>{t('Only a Home Assistant administrator can change the table.')}</Text>
         </Row>
       ) : null}
       {params ? <EventParamsDialog dto={dto} model={model} initial={params} onClose={() => setParams(null)} /> : null}

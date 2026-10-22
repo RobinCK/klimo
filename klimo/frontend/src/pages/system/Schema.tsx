@@ -4,9 +4,9 @@
  * (frost, a sunny blackout, summer, or your own) without switching anything.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { EnergyState, SchemaNode, SchemaView, SimConditions, SimPreset, SimPresetId } from '@api/model';
+import type { EnergyState, SchemaNode, SchemaView, SimConditions, SimPreset, SimPresetId, SourceDto } from '@api/model';
 import { api } from '@api/endpoints';
-import { useMutation, useResource } from '@data';
+import { useMutation, useResource, type NameDirectory } from '@data';
 import { brand } from '@brand';
 import { navigate, paths } from '@app';
 import {
@@ -80,6 +80,18 @@ export function EnergyLine({ energy, ctx, compact }: { energy: EnergyState; ctx:
   );
 }
 
+/** Source boxes named alike («Кондиціонер» three times) get their room; other boxes stay as they come. */
+function distinctTitles(nodes: readonly SchemaNode[], sources: readonly SourceDto[] | undefined, ctx: NameDirectory): SchemaNode[] {
+  return nodes.map((n) => {
+    const [kind, ...rest] = n.key.split(':');
+    if (kind !== 'source' && kind !== 'local') return n;
+    const id = rest.join(':');
+    const plain = sources?.find((s) => s.config.id === id)?.config.name;
+    const label = ctx.sourceLabel(id);
+    return label && n.title === plain ? { ...n, title: label } : n;
+  });
+}
+
 export function useSchema(d: SystemData) {
   const live = useResource('system:schema', api.system.schema, { reloadOn: ['source', 'circuit', 'pump', 'manifold', 'strategy', 'house'] });
   const { reload } = live;
@@ -131,6 +143,9 @@ export function SchemaSection({ d, sim, onSim, onView }: Props) {
 
   const view = sim === 'now' ? (live.data ?? null) : simulated;
   useEffect(() => onView(view), [view, onView]);
+  const sources = d.sources.data;
+  const ctx = d.ctx;
+  const nodes = useMemo(() => (view ? distinctTitles(view.nodes, sources, ctx) : []), [view, sources, ctx]);
 
   const nodeClick = (n: SchemaNode) => {
     const [kind, ...rest] = n.key.split(':');
@@ -185,7 +200,7 @@ export function SchemaSection({ d, sim, onSim, onView }: Props) {
           <ScrollX minWidth={1232} ariaLabel={t('Plant schema')}>
             <PlantDiagram
               ariaLabel={t('Plant schema: sources, manifold, circuits and rooms')}
-              nodes={view.nodes}
+              nodes={nodes}
               edges={view.edges}
               columns={[
                 { key: 'sources', label: t('Sources') },

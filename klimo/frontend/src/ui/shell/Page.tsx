@@ -4,6 +4,8 @@ import { useRouteClick } from './Link';
 import s from './shell.module.css';
 
 export interface PageProps {
+  /** A quiet line above the title (the date on the overview). */
+  eyebrow?: ReactNode;
   title?: ReactNode;
   /** One line under the title (date, summary). */
   subtitle?: ReactNode;
@@ -15,13 +17,14 @@ export interface PageProps {
 }
 
 /** A routed page: optional header row, sub-navigation, then the sections in a vertical rhythm. */
-export function Page({ title, subtitle, actions, subnav, children }: PageProps) {
-  const hasHead = title != null || subtitle != null || actions != null;
+export function Page({ eyebrow, title, subtitle, actions, subnav, children }: PageProps) {
+  const hasHead = eyebrow != null || title != null || subtitle != null || actions != null;
   return (
     <div className={s.page}>
       {hasHead ? (
         <div className={s.pageHead}>
           <div className={s.pageTitles}>
+            {eyebrow != null ? <span className={s.pageEyebrow}>{eyebrow}</span> : null}
             {title != null ? <h1>{title}</h1> : null}
             {subtitle != null ? <span className={s.pageSubtitle}>{subtitle}</span> : null}
           </div>

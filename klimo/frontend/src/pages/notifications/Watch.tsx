@@ -21,12 +21,12 @@ import {
   Select,
   Skeleton,
   Stack,
+  Text,
   TextField,
   WatchTable,
   type WatchRow,
 } from '@ui';
 import { fmtClock, fmtDur, renderReason, t, type CodeContext } from '@i18n';
-import { Note } from './Note';
 import { conditionAmount, conditionText, severityChip, watchRoleLabel, withAmount } from './texts';
 import type { NotificationsModel } from './useNotifications';
 
@@ -124,7 +124,7 @@ function rowName(r: WatchRuleDto): string {
 
 function AmountField({ condition, onChange }: { condition: WatchCondition; onChange: (c: WatchCondition) => void }) {
   const a = conditionAmount(condition);
-  if (!a) return <Note text={t('This rule uses its own condition; it is edited where it was created.')} />;
+  if (!a) return <Text>{t('This rule uses its own condition; it is edited where it was created.')}</Text>;
   return (
     <NumberField
       label={a.unit === 'min' ? t('Threshold, minutes') : t('Attempts')}
@@ -183,7 +183,7 @@ function RuleDialog({ rule, onClose, onSaved }: { rule: WatchRuleDto | null; onC
       >
         <Stack gap="md">
           {rule ? (
-            <Note text={`${rule.entityId} · ${watchRoleLabel(rule.role)}`} />
+            <Text>{`${rule.entityId} · ${watchRoleLabel(rule.role)}`}</Text>
           ) : (
             <EntityPicker
               value={entityId}
@@ -318,7 +318,7 @@ export function WatchSection({ dto, model, ctx, now, canEdit }: { dto: Notificat
             ) : null}
           </Stack>
         ) : (
-          <Note text={query ? t('Nothing matches «{q}».', { q: query }) : filter === 'problems' ? t('Nothing has dropped out.') : t('No entities here yet.')} />
+          <Text>{query ? t('Nothing matches «{q}».', { q: query }) : filter === 'problems' ? t('Nothing has dropped out.') : t('No entities here yet.')}</Text>
         )}
       </Stack>
       {open ? <RuleDialog key={open.rule?.id ?? 'new'} rule={open.rule} onClose={() => setOpen(null)} onSaved={() => void res.reload()} /> : null}

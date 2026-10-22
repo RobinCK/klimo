@@ -6,6 +6,23 @@ import { Icon } from '../../basic/Icon';
 import { Button } from '../../basic/Button';
 import s from './display.module.css';
 
+/* ---------------- Text ---------------- */
+
+export interface TextProps {
+  children: ReactNode;
+  /** muted: an explanation under a block (default) · body: an ordinary sentence · caption: small print. */
+  variant?: 'muted' | 'body' | 'caption';
+}
+
+/** A plain paragraph in the kit's type scale, for sentences that are not a header or a row. */
+export function Text({ children, variant = 'muted' }: TextProps) {
+  return (
+    <p className={s.text} data-variant={variant}>
+      {children}
+    </p>
+  );
+}
+
 /* ---------------- KeyValueList ---------------- */
 
 export interface KeyValueRow {

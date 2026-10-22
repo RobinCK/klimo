@@ -256,7 +256,7 @@ export function DeviceTable({ rows, minWidth = 1080, ariaLabel, empty }: DeviceT
     { key: 'battery', label: ut('Battery'), width: '96px' },
     { key: 'signal', label: ut('Signal'), width: '96px' },
     { key: 'seen', label: ut('Last seen'), width: '100px' },
-    { key: 'via', label: ut('Via'), width: '80px' },
+    { key: 'via', label: ut('Via'), width: '116px' },
   ];
   return (
     <DataTable

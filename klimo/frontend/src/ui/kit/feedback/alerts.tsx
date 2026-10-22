@@ -45,7 +45,10 @@ export interface AlertCardProps {
   secondary: Action;
 }
 
-/** One problem on the overview with what to do about it. */
+/**
+ * One problem on the overview with what to do about it. Both buttons stay on one row: in a
+ * narrow card the row starts under the icon instead of under the text.
+ */
 export function AlertCard({ tone, icon, title, text, primary, secondary }: AlertCardProps) {
   return (
     <div className={s.card} style={toneVars(tone)}>
@@ -55,11 +58,11 @@ export function AlertCard({ tone, icon, title, text, primary, secondary }: Alert
       <div className={s.cardText}>
         <span className={s.cardTitle}>{title}</span>
         <span className={s.cardBody}>{text}</span>
-        <span className={s.cardActions}>
-          <ActionButton action={primary} variant="secondary" size="sm" />
-          <ActionButton action={secondary} variant="ghost" size="sm" />
-        </span>
       </div>
+      <span className={s.cardActions}>
+        <ActionButton action={primary} variant="secondary" size="sm" />
+        <ActionButton action={secondary} variant="ghost" size="sm" />
+      </span>
     </div>
   );
 }

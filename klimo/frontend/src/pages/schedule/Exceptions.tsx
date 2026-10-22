@@ -2,15 +2,15 @@
  * «Винятки»: dated days that do not follow the week — a public holiday on a Monday runs «як
  * неділя». Each exception replaces that one date of this schedule.
  */
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import type { Dow, Schedule, ScheduleException } from '@api/model';
 import { api } from '@api/endpoints';
 import { useMutation, useResource } from '@data';
-import { Button, Dialog, KeyValueList, Section, Select, Stack, TextField } from '@ui';
+import { Button, DateField, Dialog, KeyValueList, Section, Select, Stack, TextField } from '@ui';
 import { fmtDate, t, weekdayLong } from '@i18n';
 import { DOWS } from './blocks';
 import type { ScheduleContext } from './data';
-import { upcomingDates } from './dates';
+import { localDate } from './dates';
 
 const likeText = (e: ScheduleException) =>
   'likeDow' in e.plan ? t('like {day}', { day: weekdayLong(e.plan.likeDow).toLowerCase() }) : t('own plan for the day');
@@ -56,8 +56,7 @@ export function Exceptions({ c, schedule }: { c: ScheduleContext; schedule: Sche
 }
 
 function ExceptionDialog({ c, schedule, onClose, onSaved }: { c: ScheduleContext; schedule: Schedule; onClose: () => void; onSaved: () => void }) {
-  const dates = useMemo(() => upcomingDates(c.now, 366), [c.now]);
-  const [date, setDate] = useState(dates[1]?.value ?? dates[0]?.value ?? '');
+  const [date, setDate] = useState(() => localDate(c.now, 1));
   const [like, setLike] = useState<Dow>(6);
   const [note, setNote] = useState('');
   const save = useMutation(() => api.schedules.setException(schedule.id, date, { plan: { likeDow: like }, note: note.trim() || null }), {
@@ -78,7 +77,7 @@ function ExceptionDialog({ c, schedule, onClose, onSaved }: { c: ScheduleContext
       ]}
     >
       <Stack gap="md">
-        <Select label={t('Date')} ariaLabel={t('Date')} value={date} options={dates.map((d) => ({ value: d.value, label: d.label }))} onChange={setDate} />
+        <DateField label={t('Date')} value={date} min={localDate(c.now)} max={localDate(c.now, 366)} onChange={setDate} />
         <Select
           label={t('Runs like')}
           ariaLabel={t('Runs like')}

@@ -343,8 +343,11 @@
 }
 
 .card {
-  display: flex;
-  gap: var(--ui-space-12);
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  align-items: start;
+  gap: 0 var(--ui-space-12);
   padding: var(--ui-space-14);
   border-radius: var(--ui-radius-xl);
   background: var(--ui-surface-1);
@@ -382,10 +385,18 @@
 }
 
 .cardActions {
+  grid-column: 2;
   display: flex;
   flex-wrap: wrap;
   gap: var(--ui-space-8);
-  margin-top: 6px;
+  margin-top: 10px;
+}
+
+/* under the text two buttons («Відкрити кімнату» · «Ігнорувати 30 хв») need about 290 px */
+@container (max-width: 379px) {
+  .cardActions {
+    grid-column: 1 / -1;
+  }
 }
 
 .inbox {

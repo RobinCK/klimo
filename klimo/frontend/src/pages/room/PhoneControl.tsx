@@ -144,6 +144,7 @@ export function PhoneControl({ p, ed, profiles, now }: { p: SectionProps; ed: Ta
         title={room.config.name}
         subtitle={sub}
         onBack={back}
+        align="center"
         right={<IconButton icon="settings" label={t('Room settings')} to={paths.roomSettings(room.config.id)} variant="ghost" size={44} />}
       />
       <ThermostatDial

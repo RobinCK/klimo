@@ -123,8 +123,19 @@
   color: var(--ui-tone-cool-fg);
 }
 
+.head[data-inline] {
+  flex-wrap: nowrap;
+}
+
+.head[data-inline] .headMain {
+  flex: 1 1 auto;
+}
+
+/* keeps its width beside the title; alone on a narrow screen it wraps instead of overflowing */
 .headAction {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   flex-wrap: wrap;
   align-items: center;

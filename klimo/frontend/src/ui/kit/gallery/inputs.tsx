@@ -7,13 +7,13 @@ import { StatusDot } from '../../basic/Badges';
 import { DurationPills, FilterPills, SegmentedControl } from '../inputs/choice';
 import { RadioCardGrid, RadioCardList, RadioValueGrid } from '../inputs/radios';
 import { CheckboxRow, ToggleCard, ToggleChip } from '../inputs/toggles';
-import { AreaSelect, NumberField, Select, TextField, TimeRangeInput } from '../inputs/fields';
+import { AreaSelect, DateField, NumberField, Select, TextField, TimeRangeInput } from '../inputs/fields';
 import { Stepper, TimeStepper } from '../inputs/steppers';
 import { ValuePill } from '../inputs/ValuePill';
 import { EntityMultiPicker, EntityPicker } from '../inputs/EntityPicker';
 import { ColorSwatchPicker, DayOfWeekToggle, DayTabs, IconPicker, MonthToggleGrid } from '../inputs/pickers';
 import { SortableList } from '../inputs/SortableList';
-import { DashedAddButton, QuickActionPill, TestButton } from '../inputs/actions';
+import { DashedAddButton, FileButton, QuickActionPill, TestButton } from '../inputs/actions';
 import { minutesToHhmm } from '../internal/util';
 import { GALLERY_PALETTE, gallerySearch } from './fixtures';
 import { Group, Item } from './parts';
@@ -265,9 +265,10 @@ function Fields() {
   const [entity, setEntity] = useState<string | null>('sensor.outdoor_temperature');
   const [many, setMany] = useState<string[]>(['sensor.living_sofa_temperature']);
   const [area, setArea] = useState<string | null>('bedroom');
+  const [date, setDate] = useState('2026-12-31');
   return (
     <>
-      <Item name="Select · TextField · NumberField · AreaSelect">
+      <Item name="Select · TextField · NumberField · DateField · AreaSelect">
         <Row gap="md" wrap align="end">
           <Select
             value={dur}
@@ -285,6 +286,7 @@ function Fields() {
           <TextField label={ut('Profile name')} value={name} onChange={setName} size="lg" />
           <TextField label={ut('Name')} value="" onChange={() => undefined} placeholder={ut('e.g. Bedroom')} error={ut('Give the room a name')} />
           <NumberField label={ut('Budget for heat and cold')} value={budget} onChange={setBudget} min={0.5} max={10} step={0.1} unit={ut('kW')} />
+          <DateField label={ut('Date')} value={date} onChange={setDate} min="2026-01-01" />
           <AreaSelect
             label={ut('Home Assistant area')}
             value={area}
@@ -380,7 +382,7 @@ function Lists() {
         />
         <SortableList numbered size="sm" ariaLabel={ut('Who wins')} onReorder={setPrio} items={prio.map((id) => ({ id, ...prioItems[id] }))} />
       </Item>
-      <Item name="TestButton · QuickActionPill · DashedAddButton">
+      <Item name="TestButton · QuickActionPill · DashedAddButton · FileButton">
         <Row gap="sm" wrap>
           <TestButton label={ut('Send a test')} successLabel={ut('Sent ✓')} run={() => new Promise((r) => window.setTimeout(() => r({ ok: true }), 700))} />
           <TestButton label={ut('Check the token')} successLabel={ut('Token works ✓')} icon="sync" run={() => new Promise((r) => window.setTimeout(() => r({ ok: false, error: ut('Telegram answered 401: the token is wrong') }), 700))} />
@@ -391,6 +393,9 @@ function Lists() {
           <QuickActionPill icon="undo" label={ut('Back to the schedule')} onClick={() => undefined} />
         </Row>
         <DashedAddButton label={ut('New profile')} onClick={() => undefined} />
+        <Row gap="sm" wrap>
+          <FileButton label={ut('Restore from a file…')} icon="undo" accept="application/json,.json" onFile={() => undefined} />
+        </Row>
       </Item>
     </>
   );

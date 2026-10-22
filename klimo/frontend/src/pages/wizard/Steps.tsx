@@ -27,8 +27,8 @@ import {
   ToggleCard,
   type IconName,
 } from '@ui';
-import { aggregationHint, aggregationLabel, fmtDelta, fmtTemp, t, wizardDeviceRoleLabel, type CodeContext } from '@i18n';
-import { candidateMeta, candidateValue, integrationName, ROLE_PRESET, stepWords, wizardIssue } from './texts';
+import { aggregationHint, aggregationLabel, fmtDelta, fmtTemp, integrationName, t, wizardDeviceRoleLabel, type CodeContext } from '@i18n';
+import { candidateMeta, candidateValue, ROLE_PRESET, stepWords, wizardIssue } from './texts';
 import { ROLE_NEEDS, type EmitterChoice, type Wizard } from './useWizard';
 
 const KINDS: { value: EmitterChoice; icon: IconName; title: () => string; hint: () => string }[] = [
@@ -213,8 +213,8 @@ export function StepDevices({ w, ctx }: { w: Wizard; ctx: CodeContext }) {
   const roomName = (id: string) => ctx.room?.(id) ?? id;
   const shown = groups().filter((g) => !g.need || w.kinds.includes(g.need));
   const found = w.candidates.length;
-  // found in the area, but for a kind of heating that is not ticked on step 1
-  const elsewhere = w.candidates.filter((c) => !shown.some((g) => g.roles.includes(c.role)));
+  // found in the area, but for a kind of heating that is not ticked on step 1 (and free to use)
+  const elsewhere = w.candidates.filter((c) => !shown.some((g) => g.roles.includes(c.role)) && !w.inUse(c));
   const banner = !w.areaId ? (
     <StatusBanner tone="event" text={t('No area chosen — pick the devices by hand below.')} />
   ) : w.discovering ? (
@@ -245,17 +245,22 @@ export function StepDevices({ w, ctx }: { w: Wizard; ctx: CodeContext }) {
         return (
           <Section key={g.key} variant="plain" level={3} title={g.title} tag={g.hint}>
             <Stack gap="xs">
-              {cands.map((c: DiscoveryCandidate) => (
-                <CheckboxRow
-                  key={c.entityId}
-                  variant="well"
-                  checked={w.picked(c)}
-                  title={c.name}
-                  hint={candidateMeta(c, roomName)}
-                  trailing={candidateValue(c)}
-                  onChange={() => w.togglePick(c)}
-                />
-              ))}
+              {cands.map((c: DiscoveryCandidate) => {
+                const used = w.inUse(c);
+                return (
+                  <CheckboxRow
+                    key={c.entityId}
+                    variant="well"
+                    checked={w.picked(c)}
+                    title={c.name}
+                    hint={candidateMeta(c, roomName, used)}
+                    trailing={candidateValue(c)}
+                    // a source cannot also be a room's own device; a pump can, if the user insists
+                    disabled={used?.as === 'source' && !w.picked(c)}
+                    onChange={() => w.togglePick(c)}
+                  />
+                );
+              })}
               {extras.map((x) => (
                 <CheckboxRow key={x.entityId} variant="well" checked title={x.name} hint={x.entityId} onChange={() => w.removeExtra(x.entityId)} />
               ))}

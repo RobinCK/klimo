@@ -14,6 +14,7 @@ import type {
   CreateRoomStepKind,
   DiscoveryCandidate,
   Id,
+  SourceAdapter,
   SourceDemandPolicy,
   TrvStrategy,
   ValidationResult,
@@ -22,7 +23,7 @@ import type {
 } from '@api/model';
 import { api } from '@api/endpoints';
 import { isApiError } from '@api/client';
-import { invalidate, liveStore, useResource, useWizardReport } from '@data';
+import { invalidate, liveStore, useCodeContext, useResource, useWizardReport } from '@data';
 import { currentRoute } from '@app';
 import { errorText, t } from '@i18n';
 import { toast } from '@ui';
@@ -46,6 +47,17 @@ export const ROLE_NEEDS: Partial<Record<WizardDeviceRole, EmitterChoice>> = {
   floor_probe: 'floor',
 };
 
+/** A device the house already uses elsewhere: a source switches it, or it is a pump of the plant. */
+export type DeviceInUse = { as: 'source'; name: string } | { as: 'pump' };
+
+/** The entity a source is switched through (the one the server refuses to put into a room). */
+function controlEntity(a: SourceAdapter): string | null {
+  if (a.type === 'climate') return a.climate;
+  if (a.type === 'relay') return a.command;
+  if (a.type === 'flow') return a.enable;
+  return null;
+}
+
 export function methodForCount(n: number): AggregationMethod {
   return n >= 3 ? 'median' : n === 2 ? 'average' : 'primary';
 }
@@ -68,6 +80,8 @@ export interface Wizard {
   areaName: string | null;
   picked: (c: DiscoveryCandidate) => boolean;
   togglePick: (c: DiscoveryCandidate) => void;
+  /** Offered, but never pre-ticked: a source or a pump already uses it. */
+  inUse: (c: DiscoveryCandidate) => DeviceInUse | null;
   extras: ExtraDevice[];
   addExtra: (d: ExtraDevice) => void;
   removeExtra: (entityId: string) => void;
@@ -163,6 +177,9 @@ export function useWizard(): Wizard {
   const settings = useResource('settings', api.settings.get, { reloadOn: ['settings'] });
   const areasRes = useResource('ha-areas', api.ha.areas);
   const circuitsRes = useResource('names:circuits', api.circuits.list, { reloadOn: ['circuit', 'pump'] });
+  const sourcesRes = useResource('names:sources', api.sources.list, { reloadOn: ['source'] });
+  const pumpsRes = useResource('names:pumps', api.pumps.list, { reloadOn: ['pump'] });
+  const names = useCodeContext();
   const defaults = settings.data?.general.defaults.tolerance;
 
   const [d, setDraft] = useState<Draft>(() => kept ?? EMPTY);
@@ -194,20 +211,32 @@ export function useWizard(): Wizard {
   const discovery = useResource(areaId ? `area-discovery:${areaId}` : null, () => api.ha.discoverArea(areaId as string));
   const candidates = useMemo(() => discovery.data?.candidates ?? [], [discovery.data]);
 
-  // the area's devices arrive: pre-check what the server suggests (never what belongs to another room)
+  const inUse = useCallback(
+    (c: DiscoveryCandidate): DeviceInUse | null => {
+      const source = sourcesRes.data?.find((s) => controlEntity(s.config.adapter) === c.entityId);
+      if (source) return { as: 'source', name: names.sourceLabel(source.config.id) ?? source.config.name };
+      return pumpsRes.data?.some((p) => p.entityId === c.entityId) ? { as: 'pump' } : null;
+    },
+    [sourcesRes.data, pumpsRes.data, names],
+  );
+  const usesKnown = sourcesRes.settled && pumpsRes.settled;
+
+  // the area's devices arrive: pre-check what the server suggests — never what belongs to another
+  // room, and never the heat pump or a circuit pump that happen to hang in the same area
   useEffect(() => {
     const data = discovery.data;
-    if (!data || data.areaId !== areaId) return;
+    if (!data || data.areaId !== areaId || !usesKnown) return;
     patch((x) => {
       if (x.preselectedFor === data.areaId) return {};
-      const ac = data.candidates.some((c) => c.role === 'ac' && c.preselected) && !x.kinds.includes('ac');
+      const suggested = data.candidates.filter((c) => c.preselected && !c.takenByRoomId && !inUse(c));
+      const ac = suggested.some((c) => c.role === 'ac') && !x.kinds.includes('ac');
       return {
         preselectedFor: data.areaId,
-        pickedIds: data.candidates.filter((c) => c.preselected && !c.takenByRoomId).map((c) => c.entityId),
+        pickedIds: suggested.map((c) => c.entityId),
         kinds: ac ? [...x.kinds, 'ac'] : x.kinds,
       };
     });
-  }, [discovery.data, areaId, patch]);
+  }, [discovery.data, areaId, usesKnown, inUse, patch]);
 
   const areas = useMemo(
     () =>
@@ -373,6 +402,7 @@ export function useWizard(): Wizard {
     picked: (c) => pickedIds.has(c.entityId),
     togglePick: (c) =>
       patch((x) => ({ pickedIds: x.pickedIds.includes(c.entityId) ? x.pickedIds.filter((id) => id !== c.entityId) : [...x.pickedIds, c.entityId] })),
+    inUse,
     extras,
     addExtra: (dev) => patch((x) => ({ extras: [...x.extras.filter((e) => e.entityId !== dev.entityId), dev] })),
     removeExtra: (id) => patch((x) => ({ extras: x.extras.filter((e) => e.entityId !== id) })),

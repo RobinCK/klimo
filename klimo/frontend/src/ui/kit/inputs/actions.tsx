@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { IconName } from '../../types';
 import { useUiText } from '../../UiTextContext';
 import { Icon } from '../../basic/Icon';
+import { Button, type ButtonVariant } from '../../basic/Button';
 import s from './list.module.css';
 
 /* ---------------- TestButton ---------------- */
@@ -112,5 +113,43 @@ export function DashedAddButton({ label, onClick, expanded }: DashedAddButtonPro
       <Icon name="plus" size={16} />
       {label}
     </button>
+  );
+}
+
+/* ---------------- FileButton ---------------- */
+
+export interface FileButtonProps {
+  label: string;
+  /** File types offered by the browser's dialog («application/json,.json»). */
+  accept?: string;
+  /** Called with the chosen file; choosing the same file again calls it again. */
+  onFile: (file: File) => void;
+  variant?: ButtonVariant;
+  icon?: IconName;
+  loading?: boolean;
+  disabled?: boolean;
+}
+
+/** A button that opens the browser's file dialog. */
+export function FileButton({ label, accept, onFile, variant = 'outline', icon, loading, disabled }: FileButtonProps) {
+  const input = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <Button variant={variant} icon={icon} loading={loading} disabled={disabled} onClick={() => input.current?.click()}>
+        {label}
+      </Button>
+      <input
+        ref={input}
+        type="file"
+        accept={accept}
+        hidden
+        tabIndex={-1}
+        onChange={(e) => {
+          const file = e.currentTarget.files?.[0];
+          e.currentTarget.value = '';
+          if (file) onFile(file);
+        }}
+      />
+    </>
   );
 }

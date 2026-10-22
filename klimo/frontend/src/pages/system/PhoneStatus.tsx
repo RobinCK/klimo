@@ -10,7 +10,6 @@ import { InboxBell, paths } from '@app';
 import { AutoGrid, LoopTile, MobileTopBar, Row, RowList, Section, SourceRow, Stack } from '@ui';
 import { fmtClock, fmtTemp, renderJournal, renderReason, t } from '@i18n';
 import { HouseModeSection } from './HouseMode';
-import { useDeviceNames } from './Journal';
 import { EnergyLine, whenLine } from './Schema';
 import { isRunning, SOURCE_ICON, sourceChip, sourceMeta, type SystemData } from './shared';
 
@@ -32,7 +31,6 @@ function sourceRows(d: SystemData) {
 export function PhoneStatus({ d }: { d: SystemData }) {
   const triggers = useResource('names:triggers', api.triggers.list, { reloadOn: ['trigger'] });
   const journal = useResource('journal:last', () => api.journal({ limit: 1 }));
-  const names = useDeviceNames(d.ctx);
   useLiveEvent('journal', () => void journal.reload());
   const { rows, acs } = sourceRows(d);
   const house = d.house;
@@ -152,7 +150,7 @@ export function PhoneStatus({ d }: { d: SystemData }) {
         <SourceRow
           icon="list"
           name={t('Decision journal')}
-          meta={last ? `${fmtClock(last.ts, d.now)} · ${renderJournal(last, names)}` : t('What the system did and why')}
+          meta={last ? `${fmtClock(last.ts, d.now)} · ${renderJournal(last, d.ctx)}` : t('What the system did and why')}
           chip={{ tone: 'hold', label: t('Open') }}
           on={false}
           to={paths.journal()}

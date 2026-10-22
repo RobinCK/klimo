@@ -4,6 +4,7 @@
  */
 import type { ApiErrorIssue, CreateRoomRequest, CreateRoomStep, DiscoveryCandidate, EntityRolePreset, WizardDeviceRole } from '@api/model';
 import { fmtKw, fmtTemp, issueText, renderReason, t, type CodeContext } from '@i18n';
+import type { DeviceInUse } from './useWizard';
 
 const FEATURE: Partial<Record<DiscoveryCandidate['features'][number], () => string>> = {
   external_sensor: () => t('ext. sensor ✓'),
@@ -13,8 +14,9 @@ const FEATURE: Partial<Record<DiscoveryCandidate['features'][number], () => stri
 };
 
 /** «SONOFF TRVZB · зовн. датчик ✓ · замок ✓ · LQI 115». */
-export function candidateMeta(c: DiscoveryCandidate, roomName: (id: string) => string): string {
+export function candidateMeta(c: DiscoveryCandidate, roomName: (id: string) => string, used?: DeviceInUse | null): string {
   const parts: string[] = [];
+  if (used) parts.push(used.as === 'source' ? t('already works as the source «{name}»', { name: used.name }) : t('already works as a pump'));
   if (c.model) parts.push(c.model);
   for (const f of c.features) {
     const text = FEATURE[f]?.();
@@ -24,24 +26,6 @@ export function candidateMeta(c: DiscoveryCandidate, roomName: (id: string) => s
   if (c.lqi != null) parts.push(`LQI ${c.lqi}`);
   if (c.takenByRoomId) parts.push(t('now in «{room}» — will be moved', { room: roomName(c.takenByRoomId) }));
   return parts.join(' · ');
-}
-
-const INTEGRATION: Record<string, string> = {
-  zigbee2mqtt: 'Zigbee2MQTT',
-  zha: 'ZHA',
-  mqtt: 'MQTT',
-  modbus: 'Modbus',
-  zwave_js: 'Z-Wave JS',
-  esphome: 'ESPHome',
-  shelly: 'Shelly',
-  tuya: 'Tuya',
-  xiaomi_miio: 'Xiaomi',
-  sonoff: 'SONOFF',
-};
-
-/** Home Assistant reports integrations by their domain; people know them by the product name. */
-export function integrationName(domain: string): string {
-  return INTEGRATION[domain] ?? domain;
 }
 
 /** The live value on the right of a device row. */

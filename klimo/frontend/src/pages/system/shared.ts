@@ -2,9 +2,9 @@
  * What every system screen shares: the data (sources, circuits, plant, settings), names for
  * sources as people know them («Кондиціонер · Вітальня»), icons and state chips.
  */
-import type { IconName, Id, SourceConfig, SourceDto, SourceKind, SourceState, Tone } from '@api/model';
+import type { IconName, Id, SourceDto, SourceKind, SourceState, Tone } from '@api/model';
 import { api } from '@api/endpoints';
-import { useCodeContext, useHouse, useMe, useNow, usePlant, useResource, useRoomSummaries } from '@data';
+import { sourceLabels, useCodeContext, useHouse, useMe, useNow, usePlant, useResource, useRoomSummaries } from '@data';
 import { fmtTime, renderReason, sourceStateLabel, t, type CodeContext } from '@i18n';
 
 export const SOURCE_ICON: Record<SourceKind, IconName> = {
@@ -21,13 +21,6 @@ export const SOURCE_ICON: Record<SourceKind, IconName> = {
 const RUNNING = new Set<SourceState['state']>(['heating', 'cooling', 'drying', 'fan', 'defrost', 'starting']);
 
 export const isRunning = (s: SourceState | null | undefined) => Boolean(s && RUNNING.has(s.state));
-
-/** A room source is named with its room («Кондиціонер · Вітальня») unless the name already says it. */
-export function sourceName(cfg: Pick<SourceConfig, 'name' | 'roomId' | 'scope'>, roomName: (id: Id) => string | undefined): string {
-  if (cfg.scope !== 'room' || !cfg.roomId) return cfg.name;
-  const room = roomName(cfg.roomId);
-  return room && !cfg.name.includes(room) ? `${cfg.name} · ${room}` : cfg.name;
-}
 
 /** The state chip of a source: a fault or a lost connection wins over the state's own tone. */
 export function sourceChip(s: SourceState | null | undefined): { tone: Tone; label: string } {
@@ -69,10 +62,13 @@ export function useSystemData() {
   // a running source's state comes from the live plant, its config from the list
   const liveState = (id: Id): SourceState | null =>
     plant?.sources.find((s) => s.sourceId === id) ?? sources.data?.find((s) => s.config.id === id)?.state ?? null;
-  const nameOf = (id: Id) => {
-    const dto = sources.data?.find((s) => s.config.id === id);
-    return dto ? sourceName(dto.config, roomName) : (ctx.source?.(id) ?? id);
-  };
+  // the system screens list sources by place, so a room source always carries its room
+  const labels = sourceLabels(
+    (sources.data ?? []).map((s) => s.config),
+    roomName,
+    true,
+  );
+  const nameOf = (id: Id) => labels.get(id) ?? ctx.source?.(id) ?? id;
   return { sources, circuits, settings, plant, house, rooms, ctx, now, canEdit, roomName, liveState, nameOf };
 }
 

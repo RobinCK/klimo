@@ -880,6 +880,29 @@ export const simPresetLabel = table<SimPresetId>(() => ({
   custom: t('Custom conditions'),
 }));
 
+/* ---------------- integrations ---------------- */
+
+const INTEGRATION: Record<string, string> = {
+  zigbee2mqtt: 'Zigbee2MQTT',
+  zha: 'ZHA',
+  mqtt: 'MQTT',
+  modbus: 'Modbus',
+  zwave_js: 'Z-Wave JS',
+  esphome: 'ESPHome',
+  shelly: 'Shelly',
+  tuya: 'Tuya',
+  xiaomi_miio: 'Xiaomi',
+  sonoff: 'SONOFF',
+  midea_ac_lan: 'Midea',
+  solarman: 'Solarman',
+  tasmota: 'Tasmota',
+};
+
+/** Home Assistant reports integrations by their domain; people know them by the product name. */
+export function integrationName(domain: string): string {
+  return INTEGRATION[domain] ?? domain;
+}
+
 /* ---------------- calendar ---------------- */
 
 // Month and weekday names come from Intl, which already knows both languages (and the

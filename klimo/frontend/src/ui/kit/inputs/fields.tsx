@@ -182,6 +182,50 @@ export function TextField({
   );
 }
 
+/* ---------------- DateField ---------------- */
+
+export interface DateFieldProps {
+  /** A local date 'YYYY-MM-DD', or '' while none is chosen. */
+  value: string;
+  onChange: (value: string) => void;
+  label?: string;
+  ariaLabel?: string;
+  /** The first and the last day that can be picked ('YYYY-MM-DD'). */
+  min?: string;
+  max?: string;
+  error?: string;
+  help?: ReactNode;
+  disabled?: boolean;
+}
+
+/** A day from the browser's own calendar (the date wheel on a phone). */
+export function DateField({ value, onChange, label, ariaLabel, min, max, error, help, disabled }: DateFieldProps) {
+  const id = useId();
+  return (
+    <div className={s.field}>
+      {label ? (
+        <label htmlFor={id} className={s.label}>
+          {label}
+        </label>
+      ) : null}
+      <input
+        id={id}
+        type="date"
+        className={cx(s.input, s.date)}
+        value={value}
+        min={min}
+        max={max}
+        disabled={disabled}
+        aria-label={label ? undefined : ariaLabel}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={describedBy(id, error, help)}
+        onChange={(e) => onChange(e.currentTarget.value)}
+      />
+      <Messages id={id} error={error} help={help} />
+    </div>
+  );
+}
+
 /* ---------------- NumberField ---------------- */
 
 export interface NumberFieldProps {

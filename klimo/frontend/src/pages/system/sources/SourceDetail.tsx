@@ -244,22 +244,22 @@ export function SourceDetail({ d, dto, phone }: { d: SystemData; dto: SourceDto;
       title={phone ? undefined : d.nameOf(cfg.id)}
       subtitle={[cfg.subtype, role].filter(Boolean).join(' · ')}
       action={
-        <Row gap="sm" wrap justify="end">
+        <Row gap="sm" wrap justify={phone ? 'start' : 'end'}>
           {testing ? (
-            <Button variant="secondary" icon="close" onClick={() => void stopTest.run()} loading={stopTest.pending}>
+            <Button variant="secondary" size="sm" icon="close" onClick={() => void stopTest.run()} loading={stopTest.pending}>
               {t('Stop the test')}
             </Button>
           ) : (
-            <Button variant="secondary" icon="play" onClick={() => void runTest.run()} loading={runTest.pending} disabled={!editable || !cfg.enabled}>
+            <Button variant="secondary" size="sm" icon="play" onClick={() => void runTest.run()} loading={runTest.pending} disabled={!editable || !cfg.enabled}>
               {t('Test for 2 min')}
             </Button>
           )}
           {state.lock ? (
-            <Button variant="ghost" onClick={() => void unlock.run()} loading={unlock.pending} disabled={!editable}>
+            <Button variant="outline" size="sm" onClick={() => void unlock.run()} loading={unlock.pending} disabled={!editable}>
               {t('Switch back on')}
             </Button>
           ) : (
-            <Button variant="ghost" onClick={() => setDialog('lock')} disabled={!editable || !cfg.enabled}>
+            <Button variant="outline" size="sm" onClick={() => setDialog('lock')} disabled={!editable || !cfg.enabled}>
               {t('Off for a while…')}
             </Button>
           )}

@@ -9,6 +9,8 @@ export interface SectionProps {
   subtitle?: ReactNode;
   /** Buttons or a link on the right of the header. */
   action?: ReactNode;
+  /** Keep the action beside the title even on a narrow screen (one short button, as in a list row). */
+  inlineAction?: boolean;
   /** Quiet extra next to the title (a count, a badge). */
   tag?: ReactNode;
   /** heat/cool: tinted border (strategy cards, mode panels) · danger: red outline · emphasis: open editor. */
@@ -32,6 +34,7 @@ export function Section({
   title,
   subtitle,
   action,
+  inlineAction,
   tag,
   accent,
   variant = 'card',
@@ -56,7 +59,7 @@ export function Section({
       aria-label={title == null ? ariaLabel : undefined}
     >
       {hasHead ? (
-        <div className={s.head}>
+        <div className={s.head} data-inline={inlineAction ? '' : undefined}>
           <div className={s.headMain}>
             {icon ? <IconTile icon={icon} size={40} tone={tileTone} /> : null}
             <div className={s.titles}>

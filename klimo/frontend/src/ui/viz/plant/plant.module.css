@@ -137,12 +137,16 @@
   line-height: 18px;
 }
 
+/* «Кондиціонер · Вітальня» needs a second line in a 240 px box */
 .nodeTitle {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
   font-size: var(--ui-fs-body-lg);
   font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .node[data-size='rooms'] .nodeTitle {

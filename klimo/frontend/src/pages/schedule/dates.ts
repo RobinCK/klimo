@@ -1,28 +1,26 @@
 /**
- * Picking a day without a calendar widget: the next few months as a list of local dates in
- * the Home Assistant time zone («пт, 24 жовт.»), and back from a date and a time to an instant.
+ * Days in the Home Assistant time zone: the local date a number of days from now, the instant a
+ * local date starts, and back from a date and a time to an instant.
  */
 import type { EpochMs, LocalDate } from '@api/model';
-import { fmtDate, startOfLocalDay, zonedParts } from '@i18n';
+import { startOfLocalDay, zonedParts } from '@i18n';
 
 const DAY_MS = 86_400_000;
 
-export interface DateOption {
-  value: LocalDate;
-  label: string;
-  /** Local midnight of that day. */
-  start: EpochMs;
+/** Today's local date ('YYYY-MM-DD'), or the one `days` later. */
+export function localDate(now: EpochMs, days = 0): LocalDate {
+  // noon never falls into a daylight-saving gap, so its date is the right day
+  return zonedParts(startOfLocalDay(now) + days * DAY_MS + DAY_MS / 2).date;
 }
 
-export function upcomingDates(now: EpochMs, count = 120): DateOption[] {
-  const today = startOfLocalDay(now);
-  const out: DateOption[] = [];
-  for (let k = 0; k < count; k++) {
-    // noon never falls into a daylight-saving gap, so its midnight is the right day
-    const start = startOfLocalDay(today + k * DAY_MS + DAY_MS / 2);
-    out.push({ value: zonedParts(start).date, label: fmtDate(start + DAY_MS / 2, 'weekday'), start });
-  }
-  return out;
+/** Local midnight of a date. */
+export function dayStart(date: LocalDate): EpochMs {
+  let noon = Date.parse(`${date}T12:00:00Z`);
+  const got = zonedParts(noon).date;
+  // far east of Greenwich noon UTC is already the next day there, far west still the previous one
+  if (got > date) noon -= DAY_MS;
+  else if (got < date) noon += DAY_MS;
+  return startOfLocalDay(noon);
 }
 
 /** The instant of `minute` on the local day that starts at `dayStart`. */

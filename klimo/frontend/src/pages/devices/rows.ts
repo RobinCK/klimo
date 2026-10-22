@@ -4,7 +4,7 @@
  * reads is built here.
  */
 import type { DeviceHealth, DeviceHealthSettings, DeviceKind, DeviceProblem, DeviceProblemType, EpochMs, IconName, Tone } from '@api/model';
-import { fmtAgo, fmtDateTime, fmtDur, fmtSince, fmtTemp, renderReason, t, type CodeContext } from '@i18n';
+import { fmtAgo, fmtDateTime, fmtDur, fmtSince, fmtTemp, integrationName, renderReason, t, type CodeContext } from '@i18n';
 
 /** Kinds in the order the table and the filter list them. */
 export const KIND_ORDER: readonly DeviceKind[] = ['trv', 'sensor', 'window', 'relay', 'pump', 'source', 'entity'];
@@ -141,8 +141,7 @@ export function viaOf(d: DeviceHealth, ctx: Names): string {
     case 'zha':
       return 'ZHA';
     case 'ha':
-      // the table column is narrow; the drawer names the integration in full
-      return t('HA');
+      return d.transport.integration ? integrationName(d.transport.integration) : t('HA');
   }
 }
 

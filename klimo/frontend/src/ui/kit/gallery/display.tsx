@@ -3,7 +3,7 @@ import { useUiText } from '../../UiTextContext';
 import { AutoGrid, Row, Stack } from '../../shell/Layout';
 import { IconButton } from '../../basic/IconButton';
 import { ToneBadge } from '../../basic/Badges';
-import { CapabilityChip, CodeBlock, EntityId, KeyValueList, LegendSwatch, NumberedList, RelativeTime } from '../display/text';
+import { CapabilityChip, CodeBlock, EntityId, KeyValueList, LegendSwatch, NumberedList, RelativeTime, Text } from '../display/text';
 import { BigReadout, ConsequencePreview, ExplainCallout, StatTile } from '../display/tiles';
 import { NotificationBell, SeasonPill } from '../display/chrome';
 import { DataTable } from '../display/DataTable';
@@ -119,6 +119,14 @@ export function GalleryDisplay() {
           <CapabilityChip on label={ut('external sensor')} />
           <CapabilityChip on={false} label={ut('child lock')} />
         </Row>
+      </Item>
+
+      <Item name="Text">
+        <Text variant="body">
+          {ut('Every setting — rooms, profiles, sources, notifications — in one file. History and the journal are not included, nor is the Telegram token.')}
+        </Text>
+        <Text>{ut('A card only shows the state. The target changes inside the room — so a stray tap switches nothing.')}</Text>
+        <Text variant="caption">{ut('Since midnight')}</Text>
       </Item>
 
       <Item name="CodeBlock · NumberedList · LegendSwatch">

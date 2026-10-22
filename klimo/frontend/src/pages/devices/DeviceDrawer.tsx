@@ -32,7 +32,7 @@ import {
   StatusChip,
   TextField,
 } from '@ui';
-import { deviceKindLabel, fmtClock, fmtDateTime, fmtDur, fmtTime, renderJournal, renderReason, t } from '@i18n';
+import { deviceKindLabel, fmtClock, fmtDateTime, fmtDur, fmtTime, integrationName, renderJournal, renderReason, t } from '@i18n';
 import { openExternal, type ProblemActions } from './actions';
 import {
   PROBLEM_ICON,
@@ -333,7 +333,7 @@ export function DeviceDrawer({
               device.transport.type === 'z2m'
                 ? `${viaOf(device, ctx)} · ${device.transport.friendlyName}`
                 : device.transport.type === 'ha'
-                  ? [t('HA integration'), device.transport.integration].filter(Boolean).join(' · ')
+                  ? [t('HA integration'), device.transport.integration ? integrationName(device.transport.integration) : null].filter(Boolean).join(' · ')
                   : viaOf(device, ctx),
           },
           {

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { EpochMs, Id, RoomSummary, SparkDto } from '@api/model';
-import { AutoGrid, Button, EmptyState, FilterPills, Link, RoomCard, Section, Skeleton, Stack } from '@ui';
+import { AutoGrid, Button, EmptyState, FilterPills, Link, RoomCard, Section, Skeleton, Stack, Text } from '@ui';
 import { paths, usePref } from '@app';
 import { t, type CodeContext } from '@i18n';
 import { attentionRank, needsAttention, roomCard, roomRow } from './summary';
@@ -40,7 +40,6 @@ export function RoomsSection({
       id="rooms"
       variant="plain"
       title={t('Rooms')}
-      subtitle={rooms.length ? t('A card only shows the state. The target changes inside the room — so a stray tap switches nothing.') : undefined}
       action={
         <>
           {rooms.length ? <FilterPills value={filter} options={options} onChange={setFilter} ariaLabel={t('Show rooms')} /> : null}
@@ -66,11 +65,14 @@ export function RoomsSection({
           action={canEdit ? { label: t('Add a room'), to: paths.wizard() } : undefined}
         />
       ) : shown.length ? (
-        <AutoGrid min={280} gap="md">
-          {shown.map((r) => (
-            <RoomCard key={r.id} {...roomCard(r, ctx, now, sparks?.[r.id])} />
-          ))}
-        </AutoGrid>
+        <>
+          <AutoGrid min={280} gap="md">
+            {shown.map((r) => (
+              <RoomCard key={r.id} {...roomCard(r, ctx, now, sparks?.[r.id])} />
+            ))}
+          </AutoGrid>
+          <Text>{t('A card only shows the state. The target changes inside the room — so a stray tap switches nothing.')}</Text>
+        </>
       ) : (
         <EmptyState
           icon={filter === 'attention' ? 'checkCircle' : 'pause'}

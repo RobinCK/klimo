@@ -1,6 +1,7 @@
 import type { CircuitDto, EpochMs, HouseState, PlantState, ProfileDto, ResolvedDayDto, SourceDto, TodayDto, Tone } from '@api/model';
 import { LegendSwatch, Link, MiniTag, Row, ScrollX, Section, Skeleton, Stack, Timeline24h, type TimelineSpan, type TimelineTrack } from '@ui';
 import { paths } from '@app';
+import type { NameDirectory } from '@data';
 import { fmtDur, fmtTemp, fmtTime, t, zonedParts, type CodeContext } from '@i18n';
 
 const TRACK_ORDER: Record<TodayDto['tracks'][number]['kind'], number> = { profile: 0, source: 1, pump: 2, room: 3, rule: 4, trigger: 5 };
@@ -90,16 +91,14 @@ export function timelineTracks(
     });
 }
 
-/** Two air conditioners both called «Кондиціонер» get their room after the name. */
-function distinctLabels(tracks: TimelineTrack[], today: TodayDto, sources: readonly SourceDto[] | undefined, ctx: CodeContext): TimelineTrack[] {
-  const count = new Map<string, number>();
-  for (const tr of tracks) count.set(tr.label, (count.get(tr.label) ?? 0) + 1);
+/** Source rows named alike («Кондиціонер» in three rooms) get their room after the name. */
+function distinctLabels(tracks: TimelineTrack[], today: TodayDto, sources: readonly SourceDto[] | undefined, ctx: NameDirectory): TimelineTrack[] {
   return tracks.map((tr) => {
-    if ((count.get(tr.label) ?? 0) < 2) return tr;
     const src = today.tracks.find((x) => x.key === tr.key);
-    const roomId = src?.kind === 'source' ? sources?.find((x) => x.config.id === src.subjectId)?.config.roomId : null;
-    const room = roomId ? (ctx.room?.(roomId) ?? null) : null;
-    return room ? { ...tr, label: `${tr.label} · ${room}` } : tr;
+    if (src?.kind !== 'source') return tr;
+    const plain = sources?.find((x) => x.config.id === src.subjectId)?.config.name ?? ctx.source?.(src.subjectId);
+    const label = ctx.sourceLabel(src.subjectId);
+    return label && tr.label === plain ? { ...tr, label } : tr;
   });
 }
 
@@ -146,7 +145,7 @@ export function TodaySection({
   sources: readonly SourceDto[] | undefined;
   circuits: readonly CircuitDto[] | undefined;
   leadId: string | null;
-  ctx: CodeContext;
+  ctx: NameDirectory;
 }) {
   if (!today) {
     return (

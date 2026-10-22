@@ -7,10 +7,10 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { HouseState, PlantState, SourceDto } from '@api/model';
 import { api } from '@api/endpoints';
 import { useCodeContext, useHouse, useIncidents, useLayout, useLiveEvent, useMe, useNow, usePlant, useResource, useRoomSummaries, useRoomsLoaded } from '@data';
-import { AutoGrid, Button, Page, ProfileTile, RelativeTime, RowList, Row, Section, Skeleton, SourceRow, Stack, StatusBanner } from '@ui';
+import { AutoGrid, Button, Page, ProfileTile, RowList, Row, Section, Skeleton, SourceRow, Stack, StatusBanner } from '@ui';
 import { LogoMark, Wordmark } from '@brand';
 import { HouseSeasonPill, InboxBell, paths } from '@app';
-import { fmtDateTime, fmtDur, fmtTemp, sourceStateLabel, t } from '@i18n';
+import { fmtDur, fmtTemp, sourceStateLabel, t } from '@i18n';
 import { AttentionLine, AttentionSection } from './Attention';
 import { dateLine, headline, isRunning, profileOrigin, SOURCE_ICON, subline } from './house';
 import { Onboarding } from './Onboarding';
@@ -84,7 +84,7 @@ function Desktop({ d, sw, house }: { d: Data; sw: ProfileSwitch; house: HouseSta
   const canEdit = d.me?.canEditConfig ?? false;
   const onboarding = d.overview.data?.onboarding ?? null;
   return (
-    <Page title={headline(house)} subtitle={subline(house, d.plant, d.ctx)} actions={<RelativeTime text={dateLine(d.now)} title={fmtDateTime(d.now)} />}>
+    <Page eyebrow={dateLine(d.now)} title={headline(house)} subtitle={subline(house, d.plant, d.ctx)}>
       {onboarding ? <Onboarding onboarding={onboarding} canEdit={canEdit} /> : null}
       <SystemTiles house={house} plant={d.plant} today={d.today.data ?? null} sources={d.sources.data} circuits={d.circuits.data} sw={sw} ctx={d.ctx} />
       <ProfileSwitchPanel sw={sw} house={house} ctx={d.ctx} phone={false} />
@@ -119,7 +119,7 @@ function TodayRow({ d, house, sources }: { d: Data; house: HouseState; sources: 
     <RowList ariaLabel={t('Today')}>
       <SourceRow
         icon={SOURCE_ICON[kind]}
-        name={d.ctx.source?.(lead.sourceId) ?? lead.sourceId}
+        name={d.ctx.sourceLabel(lead.sourceId) ?? lead.sourceId}
         meta={`${t('Today')} · ${meta}`}
         chip={{ tone: lead.fault ? 'err' : lead.tone, label: sourceStateLabel(lead.state) }}
         on={isRunning(lead)}
@@ -155,8 +155,9 @@ function Phone({ d, sw, house }: { d: Data; sw: ProfileSwitch; house: HouseState
           icon="home"
           title={profile ? <ProfileTile variant="inline" name={profile.name} color={profile.color} /> : (d.ctx.profile?.(id) ?? id)}
           subtitle={profileOrigin(house, d.ctx)}
+          inlineAction
           action={
-            <Row gap="xs" wrap>
+            <Row gap="xs" wrap justify="end">
               {sw.overridden ? (
                 <Button variant="link" size="sm" onClick={sw.resume} loading={sw.resuming}>
                   {t('Back to schedule')}
