@@ -2463,6 +2463,10 @@ export interface HaEntityQuery {
   role?: EntityRolePreset;
   unassigned?: boolean; // not yet bound in Klimo
   nearRoomId?: Id; // +5 score for the same area
+  /** +25 score for this HA area (the add-room wizard, before the room exists). */
+  nearAreaId?: string;
+  /** Add-room wizard: only what can take this device role ('any': any role), each result with its `wizard` hint. */
+  wizard?: WizardDeviceRole | 'any';
   limit?: number; // default 50, max 500
 }
 export interface HaEntityDto {
@@ -2482,6 +2486,13 @@ export interface HaEntityDto {
   integration: string | null;
   usedBy: UsageRef[];
   score?: number;
+  /** What it can be in a room (only when asked with `wizard`). */
+  wizard?: WizardRoleHint;
+}
+/** Add-room wizard: `suggested` is one role when clear, two (likeliest first) when it could be either; `possible` is every role it can take. */
+export interface WizardRoleHint {
+  suggested: WizardDeviceRole[];
+  possible: WizardDeviceRole[];
 }
 export interface HaEntityDetailDto {
   entity: HaEntityDto;
@@ -2509,6 +2520,8 @@ export interface DiscoveryCandidate {
   confidence: number; // 0..1
   preselected: boolean;
   takenByRoomId: Id | null; // offered as «перенести»
+  /** Every role it can take («Use as…»), its own role first. */
+  possibleRoles?: WizardDeviceRole[];
 }
 export interface AreaDiscoveryDto {
   areaId: string;

@@ -1,4 +1,4 @@
-import type { EntityRolePreset, HaEntityDetailDto, HaStateObj, TrvCapabilities, TrvSiblings, TrvStrategy, WizardDeviceRole } from '../shared/model';
+import type { EntityRolePreset, HaEntityDetailDto, HaStateObj, TrvCapabilities, TrvSiblings, TrvStrategy, WizardDeviceRole, WizardRoleHint } from '../shared/model';
 import { searchKey } from './search-text';
 import { entityTempUnit, parseNumber, tempAttr, tempUnit, type TempUnit } from './units';
 
@@ -272,7 +272,8 @@ export function discoveryGuess(f: EntityFacts, ctx: DeviceContext): DiscoveryGue
   const text = hint(f);
   switch (f.domain) {
     case 'climate': {
-      if (FLOOR_HINT.test(text) && !looksLikeAc(f)) return { role: 'floor_zone', confidence: 0.8 };
+      // a floor thermostat drives its own mat or actuator: a zone valve is a switch, never a climate
+      if (FLOOR_HINT.test(text) && !looksLikeAc(f)) return { role: 'heater', confidence: 0.6 };
       if (looksLikeTrv(f, ctx.siblingRoles)) return { role: 'trv', confidence: trvEvidence(f, ctx.siblingRoles) };
       if (looksLikeAc(f)) return { role: 'ac', confidence: 0.9 };
       if (hvacModes(f.state).includes('cool')) return { role: 'ac', confidence: 0.7 };
@@ -309,6 +310,84 @@ export function discoveryGuess(f: EntityFacts, ctx: DeviceContext): DiscoveryGue
       if (PLUG_HINT.test(text)) return { role: 'heater', confidence: 0.5 };
       return { role: 'heater', confidence: f.domain === 'switch' ? 0.4 : 0.3 };
     }
+    default:
+      return null;
+  }
+}
+
+/* ── add-room wizard: what any entity can be ───────────────────────────────────────────────────── */
+
+const COOL_MODES = new Set(['cool', 'heat_cool', 'dry', 'fan_only']);
+const CONTACT_HINT = /window|vikn|door|dver|contact|kontakt/;
+const VALVE_HINT = /valve|klapan|position|opening|actuator|pryvid/;
+
+function roleHint(suggested: WizardDeviceRole[], ...more: WizardDeviceRole[]): WizardRoleHint {
+  return { suggested, possible: [...new Set([...suggested, ...more])] };
+}
+
+/**
+ * The wizard roles of an entity the user searched for: `suggested` holds one role when the evidence is
+ * clear and two (likeliest first) when it could be either — a heat-and-cool climate, a bare relay —
+ * so the UI asks instead of guessing; `possible` is every role it may be switched to. Null when a room
+ * has no use for it (a head's own settings, diagnostics, an outdoor sensor).
+ */
+export function wizardRoles(f: EntityFacts, ctx: DeviceContext): WizardRoleHint | null {
+  if (f.entityCategory) return null;
+  const text = hint(f);
+  switch (f.domain) {
+    case 'climate': {
+      const modes = hvacModes(f.state);
+      const cools = modes.some((m) => COOL_MODES.has(m)) || fanModes(f.state).length > 0;
+      const heats = !modes.length || modes.some((m) => m === 'heat' || m === 'heat_cool' || m === 'auto');
+      const ac: WizardDeviceRole[] = cools ? ['ac'] : [];
+      if (ctx.siblingRoles.includes('external_temp') || ctx.siblingRoles.includes('calibration') || has(TRV_MODEL, f.model)) return roleHint(['trv'], 'heater', ...ac);
+      if (FLOOR_HINT.test(text) && !looksLikeAc(f)) return roleHint(['heater', 'trv'], ...ac);
+      if (looksLikeAc(f)) return roleHint(['ac'], 'trv', 'heater');
+      if (cools) return roleHint(heats ? ['ac', 'trv'] : ['ac'], 'heater');
+      if (!modes.length) return roleHint(['trv', 'ac'], 'heater');
+      return roleHint(['trv'], 'heater');
+    }
+    case 'sensor': {
+      if (isOutdoorSensor(f)) return null;
+      if (isTemperatureSensor(f)) {
+        if (FLOOR_PROBE_HINT.test(text)) return roleHint(['floor_probe'], 'temperature');
+        return ctx.hasHumidity ? roleHint(['temp_humidity'], 'temperature', 'floor_probe') : roleHint(['temperature'], 'floor_probe');
+      }
+      if (isHumiditySensor(f)) return ctx.hasTemperature ? roleHint(['temp_humidity'], 'humidity') : roleHint(['humidity']);
+      return null;
+    }
+    case 'binary_sensor': {
+      const dc = f.deviceClass;
+      const door = dc === 'door' || dc === 'garage_door' || (DOOR_HINT.test(text) && (dc === 'opening' || !dc));
+      if (door) return roleHint(['door'], 'window');
+      if (dc === 'window' || dc === 'opening' || (!dc && CONTACT_HINT.test(text))) return roleHint(['window'], 'door');
+      return null;
+    }
+    case 'humidifier':
+      return f.deviceClass === 'dehumidifier' || DEHUMIDIFIER_HINT.test(text) ? roleHint(['dehumidifier']) : null;
+    case 'fan':
+      return !ctx.hasClimate && DEHUMIDIFIER_HINT.test(text) ? roleHint(['dehumidifier']) : null;
+    case 'switch':
+    case 'input_boolean':
+    case 'light': {
+      if (ctx.hasClimate) return null; // child lock, window detection… of a head or an AC
+      const light = f.domain === 'light';
+      const extra: WizardDeviceRole[] = f.domain === 'input_boolean' ? ['window', 'door'] : [];
+      const dehum: WizardDeviceRole[] = light ? [] : ['dehumidifier'];
+      if (!light && DEHUMIDIFIER_HINT.test(text)) return roleHint(['dehumidifier'], 'heater', 'floor_zone', ...extra);
+      if (FLOOR_HINT.test(text)) return roleHint(['floor_zone'], 'heater', ...dehum, ...extra);
+      if (HEATER_HINT.test(text)) return roleHint(['heater'], 'floor_zone', ...dehum, ...extra);
+      // a lamp is a lamp unless it says otherwise; a plug or a bare relay could drive either
+      return light ? null : roleHint(['heater', 'floor_zone'], ...dehum, ...extra);
+    }
+    case 'valve':
+      return roleHint(['floor_zone']);
+    case 'number':
+    case 'input_number':
+      // a head's opening limits belong to the head: it is the head that is added
+      if (ctx.hasClimate) return null;
+      if (VALVE_HINT.test(text)) return roleHint(['floor_zone']);
+      return tempUnit(f.unit) !== null ? roleHint(['temperature'], 'floor_probe') : null;
     default:
       return null;
   }

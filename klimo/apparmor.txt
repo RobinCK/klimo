@@ -1,0 +1,72 @@
+#include <tunables/global>
+
+# Klimo's AppArmor profile. The Supervisor loads it with the add-on and renames it to the add-on's slug
+# (local_klimo, <repository>_klimo); every process of the container runs under it: Docker's init, node
+# and the backup hook. Anything it does not allow is refused and logged on the host as apparmor="DENIED".
+profile klimo flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  # Docker's default capability set; the add-on asks for nothing beyond it
+  capability chown,
+  capability dac_override,
+  capability fowner,
+  capability fsetid,
+  capability kill,
+  capability setgid,
+  capability setuid,
+  capability setpcap,
+  capability setfcap,
+  capability net_bind_service,
+  capability net_raw,
+  capability sys_chroot,
+  capability mknod,
+  capability audit_write,
+
+  # Home Assistant, the Supervisor API, MQTT, an external database, Telegram, DNS
+  network,
+
+  # whatever can see the container's processes may stop it (Docker's runtime is unconfined, runc or crun
+  # depending on the host); inside, docker-init passes signals on to node and node signals its threads
+  signal (receive),
+  signal (send) peer=@{profile_name},
+
+  # the image is only read: node, musl and the libraries it maps, Klimo's code and its SQLite addon
+  /{app,bin,etc,home,lib,media,mnt,opt,root,run,sbin,srv,usr,var}/{,**} r,
+  /{,usr/,usr/local/}lib/**.so* mr,
+  /app/node_modules/**.node mr,
+
+  # what runs: Docker's init (PID 1), node, and backup_pre / backup_post (busybox sh + wget)
+  /sbin/docker-init ix,
+  /usr/local/bin/node ix,
+  /app/backup-hook.sh ix,
+  /bin/busybox ix,
+
+  # node and musl read memory, CPU and cgroup limits; nothing in /proc or /sys is written
+  /proc/{,**} r,
+  /sys/{,**} r,
+  /dev/tty rw,
+
+  # the add-on options and the SQLite database with its WAL, shared memory and rollback journal
+  # (k: SQLite locks them)
+  /data/ r,
+  /data/options.json r,
+  /data/klimo.sqlite{,-wal,-shm,-journal} rwk,
+
+  # SQLite's temporary files (large sorts, temporary indices) go to the first of these that exists
+  /var/tmp/** rwk,
+  /usr/tmp/** rwk,
+  /tmp/** rwk,
+
+  # the Lovelace cards: HA's www folder (created when missing) and Klimo's bundle in it; nothing else
+  # in the HA config folder is read or written
+  /homeassistant/www/ w,
+  /homeassistant/www/klimo-cards.js rw,
+
+  # Docker's default denials
+  deny /proc/sysrq-trigger rwklx,
+  deny /proc/kcore rwklx,
+  deny /sys/firmware/** rwklx,
+  deny /sys/devices/virtual/powercap/** rwklx,
+  deny /sys/kernel/security/** rwklx,
+  deny mount,
+}

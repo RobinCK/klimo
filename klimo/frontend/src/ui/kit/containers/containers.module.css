@@ -321,7 +321,9 @@
   padding-top: var(--ui-space-8);
 }
 
+/* overlay bodies: an entity id or a Zigbee name breaks wherever it must instead of widening the panel */
 .dialogBody.dialogBody {
+  overflow-wrap: anywhere;
   padding: var(--ui-space-8) var(--ui-space-20) var(--ui-space-20);
   display: flex;
   flex-direction: column;
@@ -403,6 +405,7 @@
 .drawerBody.drawerBody {
   flex: 1 1 auto;
   min-width: 0;
+  overflow-wrap: anywhere;
   padding: var(--ui-space-20);
   display: flex;
   flex-direction: column;
@@ -459,9 +462,11 @@
 }
 
 .sheetTitles {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .sheetTitle.sheetTitle {
@@ -479,6 +484,7 @@
 .sheetBody {
   flex: 1 1 auto;
   min-height: 0;
+  overflow-wrap: anywhere;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--ui-space-12) var(--ui-space-16) var(--ui-space-16);
