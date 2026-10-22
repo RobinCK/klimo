@@ -1,8 +1,9 @@
 /**
  * The add-room wizard: a draft that grows step by step, devices offered from the chosen Home
- * Assistant area, server-side validation before every «Далі» (the server knows which entities
- * exist and belong elsewhere), and after «Створити кімнату» a live report of what the room's
- * devices confirmed.
+ * Assistant area or found with one search over all of Home Assistant, what heats the room read
+ * from the devices picked (nothing to declare up front), server-side validation before every
+ * «Далі» (the server knows which entities exist and belong elsewhere), and after «Створити
+ * кімнату» a live report of what the room's devices confirmed.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
@@ -13,6 +14,7 @@ import type {
   CreateRoomRequest,
   CreateRoomStepKind,
   DiscoveryCandidate,
+  HaEntityDto,
   Id,
   SourceAdapter,
   SourceDemandPolicy,
@@ -31,21 +33,49 @@ import { toast } from '@ui';
 export type EmitterChoice = CreateRoomRequest['emitterKinds'][number];
 export type WizardStep = 1 | 2 | 3 | 4 | 5;
 
-/** A device the user added by hand with «+ Знайти інший пристрій». */
+/** A device found with the search rather than offered by the area. */
 export interface ExtraDevice {
   role: WizardDeviceRole;
   entityId: string;
   name: string;
+  /** Every role it can take («Use as…»). */
+  roles: WizardDeviceRole[];
+  /** What the search showed when it was added. */
+  areaName: string | null;
+  state: string | null;
+  valueC: number | null;
+  /** The room it belongs to now: adding it here moves it. */
+  fromRoom: string | null;
+  /** A thermostat's own reading standing in as the room sensor (the same entity is also the head). */
+  ownTemperature?: boolean;
 }
 
-/** Which device roles each emitter choice brings into step 2. */
-export const ROLE_NEEDS: Partial<Record<WizardDeviceRole, EmitterChoice>> = {
+/** The blocks of the device step. */
+export type SectionKey = 'trv' | 'temp' | 'window' | 'ac' | 'heater' | 'floor' | 'dehum';
+
+export const SECTION_ROLES: Record<SectionKey, readonly WizardDeviceRole[]> = {
+  trv: ['trv'],
+  temp: ['temp_humidity', 'temperature', 'humidity'],
+  window: ['window', 'door'],
+  ac: ['ac'],
+  heater: ['heater'],
+  floor: ['floor_zone', 'floor_probe'],
+  dehum: ['dehumidifier'],
+};
+
+export function sectionOf(role: WizardDeviceRole): SectionKey {
+  return (Object.keys(SECTION_ROLES) as SectionKey[]).find((k) => SECTION_ROLES[k].includes(role)) ?? 'temp';
+}
+
+/** What heats or cools the room follows from its devices (the server checks the same pairs). */
+const ROLE_KIND: Partial<Record<WizardDeviceRole, EmitterChoice>> = {
   trv: 'trv',
   ac: 'ac',
   heater: 'local',
   floor_zone: 'floor',
   floor_probe: 'floor',
 };
+const KIND_ORDER: readonly EmitterChoice[] = ['trv', 'floor', 'ac', 'local'];
 
 /** A device the house already uses elsewhere: a source switches it, or it is a pump of the plant. */
 export type DeviceInUse = { as: 'source'; name: string } | { as: 'pump' };
@@ -70,8 +100,8 @@ export interface Wizard {
   areaId: string | null;
   setArea: (id: string | null) => void;
   areas: { id: string; name: string; hint?: string }[];
+  /** Read from the devices picked (and an opened underfloor block). */
   kinds: EmitterChoice[];
-  toggleKind: (k: EmitterChoice) => void;
   demand: SourceDemandPolicy;
   setDemand: (p: SourceDemandPolicy) => void;
   candidates: DiscoveryCandidate[];
@@ -80,11 +110,22 @@ export interface Wizard {
   areaName: string | null;
   picked: (c: DiscoveryCandidate) => boolean;
   togglePick: (c: DiscoveryCandidate) => void;
+  /** The role a candidate is taken as (the area's guess unless changed with «Use as…»). */
+  roleOf: (c: DiscoveryCandidate) => WizardDeviceRole;
   /** Offered, but never pre-ticked: a source or a pump already uses it. */
   inUse: (c: DiscoveryCandidate) => DeviceInUse | null;
   extras: ExtraDevice[];
-  addExtra: (d: ExtraDevice) => void;
-  removeExtra: (entityId: string) => void;
+  /** A search result: ticks it when the area offered it, otherwise adds it. */
+  addDevice: (e: HaEntityDto, role: WizardDeviceRole) => void;
+  /** «Use as…» of a candidate or an added device. */
+  setRole: (entityId: string, from: WizardDeviceRole, to: WizardDeviceRole) => void;
+  removeExtra: (entityId: string, role: WizardDeviceRole) => void;
+  /** The head's own temperature as the room sensor. */
+  takeOwnTemperature: (d: { entityId: string; name: string }) => void;
+  /** Blocks opened with a quick-add chip before anything is in them. */
+  opened: SectionKey[];
+  openSection: (k: SectionKey) => void;
+  closeSection: (k: SectionKey) => void;
   floor: { circuitId: Id | null; newName: string; pumpEntityId: string | null };
   setFloor: (f: Partial<Wizard['floor']>) => void;
   floorCircuits: { id: Id; name: string }[];
@@ -124,9 +165,11 @@ interface Draft {
   name: string;
   nameTouched: boolean;
   areaId: string | null;
-  kinds: EmitterChoice[];
   demand: SourceDemandPolicy;
   pickedIds: string[];
+  /** «Use as…» of area candidates, by entity id. */
+  roles: Record<string, WizardDeviceRole>;
+  opened: SectionKey[];
   /** The area whose suggested devices were pre-ticked (so a remount does not re-tick them). */
   preselectedFor: string | null;
   extras: ExtraDevice[];
@@ -147,9 +190,10 @@ const EMPTY: Draft = {
   name: '',
   nameTouched: false,
   areaId: null,
-  kinds: ['trv'],
   demand: 'call',
   pickedIds: [],
+  roles: {},
+  opened: [],
   preselectedFor: null,
   extras: [],
   floor: { circuitId: null, newName: '', pumpEntityId: null },
@@ -205,7 +249,7 @@ export function useWizard(): Wizard {
     [],
   );
 
-  const { step, name, areaId, kinds, demand, extras, floor, method, heatTol, coolTol, reaction, strategy, issues, hints, reportId } = d;
+  const { step, name, areaId, demand, extras, opened, floor, method, heatTol, coolTol, reaction, strategy, issues, hints, reportId } = d;
   const pickedIds = useMemo(() => new Set(d.pickedIds), [d.pickedIds]);
 
   const discovery = useResource(areaId ? `area-discovery:${areaId}` : null, () => api.ha.discoverArea(areaId as string));
@@ -229,12 +273,7 @@ export function useWizard(): Wizard {
     patch((x) => {
       if (x.preselectedFor === data.areaId) return {};
       const suggested = data.candidates.filter((c) => c.preselected && !c.takenByRoomId && !inUse(c));
-      const ac = suggested.some((c) => c.role === 'ac') && !x.kinds.includes('ac');
-      return {
-        preselectedFor: data.areaId,
-        pickedIds: suggested.map((c) => c.entityId),
-        kinds: ac ? [...x.kinds, 'ac'] : x.kinds,
-      };
+      return { preselectedFor: data.areaId, pickedIds: suggested.map((c) => c.entityId), roles: {} };
     });
   }, [discovery.data, areaId, usesKnown, inUse, patch]);
 
@@ -247,7 +286,7 @@ export function useWizard(): Wizard {
           a.areaId === areaId && discovery.data
             ? discovery.data.candidates.length
               ? t('{count} devices found in the area — they are offered on the next step.', { count: discovery.data.candidates.length })
-              : t('No devices found in this area — you can pick them by hand.')
+              : t('No devices found in this area — the next step finds them by name.')
             : undefined,
       })),
     [areasRes.data, areaId, discovery.data],
@@ -262,23 +301,34 @@ export function useWizard(): Wizard {
     [areasRes.data, patch],
   );
 
-  const roleAllowed = useCallback(
-    (role: WizardDeviceRole) => {
-      const need = ROLE_NEEDS[role];
-      return !need || kinds.includes(need);
-    },
-    [kinds],
-  );
+  const roleOf = useCallback((c: DiscoveryCandidate): WizardDeviceRole => d.roles[c.entityId] ?? c.role, [d.roles]);
 
   const devices = useMemo<CreateRoomRequest['devices']>(() => {
     const out: CreateRoomRequest['devices'] = [];
+    const seen = new Set<string>();
     for (const c of candidates) {
-      if (!pickedIds.has(c.entityId) || !roleAllowed(c.role)) continue;
-      out.push({ role: c.role, entityId: c.entityId, name: c.name, move: c.takenByRoomId ? true : undefined });
+      if (!pickedIds.has(c.entityId)) continue;
+      const role = roleOf(c);
+      seen.add(`${role}|${c.entityId}`);
+      out.push({ role, entityId: c.entityId, name: c.name, move: c.takenByRoomId ? true : undefined });
     }
-    for (const x of extras) if (roleAllowed(x.role)) out.push({ role: x.role, entityId: x.entityId, name: x.name || undefined });
+    for (const x of extras) {
+      if (seen.has(`${x.role}|${x.entityId}`)) continue;
+      out.push({ role: x.role, entityId: x.entityId, name: x.name || undefined, move: x.fromRoom ? true : undefined });
+    }
     return out;
-  }, [candidates, pickedIds, extras, roleAllowed]);
+  }, [candidates, pickedIds, extras, roleOf]);
+
+  const kinds = useMemo<EmitterChoice[]>(() => {
+    const set = new Set<EmitterChoice>();
+    for (const dev of devices) {
+      const k = ROLE_KIND[dev.role];
+      if (k) set.add(k);
+    }
+    // a floor circuit can heat a room without a zone valve of its own
+    if (opened.includes('floor')) set.add('floor');
+    return KIND_ORDER.filter((k) => set.has(k));
+  }, [devices, opened]);
 
   const tempCount = devices.filter((d) => d.role === 'temperature' || d.role === 'temp_humidity').length;
   const needsCool = kinds.includes('ac') || kinds.includes('floor');
@@ -381,7 +431,71 @@ export function useWizard(): Wizard {
 
   const reset = useCallback(() => setDraft(EMPTY), []);
 
-  const dirty = step < 5 && (name.trim() !== '' || areaId !== null || extras.length > 0);
+  const dirty = step < 5 && (name.trim() !== '' || areaId !== null || extras.length > 0 || opened.length > 0);
+
+  const addDevice = useCallback(
+    (e: HaEntityDto, role: WizardDeviceRole) =>
+      patch((x) => {
+        const cand = candidates.find((c) => c.entityId === e.entityId);
+        // the same entity once as a device; a head's own reading as the sensor stays beside it
+        const others = x.extras.filter((y) => y.entityId !== e.entityId || y.ownTemperature);
+        if (cand) {
+          const roles = { ...x.roles };
+          if (role === cand.role) delete roles[cand.entityId];
+          else roles[cand.entityId] = role;
+          return { pickedIds: x.pickedIds.includes(cand.entityId) ? x.pickedIds : [...x.pickedIds, cand.entityId], roles, extras: others };
+        }
+        const possible = e.wizard?.possible ?? [role];
+        const room = e.usedBy.find((u) => u.type === 'room');
+        const extra: ExtraDevice = {
+          role,
+          entityId: e.entityId,
+          name: e.name,
+          roles: possible.includes(role) ? possible : [role, ...possible],
+          areaName: e.areaName,
+          state: e.available ? e.state : 'unavailable',
+          valueC: e.valueC ?? null,
+          fromRoom: room ? room.label : null,
+        };
+        return { extras: [...others, extra] };
+      }),
+    [candidates, patch],
+  );
+
+  const setRole = useCallback(
+    (entityId: string, from: WizardDeviceRole, to: WizardDeviceRole) =>
+      patch((x) => {
+        const extra = x.extras.find((y) => y.entityId === entityId && y.role === from);
+        if (extra) return { extras: x.extras.map((y) => (y === extra ? { ...y, role: to } : y)) };
+        const cand = candidates.find((c) => c.entityId === entityId);
+        if (!cand) return {};
+        const roles = { ...x.roles };
+        if (to === cand.role) delete roles[entityId];
+        else roles[entityId] = to;
+        return { roles };
+      }),
+    [candidates, patch],
+  );
+
+  const takeOwnTemperature = useCallback(
+    (dev: { entityId: string; name: string }) =>
+      patch((x) => {
+        if (x.extras.some((y) => y.entityId === dev.entityId && y.role === 'temperature')) return {};
+        const extra: ExtraDevice = {
+          role: 'temperature',
+          entityId: dev.entityId,
+          name: dev.name,
+          roles: ['temperature'],
+          areaName: null,
+          state: null,
+          valueC: null,
+          fromRoom: null,
+          ownTemperature: true,
+        };
+        return { extras: [...x.extras, extra] };
+      }),
+    [patch],
+  );
 
   return {
     step,
@@ -392,7 +506,6 @@ export function useWizard(): Wizard {
     setArea,
     areas,
     kinds,
-    toggleKind: (k) => patch((x) => ({ kinds: x.kinds.includes(k) ? x.kinds.filter((y) => y !== k) : [...x.kinds, k] })),
     demand,
     setDemand: (v) => patch({ demand: v }),
     candidates,
@@ -402,10 +515,16 @@ export function useWizard(): Wizard {
     picked: (c) => pickedIds.has(c.entityId),
     togglePick: (c) =>
       patch((x) => ({ pickedIds: x.pickedIds.includes(c.entityId) ? x.pickedIds.filter((id) => id !== c.entityId) : [...x.pickedIds, c.entityId] })),
+    roleOf,
     inUse,
     extras,
-    addExtra: (dev) => patch((x) => ({ extras: [...x.extras.filter((e) => e.entityId !== dev.entityId), dev] })),
-    removeExtra: (id) => patch((x) => ({ extras: x.extras.filter((e) => e.entityId !== id) })),
+    addDevice,
+    setRole,
+    removeExtra: (id, role) => patch((x) => ({ extras: x.extras.filter((e) => e.entityId !== id || e.role !== role) })),
+    takeOwnTemperature,
+    opened,
+    openSection: (k) => patch((x) => (x.opened.includes(k) ? {} : { opened: [...x.opened, k] })),
+    closeSection: (k) => patch((x) => ({ opened: x.opened.filter((y) => y !== k) })),
     floor,
     setFloor: (f) => patch((x) => ({ floor: { ...x.floor, ...f } })),
     floorCircuits,

@@ -58,6 +58,7 @@ export {
 export { Stepper, TimeStepper, type StepperProps, type TimeStepperProps } from './inputs/steppers';
 export { ValuePill, type ValuePillProps } from './inputs/ValuePill';
 export { EntityMultiPicker, EntityPicker, type EntityMultiPickerProps, type EntityPickerProps } from './inputs/EntityPicker';
+export { EntityFinder, type EntityFinderChoice, type EntityFinderProps } from './inputs/EntityFinder';
 export {
   ColorSwatchPicker,
   DayOfWeekToggle,
@@ -145,6 +146,7 @@ export { RoutingMatrix, type MatrixCell, type RoutingMatrixProps } from './displ
 
 // domain rows with inputs
 export { SensorRow, type SensorRowProps } from './rows/SensorRow';
+export { DeviceRow, type DeviceRowProps, type DeviceRowRole } from './rows/DeviceRow';
 export {
   ActionRuleCard,
   ChannelCard,

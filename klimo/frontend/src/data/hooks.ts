@@ -4,6 +4,7 @@ import type {
   EntityRolePreset,
   EpochMs,
   HaEntityDto,
+  HaEntityQuery,
   HouseState,
   Id,
   IncidentDto,
@@ -377,6 +378,10 @@ export function useAutosave<T>(serverValue: T, save: (next: T) => Promise<unknow
 export interface EntitySearchContext {
   /** Rank entities of this room's area first. */
   roomId?: Id;
+  /** Rank entities of this HA area first (before the room exists). */
+  areaId?: string | null;
+  /** Add-room wizard: what can take this device role ('any': any role), each with its role hint. */
+  wizard?: HaEntityQuery['wizard'];
   /** Only entities not yet used by Klimo. */
   unassigned?: boolean;
   domain?: string[];
@@ -385,7 +390,7 @@ export interface EntitySearchContext {
 
 /** The `search` function an entity picker needs, preset for a role. */
 export function useEntitySearch(role: EntityRolePreset | null, ctx: EntitySearchContext = {}): (q: string) => Promise<HaEntityDto[]> {
-  const { roomId, unassigned, limit } = ctx;
+  const { roomId, areaId, wizard, unassigned, limit } = ctx;
   const domain = ctx.domain?.join(',');
   return useCallback(
     (q: string) =>
@@ -393,11 +398,13 @@ export function useEntitySearch(role: EntityRolePreset | null, ctx: EntitySearch
         q: q.trim() || undefined,
         role: role ?? undefined,
         nearRoomId: roomId,
+        nearAreaId: areaId ?? undefined,
+        wizard,
         unassigned,
         domain: domain ? domain.split(',') : undefined,
         limit: limit ?? 50,
       }),
-    [role, roomId, unassigned, domain, limit],
+    [role, roomId, areaId, wizard, unassigned, domain, limit],
   );
 }
 

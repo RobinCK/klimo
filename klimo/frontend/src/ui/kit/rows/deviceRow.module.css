@@ -1,0 +1,167 @@
+/* ---------- DeviceRow: a device being assembled into a list (the add-room wizard) ---------- */
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--ui-space-12);
+  row-gap: 6px;
+  min-width: 0;
+  padding: var(--ui-space-12) var(--ui-space-14);
+  border-radius: var(--ui-radius-xl);
+  background: var(--ui-surface-2);
+}
+
+.row[data-check] {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.check {
+  flex: none;
+  align-self: start;
+  width: 20px;
+  height: 20px;
+  margin: 1px 0 0;
+  accent-color: var(--ui-text-1);
+  cursor: pointer;
+}
+
+.check:disabled {
+  cursor: not-allowed;
+}
+
+.text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.row[data-check] .text {
+  cursor: pointer;
+}
+
+.row[data-disabled] .text {
+  cursor: not-allowed;
+  color: var(--ui-text-3);
+}
+
+.title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-body-sm);
+  overflow-wrap: anywhere;
+}
+
+.value {
+  justify-self: end;
+  color: var(--ui-text-neutral-strong);
+  font-size: var(--ui-fs-body-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* under the text, from the text's left edge to the row's right edge */
+.actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-space-8);
+  min-width: 0;
+  margin: 0 -6px -4px 0;
+}
+
+.row[data-check] .actions {
+  grid-column: 2 / -1;
+}
+
+.role,
+.roleButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: var(--ui-radius-pill);
+  font: inherit;
+  font-size: var(--ui-fs-caption);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.role {
+  background: var(--ui-surface-4);
+  color: var(--ui-text-neutral-strong);
+}
+
+.roleButton {
+  border: 1px solid var(--ui-border-strong);
+  background: transparent;
+  color: var(--ui-text-1);
+  cursor: pointer;
+  transition: background-color var(--ui-motion) ease-out, border-color var(--ui-motion) ease-out;
+}
+
+.roleButton[aria-expanded='true'] {
+  border-color: var(--ui-text-1);
+}
+
+@media (hover: hover) {
+  .roleButton:hover {
+    background: var(--ui-surface-3);
+  }
+}
+
+.roleButton > svg {
+  flex: none;
+  color: var(--ui-text-2);
+}
+
+.menuTitle {
+  padding: 6px 12px 2px;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+}
+
+@media (max-width: 699px) {
+  .check {
+    width: 22px;
+    height: 22px;
+  }
+  .meta {
+    font-size: var(--ui-fs-caption);
+  }
+  .roleButton {
+    min-height: 36px;
+  }
+}
+
+.row[data-error] {
+  box-shadow: inset 0 0 0 1px var(--ui-tone-warn-line);
+}
+
+.error {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--ui-tone-warn-fg);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.row[data-check] .error {
+  grid-column: 2 / -1;
+}
+
+.error > svg {
+  flex: none;
+  margin-top: 2px;
+}

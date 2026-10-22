@@ -277,7 +277,7 @@ export const wizardDeviceRoleLabel = table<WizardDeviceRole>(() => ({
   door: t('Door sensor'),
   ac: t('Air conditioner'),
   heater: t('Heater'),
-  floor_zone: t('Floor zone'),
+  floor_zone: t('Floor zone valve'),
   floor_probe: t('Floor probe'),
   dehumidifier: t('Dehumidifier'),
 }));

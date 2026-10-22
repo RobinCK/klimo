@@ -47,6 +47,10 @@ whatever language Home Assistant speaks; rename anything, and pick the notificat
 **Settings → Units, languages and look**. An install that started on 0.1.0 gets the English name for
 every seeded name nobody changed; its notification language stays as it was.
 
+The panel has its own language, apart from notifications and cards: a browser's own choice comes
+first, then **Panel language for everyone**, then the Home Assistant user's language, then the
+browser's. A change applies at once — the panel reloads.
+
 After every start Klimo watches for 20 seconds before it switches anything, and it compares every
 device with what it expects before it sends a command.
 

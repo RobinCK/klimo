@@ -300,6 +300,8 @@ export const api = {
           role: q.role,
           unassigned: q.unassigned === undefined ? undefined : String(q.unassigned),
           nearRoomId: q.nearRoomId,
+          nearAreaId: q.nearAreaId,
+          wizard: q.wizard,
           limit: q.limit,
         })}`,
         init,

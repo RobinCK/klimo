@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import type { HaEntityDto } from '@api/model';
 import type { IconName } from '../../types';
 import { useUiText } from '../../UiTextContext';
@@ -39,8 +39,6 @@ export interface EntityFinderProps {
 interface Option {
   e: HaEntityDto;
   c: EntityFinderChoice;
-  /** Index of the choice within its result. */
-  k: number;
 }
 
 const keep = (ev: MouseEvent) => ev.preventDefault();
@@ -64,7 +62,7 @@ export function EntityFinder({ search, choices, onPick, placeholder, ariaLabel, 
   const { results, state } = useEntityResults(search, query, open);
 
   const rows = results.map((e) => ({ e, cs: choices(e) })).filter((r) => r.cs.length > 0);
-  const options: Option[] = rows.flatMap((r) => r.cs.map((c, k) => ({ e: r.e, c, k })));
+  const options: Option[] = rows.flatMap((r) => r.cs.map((c) => ({ e: r.e, c })));
   const index = new Map(options.map((o, i) => [`${o.e.entityId}|${o.c.value}`, i]));
 
   useEffect(() => setActive(0), [results]);
@@ -115,7 +113,7 @@ export function EntityFinder({ search, choices, onPick, placeholder, ariaLabel, 
     return e.state == null ? '' : e.unit ? `${e.state} ${e.unit}` : e.state;
   };
 
-  const option = (o: Option, single: boolean, children: React.ReactNode) => {
+  const option = (o: Option, single: boolean, children: ReactNode) => {
     const i = index.get(`${o.e.entityId}|${o.c.value}`) ?? 0;
     return (
       <div
@@ -213,7 +211,7 @@ export function EntityFinder({ search, choices, onPick, placeholder, ariaLabel, 
         <div id={listId} role="listbox" aria-label={ariaLabel ?? placeholder} className={s.list}>
           {rows.map(({ e, cs }) =>
             cs.length === 1 ? (
-              option({ e, c: cs[0], k: 0 }, true, (
+              option({ e, c: cs[0] }, true, (
                 <>
                   {text(e)}
                   <span className={s.side}>
@@ -235,8 +233,8 @@ export function EntityFinder({ search, choices, onPick, placeholder, ariaLabel, 
                   <span className={s.choicesLabel} aria-hidden="true">
                     {ut('Add as')}
                   </span>
-                  {cs.map((c, k) =>
-                    option({ e, c, k }, false, (
+                  {cs.map((c) =>
+                    option({ e, c }, false, (
                       <>
                         {c.icon ? <Icon name={c.icon} size={14} /> : null}
                         {c.label}
