@@ -1,10 +1,10 @@
-import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
 import type { IncomingMessage, Server } from 'http';
 import { performance } from 'perf_hooks';
 import { WebSocket, WebSocketServer } from 'ws';
 import { appVersion, env } from '../env';
-import type { ClockPort, IEvents, RoomSummary, WsClientMessage, WsServerMessage, WsTopic } from '../shared/model';
-import { CLOCK } from '../tokens';
+import type { ClockPort, IBus, IEvents, RoomSummary, WsClientMessage, WsServerMessage, WsTopic } from '../shared/model';
+import { BUS, CLOCK } from '../tokens';
 
 type MessageOf<T extends WsServerMessage['type']> = Extract<WsServerMessage, { type: T }>;
 
@@ -91,7 +91,14 @@ export class EventsService implements IEvents, OnModuleDestroy {
   private readonly slots = new Map<string, Slot>();
   private heartbeat: NodeJS.Timeout | null = null;
 
-  constructor(@Inject(CLOCK) private readonly clock: ClockPort) {}
+  constructor(
+    @Inject(CLOCK) private readonly clock: ClockPort,
+    @Optional() @Inject(BUS) bus?: IBus,
+  ) {
+    // REST and MQTT control actions report their outcome on the bus; the page that sent one (or another
+    // tab) learns it here
+    bus?.on('command.result', ({ reqId, ok, code, error }) => this.send({ type: 'command.result', payload: { reqId, ok, code, error } }));
+  }
 
   attach(server: Server): void {
     if (this.wss) return;

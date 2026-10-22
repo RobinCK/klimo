@@ -97,3 +97,31 @@ test('throttled topics send the first message at once and the latest after the i
     await close();
   }
 });
+
+test('command results on the bus reach every client', async () => {
+  const { Bus } = require('../dist/common/bus');
+  const server = http.createServer();
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const bus = new Bus();
+  const events = new EventsService(clock, bus);
+  events.attach(server);
+  const ws = new WebSocket(`ws://127.0.0.1:${server.address().port}/api/ws`);
+  const inbox = [];
+  ws.on('message', (d) => inbox.push(JSON.parse(d.toString())));
+  try {
+    await new Promise((r, j) => {
+      ws.once('open', r);
+      ws.once('error', j);
+    });
+    bus.emit('command.result', { reqId: 'q1', ok: false, code: 'conflict', error: null, via: 'ui' });
+    for (let i = 0; i < 50 && !inbox.some((m) => m.type === 'command.result'); i++) await wait(10);
+    assert.deepEqual(inbox.find((m) => m.type === 'command.result'), {
+      type: 'command.result',
+      payload: { reqId: 'q1', ok: false, code: 'conflict', error: null },
+    });
+  } finally {
+    ws.close();
+    events.onModuleDestroy();
+    await new Promise((r) => server.close(r));
+  }
+});
