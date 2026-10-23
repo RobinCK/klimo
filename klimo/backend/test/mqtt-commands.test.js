@@ -271,6 +271,13 @@ test('the schedule switch: ON follows the schedule (resumes everything), OFF hol
   assert.equal((await handle(h, 'klimo/house/schedule/set', 'maybe')).code, 'validation');
 });
 
+test('the house profile select keeps a house held by hand held: the new profile has no end', async () => {
+  const h = openMqtt();
+  h.houseActions.controlMode = 'manual';
+  await handle(h, 'klimo/house/profile/set', 'Ніч');
+  assert.deepEqual(h.houseActions.calls.map((x) => [x.name, x.args[0]]), [['setProfile', { profileId: 'night', duration: 'none' }]]);
+});
+
 test('the climate entity carries its id to the journal; a renamed entity is named as HA knows it', async () => {
   const h = openMqtt();
   h.ha.regs.entities.push({ entity_id: 'climate.living_room', platform: 'mqtt', unique_id: 'klimo_r_9f2a1c_climate' });

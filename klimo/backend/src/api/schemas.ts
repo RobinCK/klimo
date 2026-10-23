@@ -23,6 +23,7 @@ import {
   ADAPTER_TYPES,
   AGGREGATION_METHODS,
   CHANNEL_KINDS,
+  CIRCUIT_MODES,
   CONSUMPTION_RANGES,
   EMITTER_KINDS,
   EMITTER_ROLES,
@@ -38,6 +39,7 @@ import {
   PRIORITY_LOCKED,
   PUMP_RULES,
   ROOM_CONTROL_CHOICES,
+  ROOM_HEATING_KINDS,
   ROOM_TARGET_DURATIONS,
   SEASONS,
   SEVERITIES,
@@ -55,7 +57,9 @@ import type {
   BoostRequest,
   ChainEntry,
   CircuitKind,
+  CircuitMergeRequest,
   CircuitPatch,
+  CircuitRoomRequest,
   ConditionNode,
   ConditionPreviewRequest,
   ConfirmSpec,
@@ -106,7 +110,10 @@ import type {
   ProfileTargetRequest,
   PumpGroupMode,
   PumpPatch,
+  RoomBindingReplaceRequest,
   RoomControlRequest,
+  RoomDeviceRequest,
+  RoomHeatingRequest,
   RoomOffRequest,
   RoomPatch,
   RoomProfileRequest,
@@ -237,7 +244,7 @@ const WIZARD_ROLES = values<WizardDeviceRole>()([
 ]);
 const ROLE_PRESETS = values<EntityRolePreset>()([
   'trv', 'ac', 'climate_source', 'temperature', 'humidity', 'contact', 'switchable', 'pump', 'number', 'select', 'power', 'binary',
-  'outdoor', 'person', 'calendar', 'weather', 'proximity', 'script',
+  'outdoor', 'person', 'calendar', 'weather', 'proximity', 'script', 'gas_meter', 'electricity_meter', 'heat_meter',
 ]);
 const STAT_PERIODS = values<StatisticsQuery['period']>()(['5minute', 'hour', 'day', 'week']);
 const STAT_TYPES = values<StatisticsQuery['types'][number]>()(['mean', 'min', 'max', 'state', 'sum', 'change']);
@@ -423,8 +430,8 @@ export const generalSettingsPatch: Schema<DeepPartial<GeneralSettingsPatch>> = p
   defaultProfileId: id(),
   ecoProfileId: id(),
   targetLimits: patch({ heatMinC: celsius, heatMaxC: celsius, coolMinC: celsius, coolMaxC: celsius, stepC: num(0.1, 1) }),
-  // a change from Home Assistant is temporary or written into the profile; manual control is chosen as a mode
-  haTargetChangeDuration: oneOf(['slot', '1h', '2h', '3h', 'morning', 'until', 'forever'] as const),
+  // 'until' needs a moment a thermostat cannot send (it reads as the slot); 'manual' makes the room manual
+  haTargetChangeDuration: oneOf(ROOM_TARGET_DURATIONS),
   adminOnlyConfig: bool(),
   mqttConfigEntities: bool(),
   glassCoefficient: num(0, 1),
@@ -567,17 +574,27 @@ export const roomPatch: Schema<DeepPartial<RoomPatch>> = patch({
 });
 
 const wizardDevice = obj({ role: oneOf(WIZARD_ROLES), entityId: entityId(), name: opt(label(80)), move: opt(bool()) });
+const newCircuit = obj({
+  name: name(40),
+  pumpEntityId: nullable(entityId()),
+  sourceIds: arr(id(), { max: 20 }),
+  mode: opt(oneOf(CIRCUIT_MODES)),
+  runOnMin: opt(int(0, 30)),
+  bypass: opt(bool()),
+});
+const heatingKinds = arr(oneOf(ROOM_HEATING_KINDS), { max: ROOM_HEATING_KINDS.length });
 const createRoomShape = {
   name: name(40),
   haAreaId: nullable(str(255, { min: 1 })),
   icon: nullable(icon),
-  emitterKinds: arr(oneOf(['trv', 'floor', 'ac', 'local'] as const), { max: 4 }),
+  emitterKinds: heatingKinds,
   demandPolicy: oneOf(DEMAND_POLICIES),
   devices: arr(wizardDevice, { max: 60 }),
   circuits: obj({
     radiatorCircuitId: nullable(id()),
     floorCircuitId: nullable(id()),
-    newFloorCircuit: nullable(obj({ name: name(40), pumpEntityId: entityId(), sourceIds: arr(id(), { max: 20 }) })),
+    newFloorCircuit: nullable(newCircuit),
+    newRadiatorCircuit: opt(nullable(newCircuit)),
   }),
   method: nullable(oneOf(AGGREGATION_METHODS)),
   heatTolerance: band,
@@ -587,6 +604,19 @@ const createRoomShape = {
 };
 
 export const createRoomRequest: Schema<CreateRoomRequest> = obj(createRoomShape);
+
+export const roomDeviceRequest: Schema<RoomDeviceRequest> = wizardDevice;
+export const roomBindingReplaceRequest: Schema<RoomBindingReplaceRequest> = obj({ entityId: entityId(), name: opt(label(80)), move: opt(bool()) });
+export const roomHeatingRequest: Schema<RoomHeatingRequest> = obj({
+  kinds: heatingKinds,
+  radiatorCircuitId: opt(nullable(id())),
+  newRadiatorCircuit: opt(nullable(newCircuit)),
+  floorCircuitId: opt(nullable(id())),
+  newFloorCircuit: opt(nullable(newCircuit)),
+  devices: opt(arr(wizardDevice, { max: 60 })),
+});
+export const circuitMergeRequest: Schema<CircuitMergeRequest> = obj({ intoId: id(), dropPumps: opt(bool()) });
+export const circuitRoomRequest: Schema<CircuitRoomRequest> = obj({ roomId: id(), zoneEntityId: opt(nullable(entityId())) });
 
 export const validateRoomRequest: Schema<ValidateRoomRequest> = obj({
   step: oneOf([1, 2, 3, 4] as const),
@@ -1017,6 +1047,8 @@ const circuitShape = {
   dewMarginC: nullable(num(0.5, 10)),
   pumpGroupMode: oneOf(PUMP_GROUP_MODES),
   flowSafety: bool(),
+  mode: oneOf(CIRCUIT_MODES),
+  bypass: bool(),
 };
 
 /** New circuit: name and kind are required, the rest takes the defaults of a circuit of that kind. */

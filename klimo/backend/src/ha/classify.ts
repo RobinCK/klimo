@@ -1,4 +1,5 @@
-import type { EntityRolePreset, HaEntityDetailDto, HaStateObj, TrvCapabilities, TrvSiblings, TrvStrategy, WizardDeviceRole, WizardRoleHint } from '../shared/model';
+import { meterUnit, METER_QUANTITIES } from '../shared/model';
+import type { EntityRolePreset, HaEntityDetailDto, HaStateObj, MeterKind, TrvCapabilities, TrvSiblings, TrvStrategy, WizardDeviceRole, WizardRoleHint } from '../shared/model';
 import { searchKey } from './search-text';
 import { entityTempUnit, parseNumber, tempAttr, tempUnit, type TempUnit } from './units';
 
@@ -198,6 +199,20 @@ export function isPowerSensor(f: EntityFacts): boolean {
   return f.domain === 'sensor' && (f.deviceClass === 'power' || f.unit === 'W' || f.unit === 'kW');
 }
 
+/**
+ * A consumption meter of `kind`: a unit that fits it and a state class HA keeps long-term statistics
+ * for — a counter (total, total_increasing), or for electricity also a power sensor, integrated.
+ */
+export function isMeter(f: EntityFacts, kind: MeterKind): boolean {
+  if (f.domain !== 'sensor') return false;
+  const unit = meterUnit(f.unit);
+  if (!unit || !METER_QUANTITIES[kind].includes(unit.quantity)) return false;
+  // a gas meter counting energy says so by its device class; other kWh counters are electricity or heat
+  if (kind === 'gas' && unit.quantity === 'energy' && f.deviceClass !== 'gas') return false;
+  const stateClass = f.state?.attributes.state_class;
+  return unit.quantity === 'power' || stateClass === 'total' || stateClass === 'total_increasing';
+}
+
 export function matchesRole(role: EntityRolePreset, f: EntityFacts, siblingRoles: readonly SiblingRole[]): boolean {
   switch (role) {
     case 'trv':
@@ -236,6 +251,12 @@ export function matchesRole(role: EntityRolePreset, f: EntityFacts, siblingRoles
       return f.domain === 'proximity' || (f.domain === 'sensor' && (f.deviceClass === 'distance' || has(/proximity|nearest_distance/, f.key)));
     case 'script':
       return f.domain === 'script';
+    case 'gas_meter':
+      return isMeter(f, 'gas');
+    case 'electricity_meter':
+      return isMeter(f, 'electricity');
+    case 'heat_meter':
+      return isMeter(f, 'heat');
   }
 }
 

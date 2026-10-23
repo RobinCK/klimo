@@ -17,6 +17,7 @@ import type {
   IncidentDto,
   JournalEntry,
   PlantState,
+  RoomControl,
   RoomState,
   RoomSummary,
   RunSpan,
@@ -368,6 +369,15 @@ export class LiveStore {
   putHouse(house: HouseState): void {
     this.syncClock(house.now);
     this.set({ house, lastUpdateAt: house.now });
+  }
+
+  /** A control change shows on the room's summary at once; the next evaluation push replaces it. */
+  putRoomControl(roomId: Id, control: RoomControl): void {
+    const summary = this.state.rooms.get(roomId);
+    if (!summary) return;
+    const rooms = new Map(this.state.rooms);
+    rooms.set(roomId, { ...summary, control });
+    this.set({ rooms, roomList: sortRooms(rooms) });
   }
 
   /* ---------- messages ---------- */

@@ -3,7 +3,7 @@ import type { AggregationMethod, RoomSensor, SensorReading } from '@api/model';
 import { AGGREGATION_METHODS } from '@api/model';
 import { api } from '@api/endpoints';
 import { useAutosave, useMutation } from '@data';
-import { Button, CheckboxRow, Dialog, FallbackNote, KeyValueList, RadioValueGrid, SensorRow, Stack, Stepper, TextField } from '@ui';
+import { Button, CheckboxRow, Dialog, FallbackNote, KeyValueList, RadioValueGrid, SensorRow, Stack, Stepper, Text, TextField } from '@ui';
 import { aggregationHint, aggregationLabel, fmtAgo, fmtDelta, fmtDur, fmtNum, fmtTemp, sensorStaleHint, t } from '@i18n';
 import { AddEntityDialog, SENSOR_FIELDS } from '../AddEntityDialog';
 import { closeDialog, openDialog, useOpenDialog } from '../dialogs';
@@ -41,8 +41,15 @@ function sensorNote(r: SensorReading | undefined, outlierC: number): { note?: st
   return {};
 }
 
+/** «Основний датчик»: which sensor counts while that method is chosen (the first in the room's order). */
+interface MainChoice {
+  isMain: boolean;
+  make: () => void;
+  pending: boolean;
+}
+
 /** Name and weight of one sensor of the room, or its removal; `weight` false for sensors no average weighs. */
-export function EditSensorDialog({ p, sensor, weight: withWeight = true }: { p: SectionProps; sensor: RoomSensor | null; weight?: boolean }) {
+export function EditSensorDialog({ p, sensor, weight: withWeight = true, main }: { p: SectionProps; sensor: RoomSensor | null; weight?: boolean; main?: MainChoice }) {
   const [name, setName] = useState('');
   const [weight, setWeight] = useState(1);
   const save = useMutation((id: string) => api.rooms.sensors.patch(p.room.config.id, id, { name: name.trim() || sensor?.name, weight }), {
@@ -103,6 +110,18 @@ export function EditSensorDialog({ p, sensor, weight: withWeight = true }: { p: 
             ariaInc={t('Raise the weight')}
           />
         ) : null}
+        {main ? (
+          main.isMain ? (
+            <Text variant="caption">{t('The main sensor: it alone counts; the next one in the list steps in while it is silent.')}</Text>
+          ) : (
+            <Stack gap="xs" align="start">
+              <Button variant="secondary" size="sm" icon="check" onClick={main.make} loading={main.pending}>
+                {t('Make it the main sensor')}
+              </Button>
+              <Text variant="caption">{t('With «{method}» only the main sensor counts.', { method: aggregationLabel('primary') })}</Text>
+            </Stack>
+          )
+        ) : null}
       </Stack>
     </Dialog>
   );
@@ -123,6 +142,18 @@ function Body(p: SectionProps) {
   const dialog = useOpenDialog();
   const editing = dialog?.startsWith('edit-sensor:') ? (sensors.find((s) => `edit-sensor:${s.id}` === dialog) ?? null) : null;
   const method = temp.value.method;
+  // the main sensor is the first of the room's order; moving one up front makes it the main one
+  const makeMain = useMutation(
+    (sid: string) => api.rooms.sensors.reorder(id, { role: 'temperature', ids: [sid, ...sensors.filter((s) => s.id !== sid).map((s) => s.id)] }),
+    {
+      onSuccess: (r) => {
+        p.setRoom(r);
+        closeDialog();
+      },
+      okToast: (_r, sid) => t('«{name}» is the main sensor now.', { name: sensors.find((s) => s.id === sid)?.name ?? '' }),
+    },
+  );
+  const mainId = method === 'primary' ? sensors[0]?.id : undefined;
   const values = state.aggregation.values;
   const trvs = state.aggregation.trvValues;
   const showWeight = method === 'weighted' || sensors.some((s) => s.weight !== 1);
@@ -142,7 +173,7 @@ function Body(p: SectionProps) {
                 onToggle={(on) => p.canEdit && void toggle.run(s.id, on)}
                 name={s.name}
                 entityId={p.phone ? undefined : s.entityId}
-                weightText={showWeight ? t('weight {w}', { w: fmtNum(s.weight, 1) }) : undefined}
+                weightText={s.id === mainId ? t('main') : showWeight ? t('weight {w}', { w: fmtNum(s.weight, 1) }) : undefined}
                 valueText={fmtTemp(r?.smoothedC ?? r?.rawC ?? null)}
                 excluded={!counted}
                 meta={sensorMeta(p, s, r)}
@@ -243,7 +274,11 @@ function Body(p: SectionProps) {
         onSubmit={(entityId, name) => add.run(entityId, name)}
         errors={add}
       />
-      <EditSensorDialog p={p} sensor={editing} />
+      <EditSensorDialog
+        p={p}
+        sensor={editing}
+        main={editing && mainId ? { isMain: editing.id === mainId, make: () => void makeMain.run(editing.id), pending: makeMain.pending } : undefined}
+      />
     </Stack>
   );
 }

@@ -4,7 +4,9 @@ import { paths } from '@app';
 import type { NameDirectory } from '@data';
 import { aggregationLabel, fmtDur, fmtTemp, renderReason, startOfLocalDay, t, type CodeContext } from '@i18n';
 import { energyLine, isRunning, profileOrigin, seasonBadge, sourcesTile } from './house';
+import { HouseControlBlock, type HouseControlView } from './HouseControl';
 import type { ProfileSwitch } from './useProfileSwitch';
+import { TodayUse, useTodayUse } from './TodayUse';
 
 interface Props {
   house: HouseState;
@@ -13,6 +15,8 @@ interface Props {
   sources: readonly SourceDto[] | undefined;
   circuits: readonly CircuitDto[] | undefined;
   sw: ProfileSwitch;
+  /** The house schedule: paused or followed, and what a resume would do. */
+  hc: HouseControlView;
   ctx: NameDirectory;
   /** The outdoor sensors behind the value (null until the overview has loaded). */
   outdoor?: OutdoorReadout | null;
@@ -129,6 +133,8 @@ function OutdoorTile({ house, outdoor }: Props) {
 
 function EnergyTile({ plant, ctx }: Props) {
   const e = plant?.energy;
+  const use = useTodayUse();
+  const today = <TodayUse use={use} />;
   if (!e || !e.configured) {
     return (
       <StatTile
@@ -137,6 +143,7 @@ function EnergyTile({ plant, ctx }: Props) {
         value={t('Not set up')}
         sub={t('Grid, solar and battery sensors let heating plan around blackouts.')}
         to={paths.strategy()}
+        footer={use?.configured ? today : undefined}
       />
     );
   }
@@ -152,13 +159,18 @@ function EnergyTile({ plant, ctx }: Props) {
       to={paths.strategy()}
       emphasis={e.grid === 'absent' ? 'warn' : undefined}
       footer={
-        e.note ? <ToneBadge tone={e.phase === 'critical' ? 'err' : e.phase === 'normal' ? 'hold' : 'warn'}>{renderReason(e.note, ctx)}</ToneBadge> : undefined
+        e.note || use?.configured ? (
+          <Stack gap="sm">
+            {e.note ? <ToneBadge tone={e.phase === 'critical' ? 'err' : e.phase === 'normal' ? 'hold' : 'warn'}>{renderReason(e.note, ctx)}</ToneBadge> : null}
+            {today}
+          </Stack>
+        ) : undefined
       }
     />
   );
 }
 
-function ProfileTile({ house, sw, ctx }: Props) {
+function ProfileTile({ house, sw, hc, ctx }: Props) {
   const id = house.profile.activeProfileId;
   const profile = sw.profiles.find((p) => p.id === id);
   const name = profile?.name ?? ctx.profile?.(id) ?? id;
@@ -174,16 +186,14 @@ function ProfileTile({ house, sw, ctx }: Props) {
       }
       sub={profileOrigin(house, ctx)}
       footer={
-        <Row gap="sm" wrap>
-          <Button variant="secondary" size="sm" onClick={sw.open ? sw.close : sw.openPanel}>
-            {t('Change profile')}
-          </Button>
-          {sw.overridden ? (
-            <Button variant="link" size="sm" onClick={sw.resume} loading={sw.resuming}>
-              {t('Back to schedule')}
+        <Stack gap="sm">
+          <HouseControlBlock hc={hc} full />
+          <Row gap="sm" wrap>
+            <Button variant="secondary" size="sm" onClick={sw.open ? sw.close : sw.openPanel}>
+              {t('Change profile')}
             </Button>
-          ) : null}
-        </Row>
+          </Row>
+        </Stack>
       }
     />
   );

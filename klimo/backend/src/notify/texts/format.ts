@@ -209,7 +209,9 @@ export type Fmt =
   | 'room' | 'source' | 'profile' | 'trigger' | 'rule' | 'circuit' | 'pump' | 'instance' | 'device' | 'entity'
   // enum labels (texts/labels.ts)
   | 'mode' | 'smode' | 'hmode' | 'season' | 'fault' | 'preason' | 'pstate' | 'sstate' | 'reaction' | 'policy'
-  | 'okind' | 'carrier' | 'by' | 'centity' | 'event' | 'channel' | 'action' | 'rstate' | 'srcverb';
+  | 'okind' | 'carrier' | 'by' | 'centity' | 'event' | 'channel' | 'action' | 'rstate' | 'srcverb' | 'drole' | 'hkind' | 'release'
+  // a comma-separated list of heating kinds
+  | 'hkinds';
 
 const ID_FORMATS: Record<string, Fmt> = {
   roomId: 'room',
@@ -331,6 +333,12 @@ export function formatVar(v: Var, fmt: Fmt, ctx: TextContext): string | null {
       return nameOf((id) => ctx.names.device(id), v);
     case 'entity':
       return nameOf((id) => ctx.names.entity(id), v);
+    case 'hkinds':
+      return String(v)
+        .split(',')
+        .filter(Boolean)
+        .map((k) => ctx.label?.('hkind', k, lang) ?? k)
+        .join(', ');
     default: {
       const s = String(v);
       return ctx.label?.(fmt, s, lang) ?? s;
@@ -348,7 +356,7 @@ const KNOWN_FORMATS = new Set<string>([
   'ago', 'tnum', 'deg',
   'room', 'source', 'profile', 'trigger', 'rule', 'circuit', 'pump', 'instance', 'device', 'entity',
   'mode', 'smode', 'hmode', 'season', 'fault', 'preason', 'pstate', 'sstate', 'reaction', 'policy', 'okind', 'carrier',
-  'by', 'centity', 'event', 'channel', 'action', 'rstate', 'srcverb',
+  'by', 'centity', 'event', 'channel', 'action', 'rstate', 'srcverb', 'drole', 'hkind', 'release', 'hkinds',
 ]);
 
 /** Placeholder text shown for a missing value outside an optional part. */

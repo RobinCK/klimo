@@ -14,6 +14,7 @@ import { EntityMultiPicker, EntityPicker } from '../inputs/EntityPicker';
 import { EntityFinder } from '../inputs/EntityFinder';
 import { ColorSwatchPicker, DayOfWeekToggle, DayTabs, IconPicker, MonthToggleGrid } from '../inputs/pickers';
 import { SortableList } from '../inputs/SortableList';
+import { PeriodNav } from '../inputs/PeriodNav';
 import { DashedAddButton, FileButton, QuickActionPill, TestButton } from '../inputs/actions';
 import { minutesToHhmm } from '../internal/util';
 import { GALLERY_PALETTE, gallerySearch } from './fixtures';
@@ -94,6 +95,12 @@ function Choices() {
             { value: 'forever', label: ut('Permanently'), hint: ut('until changed') },
           ]}
         />
+      </Item>
+      <Item name="PeriodNav">
+        <Row gap="lg" wrap>
+          <PeriodNav label={ut('This week')} onPrev={() => undefined} onNext={() => undefined} nextDisabled />
+          <PeriodNav label={ut('{day} October', { day: 12 })} onPrev={() => undefined} onNext={() => undefined} onCurrent={() => undefined} />
+        </Row>
       </Item>
       <Item name="RadioCardList">
         <RadioCardList

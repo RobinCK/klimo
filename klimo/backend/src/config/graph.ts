@@ -2,6 +2,7 @@ import { EntityManager, EntityTarget, ObjectLiteral } from 'typeorm';
 import {
   ATOMIC_KEYS,
   DEFAULT_ACTIVATION_RULE,
+  circuitModeDefaults,
   DEFAULT_CIRCUIT,
   DEFAULT_EMITTER,
   DEFAULT_EMITTER_DEVICE,
@@ -33,6 +34,7 @@ import {
   withDefaults,
 } from '../shared/defaults';
 import type {
+  Circuit,
   ConfigCollectionName,
   ConfigCollections,
   ConfigEntityName,
@@ -227,6 +229,11 @@ const BASES: { [K in ConfigCollectionName]: (row: ObjectLiteral) => ConfigCollec
 
 export function collectionFromRow<K extends ConfigCollectionName>(c: K, row: ObjectLiteral): ConfigCollections[K] {
   const value = fromRow(row, BASES[c](row));
+  if (c === 'circuits') {
+    // rows saved before circuits had a mode hold NULL there (the mode itself is read from the pumps on load)
+    const circuit = value as Circuit;
+    return { ...circuit, mode: circuit.mode ?? DEFAULT_CIRCUIT().mode, bypass: circuit.bypass ?? false } as ConfigCollections[K];
+  }
   if (c !== 'sources') {
     return value;
   }
@@ -379,6 +386,16 @@ export const OVERRIDE_TABLE: TableDef = mapTable('override', OverrideRow, ['id']
 
 /* ── load and persist ─────────────────────────────────────────────────────────────────────────── */
 
+/** Circuits saved before they had a mode: their pumps' rule said it (a pump running with the source = the whole loop). */
+export function legacyCircuitModes(g: ConfigGraph, ids: readonly Id[]): void {
+  for (const id of ids) {
+    const c = g.circuits.get(id);
+    if (!c) continue;
+    const rules = [...g.pumps.values()].filter((p) => p.circuitId === c.id).map((p) => p.rule);
+    c.mode = rules.length ? (rules.includes('source') ? 'follow_source' : 'zoned') : circuitModeDefaults(c.kind).mode;
+  }
+}
+
 export async function loadGraph(em: EntityManager): Promise<{ graph: ConfigGraph; missingSingletons: ConfigSingletonName[] }> {
   const g = emptyGraph();
   const missingSingletons: ConfigSingletonName[] = [];
@@ -418,6 +435,8 @@ export async function loadGraph(em: EntityManager): Promise<{ graph: ConfigGraph
   await all('targets', NotifyTargetRow);
   await all('watchRules', WatchRuleRow);
   await all('z2m', Z2mInstanceRow);
+
+  legacyCircuitModes(g, (await em.getRepository(CircuitRow).find()).filter((r) => !r.mode).map((r) => r.id as Id));
 
   const feeds = await em.getRepository(CircuitSourceRow).find({ order: { order: 'ASC' } });
   for (const f of feeds) g.circuits.get(f.circuitId)?.sourceIds.push(f.sourceId);

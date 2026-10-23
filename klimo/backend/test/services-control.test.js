@@ -193,6 +193,44 @@ test('the HA thermostat: auto resumes, heat holds manually, a temperature is tem
     ]);
   }));
 
+test('a new value under manual control keeps when and through what manual control began', () =>
+  withRooms(async (s, { living, bedroom }) => {
+    const t0 = s.clock.now();
+    await s.roomActions.setControl(living.id, { mode: 'manual', heatC: 21 }, ACTOR);
+    s.clock.advance(10 * MIN);
+    await s.roomActions.applyClimateCommand(living.id, { temp: 22 }, HA, { entityId: 'climate.klimo_vitalnia' });
+    s.clock.advance(10 * MIN);
+    await s.roomActions.setTarget(living.id, { value: 22.5, duration: 'manual' }, HA);
+    assert.equal(target(s, living.id).value.heatC, 22.5);
+    assert.deepEqual(s.roomActions.control(living.id), { mode: 'manual', since: t0, until: null, setBy: 'ui' });
+    // a boost on top and its end: still the same manual control
+    await s.roomActions.boost(living.id, { minutes: 30 }, HA);
+    await s.roomActions.cancelBoost(living.id, HA);
+    assert.deepEqual(s.roomActions.control(living.id), { mode: 'manual', since: t0, until: null, setBy: 'ui' });
+    // back to the schedule and manual again: a new start
+    await s.roomActions.setControl(living.id, { mode: 'schedule' }, ACTOR);
+    await s.roomActions.setControl(living.id, { mode: 'manual' }, HA);
+    assert.deepEqual(s.roomActions.control(living.id), { mode: 'manual', since: s.clock.now(), until: null, setBy: 'ha' });
+    // off stays off from when it was switched off
+    const off0 = s.clock.now();
+    await s.roomActions.setControl(bedroom.id, { mode: 'off' }, HA);
+    s.clock.advance(MIN);
+    await s.roomActions.off(bedroom.id, { duration: 'none' }, ACTOR);
+    assert.deepEqual(s.roomActions.control(bedroom.id), { mode: 'off', since: off0, until: null, setBy: 'ha' });
+  }));
+
+test('with «until the schedule is resumed» as the HA duration a temperature from HA puts the room under manual control', () =>
+  withRooms(async (s, { living }) => {
+    await s.config.patchSingleton('settings', { haTargetChangeDuration: 'manual' }, ACTOR);
+    await s.roomActions.applyClimateCommand(living.id, { temp: 21.5 }, HA, { entityId: 'climate.klimo_vitalnia' });
+    const o = target(s, living.id);
+    assert.equal(o.duration, 'manual');
+    assert.equal(o.until, null);
+    assert.equal(s.roomActions.control(living.id).mode, 'manual');
+    const [entry] = (await s.journal.page({ roomId: living.id, codes: ['room.control'] })).items;
+    assert.deepEqual([entry.params.mode, entry.params.valueC, entry.params.entityId], ['manual', 21.5, 'climate.klimo_vitalnia']);
+  }));
+
 test('house manual pauses the schedule on the current profile; rooms keep their own modes', () =>
   withRooms(async (s, { living }) => {
     await s.roomActions.setControl(living.id, { mode: 'manual', heatC: 22 }, ACTOR);
@@ -213,6 +251,18 @@ test('house manual pauses the schedule on the current profile; rooms keep their 
     assert.equal(s.overrides.forSubject('house', 'house')[0].id, house[0].id);
     assert.equal((await s.journal.page({ codes: ['house.control'] })).items.length, 1);
     assert.equal((await rejection(() => s.houseActions.setControl({ mode: 'off' }, ACTOR))).code, 'validation');
+  }));
+
+test('another profile held by hand keeps the house paused from when the pause began; a time-limited one resumes it', () =>
+  withRooms(async (s) => {
+    const t0 = s.clock.now();
+    await s.houseActions.setControl({ mode: 'manual' }, ACTOR);
+    s.clock.advance(5 * MIN);
+    await s.houseActions.setProfile({ profileId: 'night', duration: 'none' }, HA);
+    assert.deepEqual(s.houseActions.control(), { mode: 'manual', since: t0 });
+    assert.equal(s.overrides.forSubject('house', 'house')[0].value.profileId, 'night');
+    await s.houseActions.setProfile({ profileId: 'away', duration: '2h' }, HA);
+    assert.deepEqual(s.houseActions.control(), { mode: 'schedule', since: null });
   }));
 
 test('house «resume schedule» clears the house override and every manual or temporary room; off rooms stay off', () =>
@@ -251,6 +301,30 @@ test('house resume keeps a room off even under a temporary change on top of it',
     const r = await s.houseActions.setControl({ mode: 'schedule' }, ACTOR);
     assert.deepEqual(r.offRoomIds, [living.id]);
     assert.equal(s.roomActions.control(living.id).mode, 'off');
+  }));
+
+test('what a held change replaced is history: off → manual → house resume is the schedule, manual → off → on too', () =>
+  withRooms(async (s, { living, bedroom }) => {
+    await s.roomActions.setControl(living.id, { mode: 'off' }, ACTOR);
+    await s.roomActions.setControl(living.id, { mode: 'manual', heatC: 22 }, ACTOR);
+    assert.equal(target(s, living.id).previous.override.kind, 'room_off', 'kept for undo');
+    const r = await s.houseActions.setControl({ mode: 'schedule' }, ACTOR);
+    assert.deepEqual(r.resumedRoomIds, [living.id]);
+    assert.deepEqual(r.offRoomIds, []);
+    assert.equal(target(s, living.id), null);
+    assert.equal(s.roomActions.control(living.id).mode, 'schedule');
+
+    await s.roomActions.setControl(bedroom.id, { mode: 'manual', heatC: 22 }, ACTOR);
+    await s.roomActions.off(bedroom.id, { duration: 'none' }, ACTOR);
+    await s.roomActions.on(bedroom.id, ACTOR);
+    assert.equal(target(s, bedroom.id), null);
+    assert.equal(s.roomActions.control(bedroom.id).mode, 'schedule');
+    // a temporary off on a manual room still ends in manual
+    await s.roomActions.setControl(bedroom.id, { mode: 'manual', heatC: 22 }, ACTOR);
+    await s.roomActions.off(bedroom.id, { duration: '1h' }, ACTOR);
+    await s.roomActions.on(bedroom.id, ACTOR);
+    assert.equal(s.roomActions.control(bedroom.id).mode, 'manual');
+    assert.equal(target(s, bedroom.id).value.heatC, 22);
   }));
 
 test('manual control and house manual are stored rows: they survive a restart and never expire', () =>

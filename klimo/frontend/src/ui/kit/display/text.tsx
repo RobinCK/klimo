@@ -161,15 +161,53 @@ export interface CodeBlockProps {
   /** Wrap long lines instead of scrolling sideways. */
   wrap?: boolean;
   ariaLabel?: string;
+  /** A one-tap copy button in the corner (YAML to paste into Home Assistant). */
+  copyable?: boolean;
 }
 
 /** YAML, templates, event payloads. */
-export function CodeBlock({ code, wrap, ariaLabel }: CodeBlockProps) {
+export function CodeBlock({ code, wrap, ariaLabel, copyable }: CodeBlockProps) {
   // a scrollable block must be reachable by keyboard
-  return (
+  const block = (
     <pre className={s.code} data-wrap={wrap ? '' : undefined} tabIndex={wrap ? undefined : 0} aria-label={ariaLabel}>
       <code>{code}</code>
     </pre>
+  );
+  if (!copyable) return block;
+  return (
+    <div className={s.codeWrap}>
+      {block}
+      <CopyButton text={code} />
+    </div>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const ut = useUiText();
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard blocked (insecure context): the text is selectable anyway
+    }
+  };
+  return (
+    <button
+      type="button"
+      className={`${s.copy} ${s.codeCopy}`}
+      data-copied={copied ? '' : undefined}
+      aria-label={copied ? ut('Copied') : ut('Copy')}
+      title={copied ? ut('Copied') : ut('Copy')}
+      onClick={copy}
+    >
+      <Icon name={copied ? 'check' : 'copy'} size={16} />
+    </button>
   );
 }
 
@@ -214,13 +252,15 @@ export interface LegendSwatchProps {
   tone?: Tone;
   /** An explicit colour (profile colours); wins over the tone. */
   color?: string;
+  /** A consumption series colour (gas, electricity, heat delivered); wins over the tone. */
+  series?: 'gas' | 'electricity' | 'heat';
   /** solid · band (target band) · dashed (planned) · runon (pump run-on) · line (a chart line). */
   variant?: 'solid' | 'band' | 'dashed' | 'runon' | 'line';
   label: string;
 }
 
-export function LegendSwatch({ tone, color, variant = 'solid', label }: LegendSwatchProps) {
-  const sw = color ?? (tone ? toneVar(tone, 'line') : 'var(--ui-text-1)');
+export function LegendSwatch({ tone, color, series, variant = 'solid', label }: LegendSwatchProps) {
+  const sw = color ?? (series ? `var(--ui-series-${series})` : tone ? toneVar(tone, 'line') : 'var(--ui-text-1)');
   return (
     <span className={s.legend}>
       <span className={s.swatch} data-variant={variant} style={{ '--sw': sw } as CSSProperties} aria-hidden="true" />

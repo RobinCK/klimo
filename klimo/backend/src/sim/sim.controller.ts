@@ -5,7 +5,7 @@ import type { ISimControl, SimFaultRequest, SimStateDto } from '../shared/model'
 import { SIM_CONTROL } from '../tokens';
 import { SCENARIO_IDS } from './scenarios';
 
-const FAULT_KINDS = ['unavailable', 'stale', 'no_ack', 'weak', 'battery', 'knob', 'error_code', 'clear'] as const;
+const FAULT_KINDS = ['unavailable', 'stale', 'no_ack', 'weak', 'battery', 'knob', 'error_code', 'meter_reset', 'clear'] as const;
 
 const ClockBody = obj({ speed: opt(num(0, 600)), jumpTo: opt(int(0, 4_102_444_800_000)), paused: opt(bool()) });
 const ScenarioBody = obj({ id: oneOf(SCENARIO_IDS) });

@@ -6,6 +6,7 @@ import { setpointStepC } from '../../ha/classify';
 import { systemTempUnit, tempAttr } from '../../ha/units';
 import {
   adapterDefaults,
+  circuitModeDefaults,
   DEFAULT_CIRCUIT,
   DEFAULT_EMITTER,
   DEFAULT_EMITTER_DEVICE,
@@ -19,7 +20,7 @@ import {
   WIZARD_DEFAULTS,
 } from '../../shared/defaults';
 import { slugify } from '../../shared/translit';
-import { AGGREGATION_METHODS, round1, TRV_STRATEGIES, WINDOW_REACTIONS } from '../../shared/model';
+import { AGGREGATION_METHODS, ROOM_HEATING_KINDS, round1, TRV_STRATEGIES, WINDOW_REACTIONS } from '../../shared/model';
 import type {
   Actor,
   AggregationMethod,
@@ -32,6 +33,7 @@ import type {
   CreateRoomRequest,
   CreateRoomStep,
   CreateRoomStepKind,
+  Emitter,
   EmitterDevice,
   EmitterDeviceCreateRequest,
   EngineConfig,
@@ -46,8 +48,10 @@ import type {
   IReadModels,
   IRoomSetup,
   Lang,
+  NewCircuitRequest,
   Reason,
   RoomConfig,
+  RoomHeatingKind,
   RoomDetailDto,
   RoomSensor,
   SourceConfig,
@@ -70,11 +74,11 @@ const REPORT_KEEP_MS = 60 * 60 * SEC;
 const HA_ENTITY_DEADLINE_MS = 90 * SEC;
 const AC_DEADLINE_MS = 3 * 60 * SEC;
 
-const EMITTER_KINDS = ['trv', 'floor', 'ac', 'local'] as const;
+const EMITTER_KINDS = ROOM_HEATING_KINDS;
 const DEMAND_POLICIES = ['call', 'piggyback', 'never'] as const;
-const DEVICE_ROLES: readonly WizardDeviceRole[] = ['trv', 'temperature', 'humidity', 'temp_humidity', 'window', 'door', 'ac', 'heater', 'floor_zone', 'floor_probe', 'dehumidifier'];
+export const DEVICE_ROLES: readonly WizardDeviceRole[] = ['trv', 'temperature', 'humidity', 'temp_humidity', 'window', 'door', 'ac', 'heater', 'floor_zone', 'floor_probe', 'dehumidifier'];
 
-const ROLE_DOMAINS: Record<WizardDeviceRole, readonly string[]> = {
+export const ROLE_DOMAINS: Record<WizardDeviceRole, readonly string[]> = {
   trv: ['climate'],
   // a climate gives its current_temperature (a thermostat's own reading when there is no sensor)
   temperature: ['sensor', 'input_number', 'number', 'climate'],
@@ -90,7 +94,7 @@ const ROLE_DOMAINS: Record<WizardDeviceRole, readonly string[]> = {
 };
 
 /** Device roles that only make sense with a chosen «чим гріти» kind. */
-const ROLE_NEEDS_KIND: Partial<Record<WizardDeviceRole, (typeof EMITTER_KINDS)[number]>> = {
+export const ROLE_NEEDS_KIND: Partial<Record<WizardDeviceRole, RoomHeatingKind>> = {
   trv: 'trv',
   ac: 'ac',
   heater: 'local',
@@ -98,10 +102,11 @@ const ROLE_NEEDS_KIND: Partial<Record<WizardDeviceRole, (typeof EMITTER_KINDS)[n
   floor_probe: 'floor',
 };
 
-const NAMES: Record<'radiators' | 'radiatorCircuit' | 'radiatorCircuitShort' | 'floor' | 'floorPump' | 'ac' | 'heater', Record<Lang, string>> = {
+export const NAMES: Record<'radiators' | 'radiatorCircuit' | 'radiatorCircuitShort' | 'radiatorPump' | 'floor' | 'floorPump' | 'ac' | 'heater', Record<Lang, string>> = {
   radiators: { uk: 'Радіатори', en: 'Radiators' },
   radiatorCircuit: { uk: 'Контур радіаторів', en: 'Radiator circuit' },
   radiatorCircuitShort: { uk: 'Радіатори', en: 'Radiators' },
+  radiatorPump: { uk: 'Насос радіаторів', en: 'Radiator pump' },
   floor: { uk: 'Тепла підлога', en: 'Floor heating' },
   floorPump: { uk: 'Насос підлоги', en: 'Floor pump' },
   ac: { uk: 'Кондиціонер', en: 'Air conditioner' },
@@ -111,6 +116,18 @@ const NAMES: Record<'radiators' | 'radiatorCircuit' | 'radiatorCircuitShort' | '
 const FAN_PREFERENCE = ['quiet', 'silent', 'low', 'min', '1', 'auto'];
 
 type Device = CreateRoomRequest['devices'][number];
+export type CircuitChoice = CreateRoomRequest['circuits'];
+const PUMP_DOMAINS = ['switch', 'input_boolean', 'fan', 'valve', 'light'];
+
+/** The house circuit a room's radiators or floor go on: a chosen or the only existing one, or one to set up. */
+export interface CircuitPick {
+  existing: Circuit | null;
+  create: NewCircuitRequest | null;
+  /** Several circuits of the kind and none chosen; or none at all and no setup given (floor). */
+  missing: 'choose' | 'setup' | null;
+}
+
+const hasRadiators = (kinds: ReadonlySet<RoomHeatingKind>) => kinds.has('trv') || kinds.has('radiator_plain');
 
 interface TrvProbe {
   entityId: EntityId;
@@ -146,7 +163,12 @@ function band(path: string, b: unknown, issues: ApiErrorIssue[]): void {
   }
 }
 
-function supports(strategy: TrvStrategy, c: TrvCapabilities): boolean {
+/** A valve (or a number giving its opening) is a zone valve; anything switched on/off is a zone switch. */
+export function zoneKind(entityId: EntityId): EmitterDevice['kind'] {
+  return ['valve', 'number', 'input_number'].includes(domainOf(entityId)) ? 'zone_valve' : 'zone_switch';
+}
+
+export function supports(strategy: TrvStrategy, c: TrvCapabilities): boolean {
   switch (strategy) {
     case 'external':
       return c.externalSensor;
@@ -229,6 +251,8 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
       if (!(EMITTER_KINDS as readonly string[]).includes(k)) issues.push({ path: `emitterKinds.${i}`, code: 'enum', params: { values: EMITTER_KINDS.join('|') } });
     });
     if (!(DEMAND_POLICIES as readonly unknown[]).includes(d.demandPolicy)) issues.push({ path: 'demandPolicy', code: 'enum', params: { values: DEMAND_POLICIES.join('|') } });
+    // ordinary radiators have nothing of their own to open: the room has to be allowed to start the boiler
+    else if (d.demandPolicy === 'never' && kinds.includes('radiator_plain') && !kinds.includes('trv')) issues.push({ path: 'demandPolicy', code: 'needs_call', params: { kind: 'radiator_plain' } });
     return issues;
   }
 
@@ -275,33 +299,78 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
     // a room needs a temperature: a sensor, or TRVs whose own sensors stand in until one is added
     if (!has('temperature') && !has('temp_humidity') && !has('trv')) issues.push({ path: 'devices', code: 'needs_temperature' });
 
-    const c = d.circuits;
-    if (c?.radiatorCircuitId) {
-      const rc = cfg.circuits.find((x) => x.id === c.radiatorCircuitId);
-      if (!rc) issues.push({ path: 'circuits.radiatorCircuitId', code: 'not_found' });
-      else if (!rc.capabilities.heat) issues.push({ path: 'circuits.radiatorCircuitId', code: 'unsupported' });
-    }
-    if (kinds.has('floor')) {
-      if (c?.floorCircuitId) {
-        if (!cfg.circuits.some((x) => x.id === c.floorCircuitId)) issues.push({ path: 'circuits.floorCircuitId', code: 'not_found' });
-      } else if (c?.newFloorCircuit) {
-        const n = c.newFloorCircuit;
-        const name = typeof n.name === 'string' ? n.name.trim() : '';
-        if (!name || name.length > 40) issues.push({ path: 'circuits.newFloorCircuit.name', code: 'length', params: { min: 1, max: 40 } });
-        if (typeof n.pumpEntityId !== 'string' || !['switch', 'input_boolean', 'fan', 'valve', 'light'].includes(domainOf(n.pumpEntityId))) {
-          issues.push({ path: 'circuits.newFloorCircuit.pumpEntityId', code: 'domain', params: { expected: 'switch|input_boolean|fan|valve|light' } });
-        } else if (cfg.pumps.some((p) => p.entityId === n.pumpEntityId)) issues.push({ path: 'circuits.newFloorCircuit.pumpEntityId', code: 'unique' });
-        else if (this.ha.connected && !this.exists(n.pumpEntityId)) issues.push({ path: 'circuits.newFloorCircuit.pumpEntityId', code: 'not_found' });
-        (Array.isArray(n.sourceIds) ? n.sourceIds : []).forEach((sid, i) => {
-          const s = cfg.sources.find((x) => x.id === sid);
-          if (!s) issues.push({ path: `circuits.newFloorCircuit.sourceIds.${i}`, code: 'not_found' });
-          else if (s.scope !== 'central') issues.push({ path: `circuits.newFloorCircuit.sourceIds.${i}`, code: 'scope' });
-        });
-      } else {
-        issues.push({ path: 'circuits.floorCircuitId', code: 'required' });
+    issues.push(...this.circuitIssues(cfg, kinds, d.circuits, devices));
+    return issues;
+  }
+
+  /**
+   * The house circuits the room joins: a chosen one, the only one of its kind, or one set up here once.
+   * Ordinary radiators need a heat source to switch; a zone valve needs a zoned floor circuit.
+   */
+  circuitIssues(cfg: EngineConfig, kinds: ReadonlySet<RoomHeatingKind>, c: Partial<CircuitChoice> | undefined, devices: readonly Device[], prefix = 'circuits.'): ApiErrorIssue[] {
+    const issues: ApiErrorIssue[] = [];
+    if (hasRadiators(kinds)) {
+      const pick = this.pickCircuit(cfg, 'radiators', c?.radiatorCircuitId ?? null, c?.newRadiatorCircuit ?? null);
+      if (c?.radiatorCircuitId && !pick.existing) issues.push({ path: `${prefix}radiatorCircuitId`, code: 'not_found' });
+      else if (pick.existing && !pick.existing.capabilities.heat) issues.push({ path: `${prefix}radiatorCircuitId`, code: 'unsupported' });
+      else if (pick.missing === 'choose') issues.push({ path: `${prefix}radiatorCircuitId`, code: 'required', params: { reason: 'choose' } });
+      if (pick.create) issues.push(...this.newCircuitIssues(cfg, pick.create, `${prefix}newRadiatorCircuit`));
+      // ordinary radiators heat only through the boiler or heat pump the room switches on
+      if (kinds.has('radiator_plain') && !kinds.has('trv') && !pick.missing) {
+        const feeds = pick.existing ? pick.existing.sourceIds : pick.create?.sourceIds.length ? pick.create.sourceIds : this.centralHeat(cfg).map((x) => x.id);
+        if (!feeds.some((id) => cfg.sources.find((x) => x.id === id)?.capabilities.heat)) issues.push({ path: `${prefix}radiatorCircuitId`, code: 'no_heat_source' });
       }
     }
+    const zones = devices.map((x, i) => ({ x, i })).filter(({ x }) => x?.role === 'floor_zone');
+    if (kinds.has('floor')) {
+      const pick = this.pickCircuit(cfg, 'floor', c?.floorCircuitId ?? null, c?.newFloorCircuit ?? null);
+      if (c?.floorCircuitId && !pick.existing) issues.push({ path: `${prefix}floorCircuitId`, code: 'not_found' });
+      else if (pick.missing) issues.push({ path: `${prefix}floorCircuitId`, code: 'required', params: { reason: pick.missing } });
+      if (pick.create) issues.push(...this.newCircuitIssues(cfg, pick.create, `${prefix}newFloorCircuit`));
+      const mode = pick.existing?.mode ?? pick.create?.mode ?? circuitModeDefaults('floor').mode;
+      // the whole floor runs at once: a valve of one room would only fight the pump
+      if (!pick.missing && mode !== 'zoned') for (const { i } of zones) issues.push({ path: `devices.${i}.role`, code: 'circuit_not_zoned', params: { circuitId: pick.existing?.id ?? '' } });
+    }
     return issues;
+  }
+
+  /** What `chosenId` / `create` mean for a room joining a circuit of `kind`. */
+  pickCircuit(cfg: EngineConfig, kind: 'radiators' | 'floor', chosenId: Id | null, create: NewCircuitRequest | null): CircuitPick {
+    if (chosenId) return { existing: cfg.circuits.find((x) => x.id === chosenId) ?? null, create: null, missing: null };
+    if (create) return { existing: null, create, missing: null };
+    const same = cfg.circuits.filter((x) => x.kind === kind);
+    if (same.length === 1) return { existing: same[0], create: null, missing: null };
+    // 0.1.0 made a floor circuit per room: with several the room has to say which (radiators take the first)
+    if (same.length > 1) return kind === 'radiators' ? { existing: same[0], create: null, missing: null } : { existing: null, create: null, missing: 'choose' };
+    // radiators get a circuit fed by the central heat sources; a floor circuit is set up by the user once
+    if (kind === 'radiators') return { existing: null, create: { name: '', pumpEntityId: null, sourceIds: [] }, missing: null };
+    return { existing: null, create: null, missing: 'setup' };
+  }
+
+  private newCircuitIssues(cfg: EngineConfig, n: NewCircuitRequest, path: string): ApiErrorIssue[] {
+    const issues: ApiErrorIssue[] = [];
+    const name = typeof n.name === 'string' ? n.name.trim() : '';
+    // an empty name takes the default («Тепла підлога», «Контур радіаторів»)
+    if (name.length > 40) issues.push({ path: `${path}.name`, code: 'length', params: { min: 0, max: 40 } });
+    if (n.pumpEntityId !== null && n.pumpEntityId !== undefined) {
+      if (typeof n.pumpEntityId !== 'string' || !PUMP_DOMAINS.includes(domainOf(n.pumpEntityId))) {
+        issues.push({ path: `${path}.pumpEntityId`, code: 'domain', params: { expected: PUMP_DOMAINS.join('|') } });
+      } else {
+        const other = cfg.pumps.find((p) => p.entityId === n.pumpEntityId);
+        if (other) issues.push({ path: `${path}.pumpEntityId`, code: 'unique', params: { pump: other.name, circuitId: other.circuitId ?? '' } });
+        else if (this.ha.connected && !this.exists(n.pumpEntityId)) issues.push({ path: `${path}.pumpEntityId`, code: 'not_found' });
+      }
+    }
+    (Array.isArray(n.sourceIds) ? n.sourceIds : []).forEach((sid, i) => {
+      const src = cfg.sources.find((x) => x.id === sid);
+      if (!src) issues.push({ path: `${path}.sourceIds.${i}`, code: 'not_found' });
+      else if (src.scope !== 'central') issues.push({ path: `${path}.sourceIds.${i}`, code: 'scope' });
+    });
+    return issues;
+  }
+
+  centralHeat(cfg: EngineConfig): SourceConfig[] {
+    return cfg.sources.filter((x) => x.scope === 'central' && x.capabilities.heat);
   }
 
   private stepControlIssues(d: Partial<CreateRoomRequest>): ApiErrorIssue[] {
@@ -383,27 +452,25 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
       const heatElsewhere = kinds.has('trv') || kinds.has('floor') || kinds.has('local');
       let order = 0;
 
-      if (kinds.has('trv')) {
-        const circuitId = await this.radiatorCircuit(tx, cfg, req, actor);
-        const emitter = await tx.create('emitters', { ...DEFAULT_EMITTER(), roomId: r.id, kind: 'radiator', name: NAMES.radiators[lang], order: order++, circuitId, roles: { heat: 'primary', cool: null } }, actor);
-        let n = 0;
-        for (const dev of of('trv')) {
-          const probe = probes.find((p) => p.entityId === dev.entityId);
-          await tx.create('emitterDevices', this.deviceRow(r.id, emitter.id, 'trv', dev.entityId, dev.name, probe ?? null, n++), actor);
+      if (hasRadiators(kinds)) {
+        // with heads Klimo opens each radiator; without, the room switches its circuit's pump and source
+        const pick = this.pickCircuit(cfg, 'radiators', req.circuits?.radiatorCircuitId ?? null, req.circuits?.newRadiatorCircuit ?? null);
+        const circuit = await this.ensureCircuit(tx, cfg, 'radiators', pick, actor);
+        const emitter = await tx.create('emitters', this.emitterValue(r.id, 'radiator', circuit, order++, lang), actor);
+        if (kinds.has('trv')) {
+          let n = 0;
+          for (const dev of of('trv')) {
+            const probe = probes.find((p) => p.entityId === dev.entityId);
+            await tx.create('emitterDevices', this.deviceRow(r.id, emitter.id, 'trv', dev.entityId, dev.name, probe ?? null, n++), actor);
+          }
         }
       }
       if (kinds.has('floor')) {
-        const circuit = await this.floorCircuit(tx, cfg, req, actor, lang);
-        const emitter = await tx.create(
-          'emitters',
-          { ...DEFAULT_EMITTER(), roomId: r.id, kind: 'floor', name: NAMES.floor[lang], order: order++, circuitId: circuit.id, roles: { heat: circuit.capabilities.heat ? 'primary' : null, cool: circuit.capabilities.cool ? 'primary' : null } },
-          actor,
-        );
+        const pick = this.pickCircuit(cfg, 'floor', req.circuits?.floorCircuitId ?? null, req.circuits?.newFloorCircuit ?? null);
+        const circuit = await this.ensureCircuit(tx, cfg, 'floor', pick, actor);
+        const emitter = await tx.create('emitters', this.emitterValue(r.id, 'floor', circuit, order++, lang), actor);
         let n = 0;
-        for (const dev of of('floor_zone')) {
-          const kind = ['valve', 'number', 'input_number'].includes(domainOf(dev.entityId)) ? 'zone_valve' : 'zone_switch';
-          await tx.create('emitterDevices', this.deviceRow(r.id, emitter.id, kind, dev.entityId, dev.name, null, n++), actor);
-        }
+        for (const dev of of('floor_zone')) await tx.create('emitterDevices', this.deviceRow(r.id, emitter.id, zoneKind(dev.entityId), dev.entityId, dev.name, null, n++), actor);
       }
       if (kinds.has('ac')) {
         let n = 0;
@@ -503,6 +570,9 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
     if (this.ha.connected && !this.exists(req.entityId)) throw validationError([{ path: 'entityId', code: 'not_found' }]);
     const probe = req.kind === 'trv' ? this.probe(req.entityId) : null;
     const cfg = this.config.engineConfig();
+    const circuit = cfg.circuits.find((c) => c.id === emitter.circuitId);
+    // a loop that runs as a whole has no use for one room's zone valve
+    if (req.kind !== 'trv' && circuit && circuit.mode !== 'zoned') throw validationError([{ path: 'kind', code: 'circuit_not_zoned', params: { circuitId: circuit.id } }]);
     const siblingsCount = (cfg.devicesByEmitter[emitter.id] ?? []).length;
 
     await this.config.transaction(async (tx) => {
@@ -514,6 +584,8 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
       const caps = [...this.roomTrvs(cfg, room.id).map((d) => d.capabilities ?? DEFAULT_TRV_CAPABILITIES), probe?.capabilities ?? DEFAULT_TRV_CAPABILITIES];
       if (!caps.every((c) => supports(room.trv.strategy, c))) await tx.update('rooms', room.id, { trv: { ...room.trv, strategy: trvStrategyFor(caps) } }, actor);
     });
+    const name = req.name?.trim() || this.friendlyName(req.entityId);
+    await this.support.record({ code: 'room.device_added', category: 'rooms', tone: 'event', params: { role: req.kind === 'trv' ? 'trv' : 'floor_zone', name, entityId: req.entityId, by: actorName(actor) }, roomId: room.id, entityIds: [req.entityId] }, { dedup: false });
     await this.access.runNow('room.device_added');
     return this.detail(room.id);
   }
@@ -530,7 +602,7 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
 
   /* ── create helpers ──────────────────────────────────────────────────────────────────────── */
 
-  private takenBy(cfg: EngineConfig, dev: Device): { roomId?: Id; source?: SourceConfig } | null {
+  takenBy(cfg: EngineConfig, dev: Device): { roomId?: Id; source?: SourceConfig } | null {
     const id = dev.entityId;
     const source = cfg.sources.find((x) => (x.adapter.type === 'climate' && x.adapter.climate === id) || (x.adapter.type === 'relay' && x.adapter.command === id));
     switch (dev.role) {
@@ -562,7 +634,7 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
   }
 
   /** Rows that leave their old room when the user chose «перенести». */
-  private async moveAway(tx: IConfigStore, cfg: EngineConfig, devices: Device[], actor: Actor): Promise<void> {
+  async moveAway(tx: IConfigStore, cfg: EngineConfig, devices: Device[], actor: Actor): Promise<void> {
     for (const dev of devices) {
       if (!dev.move) continue;
       if (dev.role === 'trv' || dev.role === 'floor_zone') {
@@ -578,51 +650,59 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
     }
   }
 
-  /** The chosen radiator circuit, the first radiator circuit, or a new one fed by the central heat sources. */
-  private async radiatorCircuit(tx: IConfigStore, cfg: EngineConfig, req: CreateRoomRequest, actor: Actor): Promise<Id> {
-    if (req.circuits?.radiatorCircuitId) return req.circuits.radiatorCircuitId;
-    const existing = cfg.circuits.find((c) => c.kind === 'radiators');
-    if (existing) return existing.id;
-    const lang = cfg.settings.notificationLanguage;
-    const circuit = await tx.create(
-      'circuits',
-      {
-        ...DEFAULT_CIRCUIT(),
-        name: NAMES.radiatorCircuit[lang],
-        shortName: NAMES.radiatorCircuitShort[lang],
-        kind: 'radiators',
-        sourceIds: cfg.sources.filter((s) => s.scope === 'central' && s.capabilities.heat).map((s) => s.id),
-        capabilities: { heat: true, cool: false },
-      },
-      actor,
-    );
-    return circuit.id;
+  /** An emitter of the room on a house circuit; floors also cool when their circuit does. */
+  emitterValue(roomId: Id, kind: 'radiator' | 'floor', circuit: Circuit, order: number, lang: Lang): Omit<Emitter, 'id'> {
+    const floor = kind === 'floor';
+    return {
+      ...DEFAULT_EMITTER(),
+      roomId,
+      kind,
+      name: floor ? NAMES.floor[lang] : NAMES.radiators[lang],
+      order,
+      circuitId: circuit.id,
+      roles: { heat: circuit.capabilities.heat ? 'primary' : null, cool: floor && circuit.capabilities.cool ? 'primary' : null },
+    };
   }
 
-  private async floorCircuit(tx: IConfigStore, cfg: EngineConfig, req: CreateRoomRequest, actor: Actor, lang: Lang): Promise<Circuit> {
-    const chosen = req.circuits?.floorCircuitId ? cfg.circuits.find((c) => c.id === req.circuits.floorCircuitId) : undefined;
-    if (chosen) return chosen;
-    const n = req.circuits.newFloorCircuit;
-    if (!n) throw validationError([{ path: 'circuits.floorCircuitId', code: 'required' }]);
-    const sources = n.sourceIds.map((id) => cfg.sources.find((s) => s.id === id)).filter((s): s is SourceConfig => !!s);
+  /**
+   * The picked circuit, or the new one set up once for the whole house: fed by the chosen central sources
+   * (all heat sources when none were chosen), with its pump following the circuit's mode and run-on.
+   */
+  async ensureCircuit(tx: IConfigStore, cfg: EngineConfig, kind: 'radiators' | 'floor', pick: CircuitPick, actor: Actor): Promise<Circuit> {
+    if (pick.existing) return pick.existing;
+    const n = pick.create;
+    if (!n) throw validationError([{ path: kind === 'floor' ? 'circuits.floorCircuitId' : 'circuits.radiatorCircuitId', code: 'required' }]);
+    const lang = cfg.settings.notificationLanguage;
+    const floor = kind === 'floor';
+    const sources = n.sourceIds.length ? n.sourceIds.map((id) => cfg.sources.find((x) => x.id === id)).filter((x): x is SourceConfig => !!x) : this.centralHeat(cfg);
+    const defaults = circuitModeDefaults(kind);
+    const name = n.name?.trim() || (floor ? NAMES.floor[lang] : NAMES.radiatorCircuit[lang]);
     const circuit = await tx.create(
       'circuits',
       {
         ...DEFAULT_CIRCUIT(),
-        name: n.name.trim(),
-        shortName: n.name.trim().slice(0, 24),
-        kind: 'floor',
-        sourceIds: sources.map((s) => s.id),
-        capabilities: { heat: true, cool: sources.some((s) => s.capabilities.cool) },
+        name: name.slice(0, 40),
+        shortName: n.name?.trim() || floor ? name.slice(0, 24) : NAMES.radiatorCircuitShort[lang],
+        kind,
+        sourceIds: sources.map((x) => x.id),
+        // radiators never carry chilled water; a floor can when a source cools
+        capabilities: { heat: true, cool: floor && sources.some((x) => x.capabilities.cool) },
+        mode: n.mode ?? defaults.mode,
+        bypass: n.bypass ?? false,
       },
       actor,
     );
-    // floor heating follows the source (the user's «насос з котлом») with a longer run-on
-    await tx.create('pumps', { ...DEFAULT_PUMP(), name: NAMES.floorPump[lang], circuitId: circuit.id, entityId: n.pumpEntityId, rule: 'source', runOnHeatMin: 10 }, actor);
+    if (n.pumpEntityId) {
+      await tx.create(
+        'pumps',
+        { ...DEFAULT_PUMP(), name: floor ? NAMES.floorPump[lang] : NAMES.radiatorPump[lang], circuitId: circuit.id, entityId: n.pumpEntityId, runOnHeatMin: n.runOnMin ?? defaults.runOnHeatMin },
+        actor,
+      );
+    }
     return circuit;
   }
 
-  private acSource(roomId: Id, dev: Device, lang: Lang, index: number): Omit<SourceConfig, 'id'> {
+  acSource(roomId: Id, dev: Device, lang: Lang, index: number): Omit<SourceConfig, 'id'> {
     const detail = this.search.detail(dev.entityId);
     const st = this.ha.getState(dev.entityId);
     const modes = detail?.climate?.hvacModes ?? (Array.isArray(st?.attributes.hvac_modes) ? (st?.attributes.hvac_modes as string[]) : []);
@@ -645,7 +725,7 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
     return this.sourceValue('ac', roomId, name, caps, adapter);
   }
 
-  private heaterSource(roomId: Id, dev: Device, lang: Lang, index: number): Omit<SourceConfig, 'id'> {
+  heaterSource(roomId: Id, dev: Device, lang: Lang, index: number): Omit<SourceConfig, 'id'> {
     const power = this.search.detail(dev.entityId)?.siblings.find((s) => s.role === 'power')?.entityId ?? null;
     const name = dev.name?.trim() || (index ? `${NAMES.heater[lang]} ${index + 1}` : NAMES.heater[lang]);
     const caps = { heat: true, cool: false, dry: false, fan: false };
@@ -668,7 +748,7 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
     return { kind, name: name.slice(0, 40), scope: 'room', roomId, enabled: true, capabilities, adapter } as Omit<SourceConfig, 'id'>;
   }
 
-  private deviceRow(roomId: Id, emitterId: Id, kind: EmitterDevice['kind'], entityId: EntityId, name: string | undefined, probe: TrvProbe | null, order: number): Omit<EmitterDevice, 'id'> {
+  deviceRow(roomId: Id, emitterId: Id, kind: EmitterDevice['kind'], entityId: EntityId, name: string | undefined, probe: TrvProbe | null, order: number): Omit<EmitterDevice, 'id'> {
     const dev = this.search.deviceOf(entityId);
     return {
       ...DEFAULT_EMITTER_DEVICE(),
@@ -687,7 +767,7 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
     };
   }
 
-  private sensorRows(roomId: Id, devices: Device[]): Omit<RoomSensor, 'id'>[] {
+  sensorRows(roomId: Id, devices: Device[]): Omit<RoomSensor, 'id'>[] {
     const rows: Omit<RoomSensor, 'id'>[] = [];
     const order: Partial<Record<RoomSensor['role'], number>> = {};
     const add = (entityId: EntityId, role: RoomSensor['role'], name: string | undefined, contactKind: RoomSensor['contactKind'] = null) => {
@@ -716,7 +796,7 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
   }
 
   /** A combined Zigbee sensor yields two rows: its temperature and its humidity entity. */
-  private sensorRolesOf(dev: Device): { entityId: EntityId; role: RoomSensor['role'] }[] {
+  sensorRolesOf(dev: Device): { entityId: EntityId; role: RoomSensor['role'] }[] {
     switch (dev.role) {
       case 'temperature':
       case 'humidity':
@@ -763,7 +843,7 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
   }
 
   /** What a head can do, from its HA entity and its sibling entities (Z2M exposes refine it). */
-  private probe(entityId: EntityId): TrvProbe {
+  probe(entityId: EntityId): TrvProbe {
     const detail = this.search.detail(entityId);
     const trv = detail?.trv;
     if (trv) return { entityId, capabilities: trv.capabilities, siblings: trv.siblings, strategies: trv.strategies };
@@ -941,7 +1021,7 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
    * setpoint, internal sensor, child lock off. The engine sends it like every other write (so nothing
    * else fights over the head) and gives up after a while — a dead head must not block a delete.
    */
-  private async release(deviceIds: Id[], room: RoomConfig): Promise<void> {
+  async release(deviceIds: Id[], room: RoomConfig): Promise<void> {
     if (!deviceIds.length) return;
     const engine = this.access.engine();
     if (!engine || !this.ha.connected) {
@@ -964,7 +1044,7 @@ export class RoomSetupService implements IRoomSetup, OnModuleDestroy {
     return d;
   }
 
-  private exists(entityId: EntityId): boolean {
+  exists(entityId: EntityId): boolean {
     if (this.ha.getState(entityId)) return true;
     try {
       return this.ha.registries().entities.some((e) => e.entity_id === entityId);

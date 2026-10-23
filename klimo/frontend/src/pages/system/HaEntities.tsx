@@ -52,7 +52,11 @@ function describe(e: ExposedEntityDto, perRoom: boolean): string {
     case 'power_used':
       return t('power used by heating and cooling');
     case 'resume_schedule':
-      return perRoom ? t('back to the schedule in the room') : t('back to the schedule');
+      return perRoom ? t('back to the schedule in the room') : t('back to the schedule for the whole house');
+    case 'control':
+      return t('room control: schedule, manual or off');
+    case 'schedule':
+      return t('the house follows the schedule (off = paused)');
     case 'resync':
       return t('send the targets to every device again');
     case 'source':
@@ -80,7 +84,9 @@ function pattern(ids: readonly string[]): string {
 }
 
 /** The lines shown first, in this order; the rest opens on request. */
-const FIRST = ['season_mode', 'house_profile', 'active_source', 'heat_demand', 'cool_demand', 'climate', 'problem'];
+const FIRST = ['season_mode', 'house_profile', 'schedule', 'resume_schedule', 'active_source', 'heat_demand', 'cool_demand', 'climate', 'control', 'problem'];
+/** Per-room lines that are shown first too: the ways to control a room. */
+const ROOM_FIRST = new Set(['climate', 'control', 'resume_schedule']);
 
 export function HaEntitiesSection() {
   const [all, setAll] = useState(false);
@@ -95,7 +101,7 @@ export function HaEntitiesSection() {
   const rank = (g: ExposedEntityDto[]) => {
     const i = FIRST.indexOf(g[0].role);
     // the room-level demand lines come after the house-level ones of the same role
-    return i >= 0 && !(g[0].roomId && g[0].role !== 'climate') ? i : FIRST.length + (g[0].roomId ? 1 : 0);
+    return i >= 0 && !(g[0].roomId && !ROOM_FIRST.has(g[0].role)) ? i : FIRST.length + (g[0].roomId ? 1 : 0);
   };
   const sorted = [...groups.values()].sort((a, b) => rank(a) - rank(b));
   const shown = all ? sorted : sorted.filter((g) => rank(g) < FIRST.length);

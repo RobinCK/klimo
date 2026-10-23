@@ -4,6 +4,7 @@ import { haSection } from './HaEntities';
 import { profileTargetsSection } from './ProfileTargets';
 import { notifySection, smartSection } from './Smart';
 import { sensorsSection } from './Sensors';
+import { setupSection } from './Setup';
 import { sourcesSection } from './Sources';
 import { toleranceSection } from './Tolerance';
 import { trvsSection } from './Trvs';
@@ -13,6 +14,9 @@ import { windowsSection } from './Windows';
 export { DangerZone } from './Danger';
 export type { SectionDef, SectionProps } from './types';
 
+/** Desktop, full width above the columns: the room as the wizard set it up, to edit. */
+export const SETUP_SECTION: SectionDef = setupSection;
+
 /** Desktop, left column: what serves the room and how it measures and reacts. */
 export const LEFT_SECTIONS: SectionDef[] = [sourcesSection, sensorsSection, toleranceSection, windowsSection, profileTargetsSection];
 
@@ -21,6 +25,7 @@ export const RIGHT_SECTIONS: SectionDef[] = [trvsSection, humiditySection, smart
 
 /** Phone accordions, most used first. */
 export const PHONE_SECTIONS: SectionDef[] = [
+  setupSection,
   sensorsSection,
   sourcesSection,
   toleranceSection,

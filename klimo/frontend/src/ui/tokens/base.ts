@@ -49,10 +49,22 @@ export type BaseTone = (typeof BASE_TONES)[number];
 /** Schema node tones that reuse a base tone (drawn dashed while not running). */
 export const TONE_ALIASES = { wait: 'heat', idle: 'off', mixed: 'hold' } as const;
 
+/**
+ * Chart colours of what a source used. Gas takes the one hue no tone or state means here (plum),
+ * so a gas bar never reads as heat, cold or a warning; electricity stays a quiet ink. Heat
+ * delivered is the heat tone. Checked for band, chroma, contrast and colour-blind distance
+ * against every tone line of the scheme.
+ */
+export interface SeriesTokens {
+  gas: string;
+  electricity: string;
+}
+
 export interface SchemeBase {
   neutrals: NeutralTokens;
   action: { bg: string; fg: string };
   tones: Record<BaseTone, ToneTokens>;
+  series: SeriesTokens;
 }
 
 export interface ProfileColor {
@@ -96,6 +108,7 @@ export const BASE_DARK: SchemeBase = {
     ok: { bg: 'rgba(76,195,138,.13)', fg: '#8FE0B5', line: '#4CC38A', solid: '#4CC38A', ink: '#04201A' },
     event: { bg: 'rgba(155,135,245,.12)', fg: '#CFC5FF', line: '#9B87F5', solid: '#9B87F5', ink: '#140F2E' },
   },
+  series: { gas: '#C84FA6', electricity: '#B3BAC3' },
 };
 
 export const BASE_LIGHT: SchemeBase = {
@@ -134,6 +147,7 @@ export const BASE_LIGHT: SchemeBase = {
     ok: { bg: '#DDF3E7', fg: '#1A7149', line: '#1E8A57', solid: '#1A7149', ink: '#FFFFFF' },
     event: { bg: '#EEEAFE', fg: '#5B47C9', line: '#7C68E6', solid: '#5B47C9', ink: '#FFFFFF' },
   },
+  series: { gas: '#A93A88', electricity: '#454D57' },
 };
 
 /** Categorical profile colours (never used for state). The first six are the seeded profiles. */

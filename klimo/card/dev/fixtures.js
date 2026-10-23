@@ -215,6 +215,7 @@
         verb: 'heat', act: 3, cap: 7, tot: 7, att: 5, head: 'Гріють 3 з 7 кімнат', sub: 'Тепловий насос гріє з {t}', at: since,
         attText: '5 потребують уваги', hum: 51,
         profile: { id: 'p_home', layer: 'house_schedule', until: slot, next: 'p_night', t: 'за розкладом до {t} → Ніч' },
+        ctl: 'schedule',
         tiles: [
           { key: 'source', label: 'Джерело', value: 'Тепловий насос гріє', sub: 'з {t} · подача 38° · 2.1 кВт · COP 3.1', tone: 'heat', at: since, wide: true },
           { key: 'pumps', label: 'Насоси', value: 'Працюють', sub: 'радіатори й підлога', tone: 'hold', at: null, wide: false },
@@ -257,6 +258,7 @@
         verb: 'cool', act: 3, cap: 5, tot: 7, att: 2, head: 'Охолоджують 3 з 5 кімнат', sub: 'Кондиціонери охолоджують з {t}', at: since,
         attText: '2 потребують уваги', hum: 55,
         profile: { id: 'p_home', layer: 'house_schedule', until: slot, next: 'p_night', t: 'за розкладом до {t} → Ніч' },
+        ctl: 'schedule',
         tiles: [
           { key: 'source', label: 'Джерела', value: '2 кондиціонери й підлога', sub: 'Вітальня, Дитяча · підлога від ТН', tone: 'cool', at: since, wide: true },
           { key: 'pumps', label: 'Насоси', value: 'Працює', sub: 'тепла підлога', tone: 'cool', at: null, wide: false },
@@ -327,6 +329,15 @@
     };
   }
 
+  /** The room's control mode the way Klimo derives it from the active change. */
+  function ctlOf(room) {
+    const o = room.th.override;
+    if (!o) return 'schedule';
+    const held = o.duration === 'manual' || o.duration === 'none' || o.until == null;
+    if (!held) return 'temporary';
+    return o.kind === 'room_off' ? 'off' : 'manual';
+  }
+
   function cardAttrs(room, hubPart) {
     return {
       kv: 'klimo_room',
@@ -354,6 +365,7 @@
       why: room.why,
       th: thermostat(room, hubPart),
       sync: room.sync || { reqId: null, phase: 'idle', acked: room.th.devices.trv || room.th.devices.ac, total: room.th.devices.trv || room.th.devices.ac, attempt: 0, maxAttempts: 3, valueC: room.tg, what: room.th.devices.ac ? 'ac' : room.th.devices.trv ? 'trv' : 'none' },
+      ctl: ctlOf(room),
     };
   }
 
@@ -609,6 +621,37 @@
           room.th = { ...room.th, t: base.th.t ?? base.tg, override: null };
           return reply(cmd, true);
         }
+        case 'room.set_control': {
+          const base = def.rooms().find((r) => r.id === room.id);
+          if (cmd.mode === 'schedule') {
+            Object.assign(room, { st: base.st, src: base.src, tg: base.tg, stg: base.stg, sub: base.sub, at: base.at });
+            room.th = { ...room.th, t: base.th.t ?? base.tg, override: null };
+          } else if (cmd.mode === 'manual') {
+            const value = cmd.heatC ?? room.th.t ?? room.tg;
+            Object.assign(room, { st: base.st === 'off' ? 'hold' : room.st, src: { k: 'manual', t: `Вручну ${deg(value)}`, at: null }, tg: value });
+            room.th = { ...room.th, t: value, override: { kind: 'room_target', duration: 'manual', until: null, revertToken: null, revertUntil: null, valueC: value, lo: null, hi: null } };
+          } else {
+            Object.assign(room, { st: 'off', src: { k: 'off', t: 'Вимкнено, поки не ввімкнете', at: null } });
+            room.th = { ...room.th, override: { kind: 'room_off', duration: 'none', until: null, revertToken: null, revertUntil: null, valueC: null, lo: null, hi: null } };
+          }
+          return reply(cmd, true);
+        }
+        case 'house.set_control':
+          if (cmd.mode === 'manual') {
+            world.hub.house.ctl = 'manual';
+            world.hub.house.profile = { ...world.hub.house.profile, layer: 'house_manual', until: null, next: null, t: 'вручну · розклад на паузі' };
+          } else {
+            world.hub.house.ctl = 'schedule';
+            world.hub.house.profile = def.hub().house.profile;
+            // every room's own change ends; a room switched off stays off
+            for (const r of world.rooms) {
+              if (ctlOf(r) === 'off' || !r.th.override) continue;
+              const base = def.rooms().find((x) => x.id === r.id);
+              Object.assign(r, { src: base.src, tg: base.tg, stg: base.stg, sub: base.sub, at: base.at });
+              r.th = { ...r.th, t: base.th.t ?? base.tg, override: null };
+            }
+          }
+          return reply(cmd, true);
         case 'room.boost': {
           const value = round1((room.th.t ?? room.tg) + (cmd.deltaC ?? 1));
           const until = fromNow(cmd.minutes ?? 30);

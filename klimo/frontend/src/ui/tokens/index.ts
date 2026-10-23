@@ -14,6 +14,7 @@ export {
   type ProfileColor,
   type RadiusName,
   type SchemeBase,
+  type SeriesTokens,
   type SpaceName,
   type ToneTokens,
   type TypeName,

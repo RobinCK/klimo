@@ -6,9 +6,10 @@
 import type { SourceDto, SourceState, Tone } from '@api/model';
 import { api } from '@api/endpoints';
 import { useLiveEvent, useResource } from '@data';
-import { InboxBell, paths } from '@app';
+import { InboxBell, navigate, paths } from '@app';
 import { AutoGrid, LoopTile, MobileTopBar, Row, RowList, Section, SourceRow, Stack } from '@ui';
 import { fmtClock, fmtTemp, renderJournal, renderReason, t } from '@i18n';
+import { CircuitsSection } from './Circuits';
 import { HouseModeSection } from './HouseMode';
 import { EnergyLine, whenLine } from './Schema';
 import { isRunning, SOURCE_ICON, sourceChip, sourceMeta, type SystemData } from './shared';
@@ -83,6 +84,7 @@ export function PhoneStatus({ d }: { d: SystemData }) {
 
       {circuits.length ? (
         <Section variant="plain" level={3} overline={t('Circuits & pumps')}>
+          {/* a tile opens the circuits with their modes, pumps and rooms */}
           <AutoGrid min={150} columns={2} gap="sm">
             {circuits.map((c) => {
               const live = d.plant?.circuits.find((x) => x.circuitId === c.config.id) ?? c.state;
@@ -101,11 +103,23 @@ export function PhoneStatus({ d }: { d: SystemData }) {
                   state={live.pumpOn ? t('Pump running') : t('Pump stopped')}
                   sub={sub}
                   on={live.pumpOn}
+                  to={paths.system({ section: 'circuits' })}
                 />
               );
             })}
           </AutoGrid>
         </Section>
+      ) : d.circuits.settled && d.canEdit ? (
+        <RowList ariaLabel={t('Circuits & pumps')}>
+          <SourceRow
+            icon="pumps"
+            name={t('Circuits & pumps')}
+            meta={t('No circuits yet')}
+            chip={{ tone: 'hold', label: t('Open') }}
+            on={false}
+            to={paths.system({ section: 'circuits' })}
+          />
+        </RowList>
       ) : null}
 
       {energy ? <EnergyLine energy={energy} ctx={d.ctx} compact /> : null}
@@ -170,6 +184,16 @@ export function PhoneStatus({ d }: { d: SystemData }) {
           to={paths.settings()}
         />
       </RowList>
+    </Stack>
+  );
+}
+
+/** The circuits on a phone: the same cards as on the system page, under a bar that leads back. */
+export function PhoneCircuits({ d }: { d: SystemData }) {
+  return (
+    <Stack gap="lg">
+      <MobileTopBar title={t('Circuits & pumps')} onBack={() => navigate(paths.system())} />
+      <CircuitsSection d={d} phone />
     </Stack>
   );
 }

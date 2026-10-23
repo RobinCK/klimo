@@ -41,8 +41,8 @@
  *   drag: knob_only                       # knob_only | off
  *   send_delay: 3                         # 0–10 s
  *   undo_seconds: 8                       # 0–30 s
- *   default_duration: slot                # slot | 1h | 3h | forever
- *   durations: [slot, 1h, 3h, forever]
+ *   default_duration: slot                # slot | 1h | 3h | manual | forever
+ *   durations: [slot, 1h, 3h, manual, forever]   # manual: until the schedule is resumed
  *   quick_actions: [boost, airing]
  *   show_schedule: true
  *   show_meta: true
@@ -324,7 +324,18 @@ const STRINGS = {
     airing: 'Провітрити {m} хв',
     airingStop: 'Зупинити провітрювання',
     resume: 'Повернути розклад',
+    resumeHouse: 'Повернути розклад для всього дому',
+    houseResumed: 'Увесь дім знову за розкладом',
     turnOn: 'Увімкнути кімнату',
+    ctl: 'Керування кімнатою',
+    ctl_schedule: 'За розкладом',
+    ctl_manual: 'Вручну',
+    ctl_off: 'Вимкнено',
+    manualHold: 'Вручну · розклад не змінює ціль',
+    manualNote: 'Вручну, поки не повернете розклад',
+    manualHeld: 'Вручну {v}',
+    appliedManual: 'Ціль {v} · вручну',
+    offHold: 'Вимкнено · захист від морозу лишається',
     locked: 'Лише перегляд',
     minus: 'Зменшити ціль на {n}°',
     plus: 'Збільшити ціль на {n}°',
@@ -371,6 +382,7 @@ const STRINGS = {
     dur_3h: '3 год',
     dur_morning: 'До ранку',
     dur_forever: 'Постійно',
+    dur_manual: 'Поки не поверну розклад',
     dur_none: 'Без обмеження',
 
     seasonAuto: 'Авто · {s}',
@@ -541,8 +553,19 @@ const STRINGS = {
     boost: '{s}{n}° for {m} min',
     airing: 'Air for {m} min',
     airingStop: 'Stop airing',
-    resume: 'Back to schedule',
+    resume: 'Resume schedule',
+    resumeHouse: 'Resume schedule for the whole house',
+    houseResumed: 'The whole house follows the schedule again',
     turnOn: 'Turn the room on',
+    ctl: 'Room control',
+    ctl_schedule: 'Schedule',
+    ctl_manual: 'Manual',
+    ctl_off: 'Off',
+    manualHold: 'Manual · not changed by the schedule',
+    manualNote: 'Manual until you resume the schedule',
+    manualHeld: 'Manual {v}',
+    appliedManual: 'Target {v} · manual',
+    offHold: 'Off · frost protection stays',
     locked: 'View only',
     minus: 'Lower the target by {n}°',
     plus: 'Raise the target by {n}°',
@@ -589,6 +612,7 @@ const STRINGS = {
     dur_3h: '3 h',
     dur_morning: 'Until morning',
     dur_forever: 'Permanently',
+    dur_manual: 'Until I resume the schedule',
     dur_none: 'No limit',
 
     seasonAuto: 'Auto · {s}',
@@ -1189,7 +1213,7 @@ function sourceKind(kind, cooling) {
   return k;
 }
 
-const DEVICE_ICONS = { trv: 'radiator', floor: 'floor', trvfloor: 'floor', ac: 'ac', heater: 'convector', none: 'eye' };
+const DEVICE_ICONS = { trv: 'radiator', radiator: 'radiator', floor: 'floor', trvfloor: 'floor', ac: 'ac', heater: 'convector', none: 'eye' };
 
 /** Plural word forms from the dictionary ([one, few, many]). */
 function forms(lang, key) {
@@ -1464,7 +1488,7 @@ class KlimoBase extends HTMLElement {
     let lang = config.language === 'uk' || config.language === 'en' ? config.language : null;
     if (!lang) lang = hubAttrs && (hubAttrs.lang === 'uk' || hubAttrs.lang === 'en') ? hubAttrs.lang : null;
     if (!lang) {
-      const ha = String((hass.locale && hass.locale.language) || hass.language || 'uk');
+      const ha = String((hass.locale && hass.locale.language) || hass.language || 'en');
       lang = ha.startsWith('uk') ? 'uk' : 'en';
     }
     const tz = (hubAttrs && hubAttrs.tz) || (hass.config && hass.config.time_zone) || undefined;
@@ -2183,6 +2207,16 @@ ha-card.embedded .th .name, ha-card.embedded .th .open { display: none; }
   background: transparent; font-size: 13px; font-weight: 500; cursor: pointer; }
 .qa[disabled] { opacity: .5; cursor: default; }
 @media (hover: hover) { .qa:not([disabled]):hover { background: var(--k-s2); } }
+.ctl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; padding: 3px; border-radius: 12px; background: var(--k-s2); }
+.cb { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; height: 36px; padding: 0 8px; border: 0;
+  border-radius: 9px; background: transparent; color: var(--k-t2); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.cb[aria-checked='true'] { background: var(--k-t1); color: var(--k-s1); }
+.cb[data-pending] { box-shadow: inset 0 0 0 1.5px var(--k-t2); }
+.cb[disabled] { cursor: default; }
+.cb[disabled]:not([aria-checked='true']) { opacity: .5; }
+@media (hover: hover) { .cb:not([disabled]):not([aria-checked='true']):hover { background: var(--k-s3); color: var(--k-t1); } }
+@container (max-width: 420px) { .cb svg { display: none; } }
+.mnote { flex: none; display: inline-flex; align-items: center; gap: 6px; max-width: 55%; font-size: 12px; font-weight: 600; color: var(--k-t2); }
 .pend { display: flex; align-items: center; gap: 10px; min-height: 38px; }
 .selw { position: relative; flex: none; display: inline-flex; }
 .selw select { height: 38px; max-width: 150px; padding: 0 30px 0 12px; border-radius: 10px; border: 1px solid var(--k-bd2); background: var(--k-s2);
@@ -2206,7 +2240,9 @@ ha-card.embedded .th .name, ha-card.embedded .th .open { display: none; }
 const STEPPER_MINUS = '<svg class="i" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>';
 const STEPPER_PLUS = '<svg class="i" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
 
-const TARGET_DURATIONS = ['slot', '1h', '2h', '3h', 'morning', 'forever'];
+const TARGET_DURATIONS = ['slot', '1h', '2h', '3h', 'morning', 'manual', 'forever'];
+/** The room's control modes a card can pick ('temporary' comes from a time-limited change). */
+const CONTROL_MODES = ['schedule', 'manual', 'off'];
 
 class KlimoThermostatCard extends KlimoBase {
   static get css() {
@@ -2232,7 +2268,7 @@ class KlimoThermostatCard extends KlimoBase {
   }
 
   _fresh(sel = 'hi') {
-    return { phase: 'view', sel, pv: null, dur: null, left: 0, drag: null, durFocus: false, applied: null, note: null, preview: null, busy: null };
+    return { phase: 'view', sel, pv: null, dur: null, left: 0, drag: null, durFocus: false, applied: null, note: null, preview: null, busy: null, ctlBusy: null };
   }
 
   _normalize(config) {
@@ -2248,7 +2284,7 @@ class KlimoThermostatCard extends KlimoBase {
     c.drag = oneOf(config, 'drag', ['knob_only', 'off'], 'knob_only');
     c.send_delay = numberIn(config, 'send_delay', 0, 10, 3);
     c.undo_seconds = numberIn(config, 'undo_seconds', 0, 30, 8);
-    c.durations = listOf(config, 'durations', TARGET_DURATIONS, ['slot', '1h', '3h', 'forever']);
+    c.durations = listOf(config, 'durations', TARGET_DURATIONS, ['slot', '1h', '3h', 'manual', 'forever']);
     if (!c.durations.length) c.durations = ['slot'];
     c.default_duration = oneOf(config, 'default_duration', TARGET_DURATIONS, 'slot');
     if (!c.durations.includes(c.default_duration)) c.default_duration = c.durations[0];
@@ -2324,6 +2360,8 @@ class KlimoThermostatCard extends KlimoBase {
     const hi = isNum(th.hi) ? th.hi : max;
     const profiles = ctx.hubAttrs && Array.isArray(ctx.hubAttrs.profiles) ? ctx.hubAttrs.profiles : [];
     const profile = profiles.find((p) => p.id === th.profileId) || null;
+    // without the card sensor the room thermostat says it: auto = schedule, off = off, heat/cool = manual
+    const ctl = a ? (typeof a.ctl === 'string' ? a.ctl : null) : climate ? (climate.state === 'auto' ? 'schedule' : climate.state === 'off' ? 'off' : 'manual') : null;
     return {
       key: r.key,
       roomId: (a && a.id) || th.roomId || (r && r.id),
@@ -2343,6 +2381,9 @@ class KlimoThermostatCard extends KlimoBase {
       stale,
       lockedByConfig,
       readOnly: lockedByConfig || th.locked || th.mode === 'none' || st === 'monitor' || st === 'error' || stale,
+      ctl,
+      // the mode can change even while the dial is locked (a room that is off has no target to turn)
+      ctlAllowed: !!ctl && !lockedByConfig && !stale && st !== 'monitor',
       profiles,
       profileName: profile ? profile.n : '',
       // what the room's own profile would ask for (the start of an edit while the room is off)
@@ -2352,7 +2393,7 @@ class KlimoThermostatCard extends KlimoBase {
 
   _structKey(ctx, m) {
     const c = this._config;
-    return [m.key, m.th.mode, m.readOnly, m.degraded, (this._keyList || []).length, c.durations.join(), c.show_schedule, c.show_meta, ctx.lang, c._embedded].join('|');
+    return [m.key, m.th.mode, m.readOnly, m.ctlAllowed, m.degraded, (this._keyList || []).length, c.durations.join(), c.show_schedule, c.show_meta, ctx.lang, c._embedded].join('|');
   }
 
   /* render ----------------------------------------------------------------------------------- */
@@ -2432,10 +2473,18 @@ class KlimoThermostatCard extends KlimoBase {
     </div>
   </div>
   <div class="info" role="status"><svg class="i infoi" width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path/></svg><span class="infot"></span></div>
+  ${
+    m.ctlAllowed
+      ? `<div class="ctl" role="radiogroup" aria-label="${esc(tr(lang, 'ctl'))}">${CONTROL_MODES.map(
+          (k) => `<button type="button" role="radio" class="cb" data-ctl="${k}">${ic(k === 'schedule' ? 'clock' : k === 'manual' ? 'hand' : 'power', 15)}<span class="ell">${esc(tr(lang, `ctl_${k}`))}</span></button>`,
+        ).join('')}</div>`
+      : ''
+  }
   <div class="hint" hidden></div>
   <div class="quick"></div>
   <div class="pend" hidden>
     <span class="selw"><select aria-label="${esc(tr(lang, 'howLong'))}">${durOptions}</select>${ic('chevronDown', 14)}</span>
+    <span class="mnote" hidden>${ic('hand', 15)}<span class="ell">${esc(tr(lang, 'manualNote'))}</span></span>
     <span class="cd"><span class="cdt ell"></span><span class="bar"><span></span></span></span>
     <button type="button" class="btn cancel">${esc(tr(lang, 'cancel'))}</button>
   </div>
@@ -2482,6 +2531,8 @@ class KlimoThermostatCard extends KlimoBase {
       infot: q('.infot'),
       hint: q('.hint'),
       quick: q('.quick'),
+      ctl: qa('.cb'),
+      mnote: q('.mnote'),
       pend: q('.pend'),
       select: q('select'),
       cdt: q('.cdt'),
@@ -2565,6 +2616,7 @@ class KlimoThermostatCard extends KlimoBase {
   _untilText(d) {
     const lang = this._c.lang;
     if (d === 'forever') return tr(lang, 'inProfile', { p: this._m.profileName });
+    if (d === 'manual') return tr(lang, 'dur_manual').toLowerCase();
     const u = this._untilOf(d);
     if (isNum(u)) return tr(lang, 'until', { t: fmtClock(u, lang, this._c.tz) });
     return d === 'slot' ? tr(lang, 'untilSlotEnd') : '';
@@ -2726,9 +2778,14 @@ class KlimoThermostatCard extends KlimoBase {
     const th = m.th;
     const out = [];
     const ov = th.override;
-    if (ov && ov.kind === 'room_off') out.push({ id: 'on', icon: 'power', label: tr(lang, 'turnOn') });
+    const ctl = m.ctl;
+    if (ctl) {
+      // the control row picks the mode; «Повернути розклад» also ends a temporary change and a boost
+      if (ctl !== 'schedule') out.push({ id: 'resume', icon: 'undo', label: tr(lang, 'resume') });
+    } else if (ov && ov.kind === 'room_off') out.push({ id: 'on', icon: 'power', label: tr(lang, 'turnOn') });
     else if (ov && (ov.kind === 'room_target' || ov.kind === 'room_boost' || ov.kind === 'room_profile')) out.push({ id: 'resume', icon: 'undo', label: tr(lang, 'resume') });
-    else if (c.quick_actions.includes('boost') && th.mode !== 'none' && m.st !== 'off') {
+    const canBoost = ctl ? ctl === 'schedule' || ctl === 'manual' : !ov;
+    if (canBoost && !(ov && ov.kind === 'room_boost') && c.quick_actions.includes('boost') && th.mode !== 'none' && m.st !== 'off') {
       const q = th.quick || {};
       const delta = Math.abs(isNum(q.boostDeltaC) ? q.boostDeltaC : 1);
       const down = th.mode === 'cool' || m.dual;
@@ -2769,7 +2826,9 @@ class KlimoThermostatCard extends KlimoBase {
       line =
         applied.dur === 'forever'
           ? { text: tr(lang, 'updatedLine', { p: m.profileName, u: this._untilText('slot') }), icon: 'clock', color: 'var(--k-t3)', text2: 'var(--k-t3)', weight: 400 }
-          : { text: tr(lang, 'manualLine', { v: this._fmtValue(applied.value), u: this._untilText(applied.dur) }), icon: 'hand', color: 'var(--k-t1)', text2: 'var(--k-t2)', weight: 500 };
+          : applied.dur === 'manual'
+            ? { text: tr(lang, 'manualHeld', { v: this._fmtValue(applied.value) }), icon: 'hand', color: 'var(--k-t1)', text2: 'var(--k-t2)', weight: 500 }
+            : { text: tr(lang, 'manualLine', { v: this._fmtValue(applied.value), u: this._untilText(applied.dur) }), icon: 'hand', color: 'var(--k-t1)', text2: 'var(--k-t2)', weight: 500 };
     } else if (m.attrs && m.attrs.src) {
       const k = sourceKind(m.attrs.src.k, th.mode === 'cool');
       line = { text: fill(m.attrs.src.t, m.attrs.src.at, lang, ctx.tz), icon: k.icon, color: k.color, text2: k.weight > 400 ? 'var(--k-t2)' : 'var(--k-t3)', weight: k.weight };
@@ -2925,6 +2984,9 @@ class KlimoThermostatCard extends KlimoBase {
       else info = { ...this._syncLine(applied), weight: 500 };
     } else if (s.note && s.note.until > Date.now()) info = { text: s.note.text, icon: s.note.icon, color: s.note.color, weight: 500 };
     else if (m.st === 'window') info = { text: tr(lang, 'windowResume'), icon: null, color: 'var(--k-t3)', weight: 400 };
+    // under manual control or off the schedule's next change does not apply to the room
+    else if (m.ctl === 'manual') info = { text: tr(lang, 'manualHold'), icon: null, color: 'var(--k-t2)', weight: 500 };
+    else if (m.ctl === 'off') info = { text: tr(lang, 'offHold'), icon: null, color: 'var(--k-t3)', weight: 400 };
     else if (m.attrs && m.attrs.next) info = { text: fill(m.attrs.next.t, m.attrs.next.at, lang, ctx.tz), icon: null, color: 'var(--k-t3)', weight: 400 };
     else info = { text: '', icon: null, color: 'var(--k-t3)', weight: 400 };
     el.infoi.style.display = info.icon ? '' : 'none';
@@ -2944,10 +3006,23 @@ class KlimoThermostatCard extends KlimoBase {
       quick.map((q) => `<button type="button" class="qa" data-q="${q.id}"${s.busy === q.id ? ' disabled' : ''}>${ic(q.icon, 15)}${esc(q.label)}</button>`).join(''),
     );
 
+    // control: schedule / manual / off (a temporary change shows as the schedule it returns to)
+    if (el.ctl.length) {
+      if (s.ctlBusy && m.ctl === s.ctlBusy) s.ctlBusy = null;
+      const cur = s.ctlBusy || (m.ctl === 'temporary' ? 'schedule' : m.ctl);
+      el.ctl.forEach((b) => {
+        b.setAttribute('aria-checked', String(b.dataset.ctl === cur));
+        b.toggleAttribute('data-pending', !!s.ctlBusy && b.dataset.ctl === s.ctlBusy);
+        b.disabled = pending || !!s.drag || !!s.ctlBusy;
+      });
+    }
+
     // pending bar
     el.pend.hidden = !pending;
     if (pending) {
-      el.select.parentElement.hidden = m.degraded;
+      const holds = s.dur === 'manual' && m.ctl === 'manual';
+      el.select.parentElement.hidden = m.degraded || holds;
+      el.mnote.hidden = m.degraded || !holds;
       for (const o of el.select.options) {
         const label = this._durLabel(o.value);
         if (o.textContent !== label) o.textContent = label;
@@ -2964,7 +3039,10 @@ class KlimoThermostatCard extends KlimoBase {
     el.appl.hidden = !showApplied;
     if (showApplied) {
       const what = applied.dur === 'forever' ? tr(lang, 'inProfile', { p: m.profileName }) : this._untilText(applied.dur);
-      el.apt.textContent = tr(lang, m.dual ? 'appliedRange' : 'appliedTarget', { v: this._fmtValue(applied.value), u: what });
+      el.apt.textContent =
+        applied.dur === 'manual'
+          ? tr(lang, 'appliedManual', { v: this._fmtValue(applied.value) })
+          : tr(lang, m.dual ? 'appliedRange' : 'appliedTarget', { v: this._fmtValue(applied.value), u: what });
       el.appl.firstChild.style.stroke = 'var(--k-ok-line)';
       const undoable = !applied.degraded && this._config.undo_seconds > 0 && applied.left > 0;
       el.undo.hidden = !undoable;
@@ -3050,6 +3128,8 @@ class KlimoThermostatCard extends KlimoBase {
     if (this._target(e, '.undo')) return this._undo();
     const qa = this._target(e, '[data-q]');
     if (qa) return this._quick(qa.dataset.q);
+    const cb = this._target(e, '[data-ctl]');
+    if (cb) return this._setControl(cb.dataset.ctl);
     const dot = this._target(e, '.pd');
     if (dot) return this._go(Number(dot.dataset.i));
     if (this._target(e, '.open')) {
@@ -3065,7 +3145,9 @@ class KlimoThermostatCard extends KlimoBase {
       this._clearTimers();
       const ov = this._m.th.override;
       const keep = ov && ov.kind === 'room_target' && this._config.durations.includes(ov.duration) ? ov.duration : null;
-      this._s = { ...this._fresh(s.sel), phase: 'pending', dur: keep || this._config.default_duration };
+      // a room under manual control holds every new value: there is no length to choose
+      const dur = this._m.ctl === 'manual' ? 'manual' : keep || this._config.default_duration;
+      this._s = { ...this._fresh(s.sel), phase: 'pending', dur };
     }
     this._s.pv = pv;
     this._s.preview = null;
@@ -3388,6 +3470,47 @@ class KlimoThermostatCard extends KlimoBase {
     });
   }
 
+  /** Schedule / manual / off; without the card sensor through the room thermostat's hvac mode. */
+  _setControl(mode) {
+    const m = this._m;
+    const s = this._s;
+    if (!m || !m.ctlAllowed || s.phase !== 'view' || s.ctlBusy || !CONTROL_MODES.includes(mode)) return;
+    // «За розкладом» while a temporary change runs still ends it
+    if (mode === m.ctl) return;
+    const lang = this._c.lang;
+    s.ctlBusy = mode;
+    // a new choice replaces whatever the last action said
+    s.note = null;
+    this._patch();
+    const done = (error) => {
+      if (error) {
+        if (this._s.ctlBusy === mode) this._s.ctlBusy = null;
+        this._note(tr(lang, 'failed', { e: error }), 'alert', 'var(--k-err-fg)');
+        return;
+      }
+      // the choice stays shown until the room's data says so (or a few seconds pass)
+      this._clear('ctl');
+      this._timers.ctl = setTimeout(() => {
+        if (this._s.ctlBusy !== mode) return;
+        this._s.ctlBusy = null;
+        this._patch();
+      }, 4000);
+      this._patch();
+    };
+    if (m.degraded) {
+      const hvac = mode === 'schedule' ? 'auto' : mode === 'off' ? 'off' : m.dual ? 'heat_cool' : m.th.mode === 'cool' ? 'cool' : 'heat';
+      Promise.resolve(this._hass.callService('climate', 'set_hvac_mode', { entity_id: m.climateId, hvac_mode: hvac })).then(
+        () => done(null),
+        (err) => done((err && err.message) || String(err)),
+      );
+      return;
+    }
+    command(this._hass, { action: 'room.set_control', roomId: m.roomId, mode }).then(({ reply, error }) => {
+      if (!error && !reply) this._note(tr(lang, 'noReply'), 'info', 'var(--k-t2)', 3000);
+      done(error);
+    });
+  }
+
   _quick(id) {
     const m = this._m;
     if (!m || m.readOnly) return;
@@ -3612,8 +3735,12 @@ class KlimoHouseCard extends KlimoBase {
     const pal = TOKENS.profiles[Math.max(0, i) % TOKENS.profiles.length];
     const bg = safeColor(p && p.c, pal.color);
     const ink = safeColor(p && p.k, pal.ink);
-    const overridden = hp.layer === 'house_manual';
-    const resume = overridden ? `<button type="button" class="presume" data-act="resume">${ic('undo', 15)}${esc(tr(ctx.lang, 'resume'))}</button>` : '';
+    // resuming the house is resuming everything (the house switch and button in Home Assistant do the same)
+    const whole = typeof h.house.ctl === 'string';
+    const overridden = hp.layer === 'house_manual' || h.house.ctl === 'manual';
+    const resume = overridden
+      ? `<button type="button" class="presume" data-act="resume">${ic('undo', 15)}${esc(tr(ctx.lang, whole ? 'resumeHouse' : 'resume'))}</button>`
+      : '';
     const change = this._config.profile_change !== 'none' ? `<button type="button" class="btn" data-act="change">${esc(tr(ctx.lang, 'change'))}</button>` : '';
     return (
       `<div class="pbox"><div class="prow"><span class="pic" style="background:${bg};color:${ink}">${ic((p && p.i) || 'home', 18)}</span>` +
@@ -3648,7 +3775,9 @@ class KlimoHouseCard extends KlimoBase {
       if (this._config.profile_change === 'navigate') openKlimo(h, '#/schedule');
       else this._openSheet(ctx);
     } else if (act === 'resume') {
-      command(ctx.hass, { action: 'house.clear_profile' }).then(({ error }) => this._result(error, tr(ctx.lang, 'profileCleared')));
+      const whole = !!(h && h.house && typeof h.house.ctl === 'string');
+      const cmd = whole ? { action: 'house.set_control', mode: 'schedule' } : { action: 'house.clear_profile' };
+      command(ctx.hass, cmd).then(({ error }) => this._result(error, tr(ctx.lang, whole ? 'houseResumed' : 'profileCleared')));
     } else if (act === 'undo') {
       const u = this._applied;
       if (!u || !u.token) return;

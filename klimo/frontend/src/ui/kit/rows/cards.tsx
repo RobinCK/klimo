@@ -1,13 +1,17 @@
 import type { ReactNode } from 'react';
 import type { IconName, Tone } from '../../types';
 import { useUiText } from '../../UiTextContext';
+import { Button } from '../../basic/Button';
 import { Icon } from '../../basic/Icon';
 import { IconButton } from '../../basic/IconButton';
 import { InfoHint, type InfoHintContent } from '../../basic/InfoHint';
+import { Link } from '../../shell/Link';
 import { CodeBlock } from '../display/text';
-import { SegmentedControl, type ChoiceValue, type SegmentedControlProps } from '../inputs/choice';
+import type { ChoiceValue } from '../inputs/choice';
+import { RadioCardList, type RadioCardListProps } from '../inputs/radios';
 import { Stepper, type StepperProps } from '../inputs/steppers';
 import { TestButton, type TestButtonProps } from '../inputs/actions';
+import type { KitAction } from '../internal/ActionButton';
 import { toneVars } from '../internal/util';
 import s from './rows.module.css';
 
@@ -167,39 +171,121 @@ export function ActionRuleCard({ when, action, effects, last, enabled, active, o
 
 /* ---------------- CircuitCard ---------------- */
 
-export interface CircuitCardProps<T extends ChoiceValue> {
+/** A room on a circuit: how it takes part, what it does now and, on a zoned loop, its zone valves. */
+export interface CircuitRoom {
+  key: string;
   name: string;
-  pumpEntity: string;
-  /** «Zigbee-реле · LQI 128». */
-  extra?: string;
-  /** Pump state («працює», «вибіг 3 хв»). */
-  chip: { tone: Tone; label: string };
-  /** When the pump runs; `hint` of the control is the caption above it. */
-  rule: SegmentedControlProps<T>;
-  /** Run-on after stop (always drawn as the compact row; a variant passed here is ignored). */
-  runOn: Omit<StepperProps, 'variant'> & { variant?: StepperProps['variant'] };
-  /** Feeds and rooms («від ТН і котла», «Вітальня»…); a tone tints what a feed means. */
-  chips: { label: string; tone?: Tone }[];
-  note?: string;
-  /** Caption above the rule control («Насос вмикається, коли»). */
-  ruleLabel?: string;
-  /** What the pump entity is and when it is switched, behind an «i» after it. */
-  pumpHint?: InfoHintContent;
-  /** What the rule options mean, behind an «i» after `ruleLabel`. The run-on takes `runOn.hint`. */
-  ruleHint?: InfoHintContent;
+  /** The room's page. */
+  to?: string;
+  /** How it takes part («розумні головки · 2», «звичайні радіатори»). */
+  meta: string;
+  /** What it does now («просить тепла»). */
+  state?: { tone: Tone; label: string };
+  /** Its zone valves or floor thermostats; `note` says how the loop uses them («відкривається з джерелом»). */
+  zones?: { key: string; name: string; entityId: string; onRemove?: () => void }[];
+  zoneNote?: string;
+  /** «+ Клапан зони»: offered on a zoned loop. */
+  onAddZone?: () => void;
+  /** Takes the room off the circuit. */
+  onRemove?: () => void;
 }
 
-/** A heating circuit and its pump: when it runs, how long it runs on, what it serves. */
-export function CircuitCard<T extends ChoiceValue>({ name, pumpEntity, extra, chip, rule, runOn, chips, note, ruleLabel, pumpHint, ruleHint }: CircuitCardProps<T>) {
+export interface CircuitCardProps<T extends ChoiceValue> {
+  name: string;
+  icon?: IconName;
+  /** The pump entities; empty: the loop has no pump of its own. */
+  pumpEntity: string;
+  /** «2 насоси · по черзі». */
+  extra?: string;
+  /** Pump state («працює», «вибіг до 14:20»). */
+  chip: { tone: Tone; label: string };
+  /** How the loop runs; each option says in a sentence what happens. */
+  mode: Omit<RadioCardListProps<T>, 'compact' | 'surface'> & { label: string; hint?: InfoHintContent };
+  /** Run-on after the pump's reason falls (always drawn as the compact row). Absent: no pump to run on. */
+  runOn?: Omit<StepperProps, 'variant'> & { variant?: StepperProps['variant'] };
+  /** Feeds and capabilities («від ТН і котла», «охолодження 18°»); a tone tints what a feed means. */
+  chips: { label: string; tone?: Tone }[];
+  /** What keeps the loop from working as set up («контур ніщо не живить»). */
+  warning?: string;
+  note?: string;
+  /** What the pump entity is and when it is switched, behind an «i» after it. */
+  pumpHint?: InfoHintContent;
+  /** The member rooms; `add` puts another room on the loop. */
+  rooms: { label: string; hint?: InfoHintContent; items: CircuitRoom[]; empty: string; add?: { label: string; onClick: () => void } };
+  /** Buttons under the card («Об’єднати з…», «Налаштування й насоси»). */
+  actions?: KitAction[];
+}
+
+function CircuitRoomRow({ room }: { room: CircuitRoom }) {
   const ut = useUiText();
+  const zones = room.zones ?? [];
+  return (
+    <li className={s.circuitRoom}>
+      <span className={s.circuitRoomHead}>
+        <span className={s.circuitRoomText}>
+          {room.to ? (
+            <Link to={room.to} variant="plain">
+              <span className={s.circuitRoomName}>{room.name}</span>
+            </Link>
+          ) : (
+            <span className={s.circuitRoomName}>{room.name}</span>
+          )}
+          <span className={s.muted}>{room.meta}</span>
+        </span>
+        {room.state ? <ToneChip tone={room.state.tone} label={room.state.label} size="sm" /> : null}
+        {room.onRemove ? (
+          <IconButton icon="close" label={ut('Take «{room}» off the circuit', { room: room.name })} size={36} variant="ghost" onClick={room.onRemove} />
+        ) : null}
+      </span>
+      {zones.length || room.onAddZone ? (
+        <span className={s.circuitZones}>
+          {zones.map((z) => (
+            <span key={z.key} className={s.circuitZone}>
+              <Icon name="floor" size={14} />
+              <span className={s.circuitZoneText}>
+                <span>{z.name}</span>
+                <span className={s.mono}>{z.entityId}</span>
+              </span>
+              {z.onRemove ? <IconButton icon="close" label={ut('Remove «{name}»', { name: z.name })} size={36} variant="ghost" onClick={z.onRemove} /> : null}
+            </span>
+          ))}
+          {room.zoneNote ? <span className={s.muted}>{room.zoneNote}</span> : null}
+          {room.onAddZone ? (
+            <span>
+              <Button variant="ghost" size="sm" icon="plus" onClick={room.onAddZone} ariaLabel={ut('Add a zone valve to «{room}»', { room: room.name })}>
+                {ut('Zone valve')}
+              </Button>
+            </span>
+          ) : null}
+        </span>
+      ) : null}
+    </li>
+  );
+}
+
+/** A house heating circuit: what feeds it, how it runs, its pump and run-on, the rooms on it. */
+export function CircuitCard<T extends ChoiceValue>({ name, icon, pumpEntity, extra, chip, mode, runOn, chips, warning, note, pumpHint, rooms, actions }: CircuitCardProps<T>) {
+  const ut = useUiText();
+  const { label: modeLabel, hint: modeHint, ...modeList } = mode;
   return (
     <div className={s.wellCard}>
       <div className={s.cardHead}>
         <span className={s.cardWho}>
+          {icon ? (
+            <span className={s.iconBox}>
+              <Icon name={icon} size={18} />
+            </span>
+          ) : null}
           <span>
             <span className={s.circuitTitle}>{name}</span>
             <span className={s.muted}>
-              {ut('pump')} <span className={s.mono}>{pumpEntity}</span>
+              {pumpEntity ? (
+                <>
+                  {ut('pump')} <span className={s.circuitPump}>{pumpEntity}</span>
+                </>
+              ) : (
+                ut('no pump of its own')
+              )}
               {extra ? ` · ${extra}` : ''}
               {pumpHint ? (
                 <>
@@ -212,21 +298,6 @@ export function CircuitCard<T extends ChoiceValue>({ name, pumpEntity, extra, ch
         </span>
         <ToneChip tone={chip.tone} label={chip.label} />
       </div>
-      <div className={s.circuitBlock}>
-        {ruleLabel ? (
-          <span className={s.circuitBlockLabel}>
-            {ruleLabel}
-            {ruleHint ? (
-              <>
-                {' '}
-                <InfoHint content={ruleHint} subject={ruleLabel} />
-              </>
-            ) : null}
-          </span>
-        ) : null}
-        <SegmentedControl {...rule} size={rule.size ?? 'xs'} surface="well" />
-      </div>
-      <Stepper {...runOn} variant="compact" />
       {chips.length ? (
         <div className={s.chipRow}>
           {chips.map((c, i) => (
@@ -236,7 +307,62 @@ export function CircuitCard<T extends ChoiceValue>({ name, pumpEntity, extra, ch
           ))}
         </div>
       ) : null}
+      {warning ? (
+        <span className={s.circuitWarning} role="note">
+          <Icon name="alert" size={16} />
+          {warning}
+        </span>
+      ) : null}
+      <div className={s.circuitBlock}>
+        <span className={s.circuitBlockLabel}>
+          {modeLabel}
+          {modeHint ? (
+            <>
+              {' '}
+              <InfoHint content={modeHint} subject={modeLabel} />
+            </>
+          ) : null}
+        </span>
+        <RadioCardList {...modeList} surface="well" />
+      </div>
+      {runOn ? <Stepper {...runOn} variant="compact" /> : null}
+      <div className={s.circuitBlock}>
+        <span className={s.circuitBlockHead}>
+          <span className={s.circuitBlockLabel}>
+            {rooms.label}
+            {rooms.hint ? (
+              <>
+                {' '}
+                <InfoHint content={rooms.hint} subject={rooms.label} />
+              </>
+            ) : null}
+          </span>
+          {rooms.add ? (
+            <Button variant="ghost" size="sm" icon="plus" onClick={rooms.add.onClick}>
+              {rooms.add.label}
+            </Button>
+          ) : null}
+        </span>
+        {rooms.items.length ? (
+          <ul className={s.circuitRooms} aria-label={rooms.label}>
+            {rooms.items.map((r) => (
+              <CircuitRoomRow key={r.key} room={r} />
+            ))}
+          </ul>
+        ) : (
+          <span className={s.muted}>{rooms.empty}</span>
+        )}
+      </div>
       {note ? <span className={s.muted}>{note}</span> : null}
+      {actions?.length ? (
+        <div className={s.circuitActions}>
+          {actions.map((a, i) => (
+            <Button key={`${a.label}-${i}`} variant={a.variant ?? 'ghost'} size="sm" icon={a.icon} onClick={a.onClick} to={a.to} disabled={a.disabled} loading={a.loading}>
+              {a.label}
+            </Button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

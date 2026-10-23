@@ -26,6 +26,9 @@ export function sourceLine(s: RoomSummary, ctx: CodeContext, now: EpochMs): Sour
   const profile = profileName(s, ctx);
   const until = fmtUntil(s.src.until, now);
   const tt = targetText(s);
+  // manual control and «off» have no end: the line names the mode, not «до скасування»
+  if (s.control.mode === 'manual' && (s.src.kind === 'manual' || s.src.kind === 'range')) return { kind: 'manual', text: t('Manual control · {t}', { t: tt }) };
+  if (s.control.mode === 'off' && s.src.kind === 'off') return { kind: 'off', text: t('Off · frost protection stays') };
   switch (s.src.kind) {
     case 'schedule':
       return { kind: 'schedule', text: profile ? t('Target {t} · {profile} {until}', { t: tt, profile, until }) : t('Target {t}', { t: tt }) };
@@ -71,6 +74,7 @@ function compactSub(s: RoomSummary, ctx: CodeContext, now: EpochMs, full: string
   const state = roomStateLabel(s.state);
   const profile = profileName(s, ctx);
   const until = fmtUntil(s.src.until, now);
+  if (s.control.mode === 'manual' && (s.src.kind === 'manual' || s.src.kind === 'range')) return `${state} · ${t('manual control')}`;
   switch (s.src.kind) {
     case 'schedule':
     case 'calendar':
@@ -88,6 +92,7 @@ function compactSub(s: RoomSummary, ctx: CodeContext, now: EpochMs, full: string
 
 const DEVICE_ICON: Record<RoomSummary['device']['kind'], IconName> = {
   trv: 'radiator',
+  radiator: 'radiator',
   floor: 'floor',
   trvfloor: 'floor',
   ac: 'ac',
@@ -101,6 +106,8 @@ function deviceText(s: RoomSummary): string {
   switch (d.kind) {
     case 'trv':
       return `${t('radiators')}${counts}`;
+    case 'radiator':
+      return t('radiators');
     case 'floor':
       return t('underfloor heating');
     case 'trvfloor':

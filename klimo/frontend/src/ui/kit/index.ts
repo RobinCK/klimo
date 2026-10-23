@@ -72,6 +72,7 @@ export {
   type MonthToggleGridProps,
 } from './inputs/pickers';
 export { SortableList, type SortableItem, type SortableListProps } from './inputs/SortableList';
+export { PeriodNav, type PeriodNavProps } from './inputs/PeriodNav';
 export {
   DashedAddButton,
   FileButton,
@@ -84,7 +85,7 @@ export {
 } from './inputs/actions';
 
 // feedback
-export { toast, undoToast, type ToastOptions } from './feedback/toast';
+export { closeToast, toast, undoToast, type ToastOptions } from './feedback/toast';
 export {
   CountdownBar,
   PendingChangePanel,
@@ -146,7 +147,7 @@ export { RoutingMatrix, type MatrixCell, type RoutingMatrixProps } from './displ
 
 // domain rows with inputs
 export { SensorRow, type SensorRowProps } from './rows/SensorRow';
-export { DeviceRow, type DeviceRowProps, type DeviceRowRole } from './rows/DeviceRow';
+export { DeviceRow, type DeviceRowAction, type DeviceRowProps, type DeviceRowRole } from './rows/DeviceRow';
 export {
   ActionRuleCard,
   ChannelCard,
@@ -156,6 +157,7 @@ export {
   type ActionRuleCardProps,
   type ChannelCardProps,
   type CircuitCardProps,
+  type CircuitRoom,
   type RuleCardProps,
   type TriggerCardProps,
 } from './rows/cards';

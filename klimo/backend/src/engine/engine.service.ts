@@ -226,6 +226,8 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
   private readonly tombstones = new Map<string, { desired: DesiredActuator; until: EpochMs }>();
   private prevSubjects: { sources: Map<Id, SourceConfig>; pumps: Set<Id> } = { sources: new Map(), pumps: new Set() };
   private prevOwnerDesired = new Map<string, DesiredActuator[]>();
+  /** Zone actuators and dehumidifiers last tick, with the value they are left at once removed from a room. */
+  private prevReleasable = new Map<string, { desired: DesiredActuator; release: DesiredValue; deviceId: Id | null; roomId: Id | null }>();
   private readonly describeCache = new Map<string, { rev: number; info: ActuatorInfo }>();
   /** One-shot detections raised between ticks (a hand on a head). */
   private readonly pendingDetections: Detection[] = [];
@@ -787,6 +789,7 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
       spans.push({ subject: 'pump', subjectId: id, kind: 'run', mode: null, edge: 'end', at: now, meta: { reason: 'deleted' } });
     }
     this.prevSubjects = { sources, pumps };
+    this.releaseRemoved(cfg, result, now);
     const owners = new Map<string, DesiredActuator[]>();
     for (const d of result.desired) {
       if (d.owner.type !== 'source' && d.owner.type !== 'pump' && d.owner.type !== 'watchdog') continue;
@@ -812,6 +815,32 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
       else out.push(r.desired);
     }
     return { desired: out, spans };
+  }
+
+  /**
+   * A zone valve or dehumidifier taken off a room is not left as the room last drove it: a dehumidifier is
+   * switched off, a zone of a heat-only loop is left open (the floor keeps heating with the loop, frost
+   * included) and a zone of a loop that also cools is closed (nobody watches that room's dew point now).
+   */
+  private releaseRemoved(cfg: EngineConfig, result: EvaluateResult, now: EpochMs): void {
+    const deviceIds = new Set(Object.values(cfg.devicesByEmitter).flat().map((d) => d.id));
+    const dehumidifiers = new Map(cfg.rooms.map((r) => [r.id, r.humidity.dehumidifier?.entityId ?? null]));
+    for (const [key, r] of this.prevReleasable) {
+      const gone = r.deviceId !== null ? !deviceIds.has(r.deviceId) : dehumidifiers.get(r.roomId ?? '') !== r.desired.entityId;
+      if (!gone || JSON.stringify(r.desired.value) === JSON.stringify(r.release)) continue;
+      this.tombstones.set(key, { desired: { ...r.desired, value: r.release, urgency: 'safety', refreshEverySec: null, minIntervalSec: 0, deadband: 0 }, until: now + TOMBSTONE_MS });
+    }
+    const next = new Map<string, { desired: DesiredActuator; release: DesiredValue; deviceId: Id | null; roomId: Id | null }>();
+    for (const d of result.desired) {
+      if (d.owner.type === 'aux' && d.value.kind === 'switch') next.set(d.key, { desired: d, release: { kind: 'switch', on: false }, deviceId: null, roomId: d.owner.roomId });
+      if (d.owner.type !== 'zone') continue;
+      const dev = Object.values(cfg.devicesByEmitter).flat().find((x) => x.id === d.owner.id);
+      const emitter = dev ? (cfg.emittersByRoom[dev.roomId] ?? []).find((e) => e.id === dev.emitterId) : undefined;
+      const cools = !!cfg.circuits.find((c) => c.id === emitter?.circuitId)?.capabilities.cool;
+      const release: DesiredValue | null = d.value.kind === 'valve' ? { kind: 'valve', open: !cools, position: null } : d.value.kind === 'switch' ? { kind: 'switch', on: !cools } : null;
+      if (release) next.set(d.key, { desired: d, release, deviceId: d.owner.id, roomId: d.owner.roomId });
+    }
+    this.prevReleasable = next;
   }
 
   private offValue(v: DesiredValue, s: SourceConfig | null): DesiredValue | null {

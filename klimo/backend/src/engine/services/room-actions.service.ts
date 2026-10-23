@@ -547,13 +547,20 @@ export class RoomActionsService implements IRoomActions {
 
   private async putOverride(room: RoomConfig, value: OverrideValue, duration: OverrideDuration, until: EpochMs | null, actor: Actor, reqId: string | null): Promise<Override> {
     const now = this.clock.now();
+    // a new value that keeps the room in the mode it is in (manual stays manual) keeps when that mode began
+    const current = this.control(room.id);
+    const mode = isHeldOverride({ duration, until }) ? (value.kind === 'room_off' ? 'off' : 'manual') : null;
+    const carried =
+      mode !== null && mode === current.mode && current.since !== null && (value.kind === 'room_target' || value.kind === 'room_off' || value.kind === 'room_profile')
+        ? { ...value, held: { since: current.since, setBy: current.setBy } }
+        : value;
     return this.overrides.put({
       id: uuid(),
       scope: 'room',
       subjectId: room.id,
       kind: value.kind,
       group: overrideGroupOf(value.kind),
-      value,
+      value: carried,
       duration,
       createdAt: now,
       until,

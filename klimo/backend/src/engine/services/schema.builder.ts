@@ -160,7 +160,8 @@ export function buildSchema(x: SchemaInput): SchemaView {
       tone,
       icon: 'home',
       title: members.map((id) => cfg.rooms.find((r) => r.id === id)?.name ?? '').filter(Boolean).join(' · '),
-      state: requesting ? { code: 'why.trvs_open', params: { n: requesting, total: members.length } } : cs.state,
+      // rooms of a circuit ask by their temperature; heads exist only on some of them
+      state: requesting ? { code: 'why.rooms_asking', params: { n: requesting, total: members.length } } : cs.state,
       meta: dewMeta(cs),
       roomIds: members,
       dashed: !FLOWING.has(tone),

@@ -443,13 +443,16 @@ export class HouseActionsService implements IHouseActions {
   }
 
   private houseOverrideOf(profileId: Id, duration: HouseDuration, until: EpochMs | null, now: EpochMs, actor: Actor, reqId: string | null): Override {
+    // another profile held by hand keeps the pause of the schedule from when it began
+    const was = until === null ? houseControlOf(this.overrides.active(), now) : null;
+    const held = was?.mode === 'manual' && was.since !== null ? { since: was.since, setBy: null } : undefined;
     return {
       id: uuid(),
       scope: 'house',
       subjectId: HOUSE,
       kind: 'house_profile',
       group: 'house_profile',
-      value: { kind: 'house_profile', profileId },
+      value: held ? { kind: 'house_profile', profileId, held } : { kind: 'house_profile', profileId },
       duration,
       createdAt: now,
       until,

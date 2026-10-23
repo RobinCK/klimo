@@ -389,6 +389,13 @@
   font-size: var(--ui-fs-body-lg);
 }
 
+/* several pump ids wrap on a phone instead of widening the card */
+.circuitPump {
+  color: var(--ui-text-3);
+  font-family: var(--ui-font-mono);
+  overflow-wrap: anywhere;
+}
+
 .circuitBlock {
   display: flex;
   flex-direction: column;
@@ -398,6 +405,105 @@
 .circuitBlockLabel {
   color: var(--ui-text-2);
   font-size: var(--ui-fs-body-sm);
+}
+
+.circuitBlockHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-space-8);
+  min-height: 40px;
+}
+
+.circuitWarning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: var(--ui-space-8) var(--ui-space-10);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-tone-warn-bg);
+  color: var(--ui-tone-warn-fg);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.circuitWarning > svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.circuitRooms {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.circuitRoom {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--ui-space-8) var(--ui-space-4) var(--ui-space-8) var(--ui-space-12);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface-1);
+}
+
+.circuitRoomHead {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-8);
+  min-width: 0;
+  min-height: 36px;
+}
+
+.circuitRoomText {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.circuitRoomName {
+  font-weight: 500;
+}
+
+.circuitZones {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding-right: var(--ui-space-8);
+}
+
+.circuitZone {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.circuitZone > svg {
+  flex: none;
+}
+
+.circuitZoneText {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+}
+
+.circuitActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--ui-space-4) var(--ui-space-8);
+  margin-top: calc(-1 * var(--ui-space-4));
 }
 
 /* ---------- ChannelCard ---------- */

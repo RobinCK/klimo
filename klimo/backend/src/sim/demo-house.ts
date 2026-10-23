@@ -187,6 +187,7 @@ export function buildDemoHouse(base: ExportBundle, now: EpochMs, lang: Lang = 'u
     // the weather station in the shade and a thermometer the afternoon sun reaches: the colder one counts
     outdoor: { ...b.settings.outdoor, sensorEntityIds: ['sensor.outdoor_temperature', SUNNY_WALL_ENTITY], aggregation: 'min', weatherEntityId: 'weather.home' },
     presence: { ...b.settings.presence, personEntityIds: ['person.ihor', 'person.olia'] },
+    tariffs: lang === 'uk' ? { ...b.settings.tariffs, currency: '₴', electricityPerKwh: 4.32, gasPrice: 7.96, gasPriceUnit: 'm³' } : { ...b.settings.tariffs, currency: '€', electricityPerKwh: 0.3, gasPrice: 1.05, gasPriceUnit: 'm³' },
     onboardingDismissed: true,
     updatedAt: now,
   };
@@ -308,6 +309,7 @@ export function buildDemoHouse(base: ExportBundle, now: EpochMs, lang: Lang = 'u
     capabilities: { heat: true, cool: false },
     supply: { sensorEntityId: 'sensor.manifold_supply_temperature', returnEntityId: 'sensor.manifold_return_temperature', coolC: 18, coolMaxC: 22 },
     flowSafety: true,
+    mode: 'zoned',
     order: 0,
   };
   const floorLoop: Circuit = {
@@ -323,6 +325,8 @@ export function buildDemoHouse(base: ExportBundle, now: EpochMs, lang: Lang = 'u
     mixingValve: { entityId: 'number.floor_mixing_valve', heatC: 35, coolC: null },
     // two pumps take turns: one runs, the other waits as a standby (rotated weekly)
     pumpGroupMode: 'duty_standby',
+    // the whole floor at once: its pumps run with the heat pump or boiler, no zone valves
+    mode: 'follow_source',
     order: 1,
   };
   b.manifolds = [manifold];
@@ -429,6 +433,10 @@ function demoSources(now: EpochMs): SourceConfig[] {
   hp.enabled = true;
   hp.subtype = 'Повітря — вода';
   hp.energy = { ...hp.energy, powerEntityId: 'sensor.heat_pump_power' };
+  hp.meters = [
+    { kind: 'electricity', entityId: 'sensor.heat_pump_energy', unit: 'kWh' },
+    { kind: 'heat', entityId: 'sensor.heat_pump_heat_energy', unit: 'kWh' },
+  ];
   if (hp.adapter.type === 'climate') {
     hp.adapter = {
       ...hp.adapter,
@@ -446,6 +454,8 @@ function demoSources(now: EpochMs): SourceConfig[] {
   const boiler = newSourceConfig('gas_boiler', { id: SOURCE_IDS.boiler, name: 'Газовий котел', now, order: 1 });
   boiler.enabled = true;
   boiler.subtype = 'Сухий контакт';
+  // the house gas meter: the kitchen stove counts on it too
+  boiler.meters = [{ kind: 'gas', entityId: 'sensor.gas_meter', unit: 'm³' }];
   if (boiler.adapter.type === 'relay') {
     boiler.adapter = {
       ...boiler.adapter,
@@ -462,6 +472,8 @@ function demoSources(now: EpochMs): SourceConfig[] {
     s.enabled = true;
     s.subtype = 'Спліт-система';
     s.energy = { ...s.energy, powerEntityId: `sensor.${climate.slice('climate.'.length)}_power` };
+    // a power sensor only: its readings are integrated into energy
+    s.meters = [{ kind: 'electricity', entityId: s.energy.powerEntityId as string, unit: 'W' }];
     if (s.adapter.type === 'climate') {
       s.adapter = { ...s.adapter, climate, modeMap: { heat: 'heat', cool: 'cool', dry: 'dry', fan: 'fan_only', off: 'off' }, setpoint: 'room_target', quietFanMode: 'quiet', confirm: { kind: 'hvac_action' } };
     }
@@ -474,6 +486,7 @@ function demoSources(now: EpochMs): SourceConfig[] {
   conv.enabled = true;
   conv.subtype = 'Розетка 16 А';
   conv.energy = { ...conv.energy, powerEntityId: 'sensor.study_heater_power' };
+  conv.meters = [{ kind: 'electricity', entityId: 'sensor.study_heater_power', unit: 'W' }];
   if (conv.adapter.type === 'relay') conv.adapter = { ...conv.adapter, command: 'switch.study_heater', confirm: { kind: 'power_above', entityId: 'sensor.study_heater_power', thresholdW: 50 } };
   // only spare solar power during a blackout may run it
   conv.conditions = { join: 'all', items: [{ id: 'ci_conv_solar', mode: null, node: { op: 'trigger', triggerId: 'solar', id: 'conv_solar' }, enabled: true }] };

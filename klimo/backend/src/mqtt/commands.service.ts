@@ -369,7 +369,9 @@ export class CommandsService {
         const wanted = name.toLowerCase();
         const profile = this.config.list('profiles').find((p) => p.id === name || p.name.trim().toLowerCase() === wanted);
         if (!profile) throw notFound('Profile');
-        await this.houseActions().setProfile({ profileId: profile.id, duration: 'slot' }, actor);
+        // while the house schedule is paused by hand, another profile stays held too
+        const duration = this.houseActions().control().mode === 'manual' ? 'none' : 'slot';
+        await this.houseActions().setProfile({ profileId: profile.id, duration }, actor);
         return this.ok(null, actor);
       }
       const actor = await this.entityActor('klimo_season_mode', 'select.klimo_season_mode', receivedAt);

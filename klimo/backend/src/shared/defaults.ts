@@ -511,8 +511,20 @@ export function DEFAULT_CIRCUIT(): Circuit {
     dewMarginC: null,
     pumpGroupMode: 'all',
     flowSafety: false,
+    mode: 'zoned',
+    bypass: false,
     order: 0,
   };
+}
+
+/** Floor loops follow their source with a long run-on (screed stores heat); radiators follow the rooms. */
+export function circuitModeDefaults(kind: Circuit['kind']): { mode: Circuit['mode']; runOnHeatMin: number } {
+  return kind === 'floor' ? { mode: 'follow_source', runOnHeatMin: 10 } : { mode: 'zoned', runOnHeatMin: 3 };
+}
+
+/** The pump rule that says the same as a circuit mode (older readers of `Pump.rule`). */
+export function pumpRuleFor(mode: Circuit['mode']): Pump['rule'] {
+  return mode === 'follow_source' ? 'source' : 'rooms';
 }
 
 export function DEFAULT_PUMP(): Pump {

@@ -37,9 +37,10 @@
   border: 1px solid var(--ui-border);
 }
 
+/* equal columns while every label fits; a longer one («За розкладом» on a phone) takes the room
+   it needs from the others instead of being cut, and a row too narrow for all wraps */
 .seg[data-full] {
-  display: grid;
-  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  display: flex;
   align-self: stretch;
   width: 100%;
 }
@@ -157,6 +158,12 @@
   }
 }
 
+/* after the touch minimum above, which would otherwise win over the label's width */
+.seg[data-full] > .segItem {
+  flex: 1 1 0;
+  min-width: max-content;
+}
+
 /* ---------- DurationPills ---------- */
 
 .pills {
@@ -237,6 +244,11 @@
 .radioCard[aria-checked='true'] {
   border-color: var(--ui-text-1);
   background: var(--ui-surface-3);
+}
+
+/* inside a grey well the options take the card colour, the chosen one stays marked by its border */
+.radioList[data-surface='well'] .radioCard {
+  background: var(--ui-surface-1);
 }
 
 .radioCard[aria-disabled='true'] {

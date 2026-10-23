@@ -3,6 +3,7 @@ import { Popover } from '@mantine/core';
 import { useUiText } from '../../UiTextContext';
 import { Icon } from '../../basic/Icon';
 import { IconButton } from '../../basic/IconButton';
+import type { IconName } from '../../types';
 import { useRoving } from '../internal/useRoving';
 import f from '../inputs/fields.module.css';
 import s from './deviceRow.module.css';
@@ -12,6 +13,20 @@ export interface DeviceRowRole {
   /** What the device can be switched to; one option shows as a plain label. */
   options: { value: string; label: string }[];
   onChange: (value: string) => void;
+}
+
+/** A button on the row's second line («Замінити», «Прибрати»). */
+export interface DeviceRowAction {
+  label: string;
+  icon?: IconName;
+  onClick: () => void;
+  /** Takes something away: drawn in the danger colour. */
+  danger?: boolean;
+  disabled?: boolean;
+  /** Accessible name when the label alone does not say which device («Прибрати «Датчик у кухні»»). */
+  ariaLabel?: string;
+  /** The button opens something in place (an inline search): announced as expanded while it is open. */
+  expanded?: boolean;
 }
 
 export interface DeviceRowProps {
@@ -31,10 +46,12 @@ export interface DeviceRowProps {
   onRemove?: () => void;
   /** What is wrong with it (a server check of this device). */
   error?: string;
+  /** Buttons on the second line, after «Use as…» (editing a room's bound devices). */
+  actions?: DeviceRowAction[];
 }
 
-/** One device of a list being assembled (the add-room wizard): what it is, its value, its role. */
-export function DeviceRow({ title, meta, value, checked, onCheck, disabled, role, onRemove, error }: DeviceRowProps) {
+/** One device of a list being assembled (the add-room wizard) or edited (room settings): what it is, its value, its role. */
+export function DeviceRow({ title, meta, value, checked, onCheck, disabled, role, onRemove, error, actions }: DeviceRowProps) {
   const ut = useUiText();
   const id = useId();
   const box = checked !== undefined;
@@ -81,9 +98,24 @@ export function DeviceRow({ title, meta, value, checked, onCheck, disabled, role
           {error}
         </span>
       ) : null}
-      {taken && role ? (
+      {taken && (role || actions?.length) ? (
         <span className={s.actions}>
-          <RoleMenu role={role} device={title} />
+          {role ? <RoleMenu role={role} device={title} /> : null}
+          {actions?.map((a) => (
+            <button
+              key={a.label}
+              type="button"
+              className={s.actionButton}
+              data-danger={a.danger ? '' : undefined}
+              disabled={a.disabled}
+              aria-label={a.ariaLabel}
+              aria-expanded={a.expanded}
+              onClick={a.onClick}
+            >
+              {a.icon ? <Icon name={a.icon} size={14} /> : null}
+              {a.label}
+            </button>
+          ))}
         </span>
       ) : null}
     </div>

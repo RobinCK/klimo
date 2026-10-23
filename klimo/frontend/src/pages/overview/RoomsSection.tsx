@@ -5,7 +5,7 @@ import { paths, usePref } from '@app';
 import { t, type CodeContext } from '@i18n';
 import { attentionRank, needsAttention, roomCard, roomRow } from './summary';
 
-type Filter = 'all' | 'active' | 'attention';
+type Filter = 'all' | 'active' | 'attention' | 'manual';
 
 /** «Кімнати»: filter by what the rooms do, a card per room, and the way to add one. */
 export function RoomsSection({
@@ -29,11 +29,15 @@ export function RoomsSection({
   const [filter, setFilter] = usePref<Filter>('overview.filter', 'all');
   const active = rooms.filter((r) => r.state === 'heat' || r.state === 'cool');
   const attention = rooms.filter(needsAttention);
-  const shown = filter === 'active' ? active : filter === 'attention' ? attention : rooms;
+  // set by hand: manual control, a temporary change or switched off
+  const manual = rooms.filter((r) => r.control.mode !== 'schedule');
+  const shown = filter === 'active' ? active : filter === 'attention' ? attention : filter === 'manual' ? manual : rooms;
   const options = [
     { value: 'all' as const, label: t('All'), count: rooms.length },
     { value: 'active' as const, label: cooling ? t('Cooling now') : t('Heating now'), count: active.length },
     { value: 'attention' as const, label: t('Attention'), count: attention.length },
+    // only while some room is set by hand: an always-empty filter is noise
+    ...(manual.length || filter === 'manual' ? [{ value: 'manual' as const, label: t('Manual'), count: manual.length }] : []),
   ];
   return (
     <Section
@@ -75,9 +79,17 @@ export function RoomsSection({
         </>
       ) : (
         <EmptyState
-          icon={filter === 'attention' ? 'checkCircle' : 'pause'}
-          tone={filter === 'attention' ? 'ok' : 'neutral'}
-          title={filter === 'attention' ? t('No room needs attention') : cooling ? t('No room is cooling right now') : t('No room is heating right now')}
+          icon={filter === 'attention' ? 'checkCircle' : filter === 'manual' ? 'clock' : 'pause'}
+          tone={filter === 'attention' || filter === 'manual' ? 'ok' : 'neutral'}
+          title={
+            filter === 'attention'
+              ? t('No room needs attention')
+              : filter === 'manual'
+                ? t('Every room follows the schedule')
+                : cooling
+                  ? t('No room is cooling right now')
+                  : t('No room is heating right now')
+          }
         />
       )}
     </Section>

@@ -1,21 +1,26 @@
 /**
- * The add-room wizard: a draft that grows step by step, devices offered from the chosen Home
- * Assistant area or found with one search over all of Home Assistant, what heats the room read
- * from the devices picked (nothing to declare up front), server-side validation before every
- * «Далі» (the server knows which entities exist and belong elsewhere), and after «Створити
- * кімнату» a live report of what the room's devices confirmed.
+ * The add-room wizard: a draft that grows step by step. Step 1 says what heats or cools the room
+ * (picking a device of a kind later ticks it too); devices are offered from the chosen Home
+ * Assistant area or found with one search over all of Home Assistant; the room joins the house's
+ * radiator or floor circuit (the floor one is set up here once if the house has none); the server
+ * validates every «Далі» (it knows which entities exist and belong elsewhere), and after «Створити
+ * кімнату» a live report shows what the room's devices confirmed.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AggregationMethod,
   ApiErrorIssue,
   Band,
+  CircuitDto,
+  CircuitMode,
   CreateRoomReport,
   CreateRoomRequest,
   CreateRoomStepKind,
   DiscoveryCandidate,
   HaEntityDto,
   Id,
+  NewCircuitRequest,
+  RoomHeatingKind,
   SourceAdapter,
   SourceDemandPolicy,
   TrvStrategy,
@@ -27,10 +32,10 @@ import { api } from '@api/endpoints';
 import { isApiError } from '@api/client';
 import { invalidate, liveStore, useCodeContext, useResource, useWizardReport } from '@data';
 import { currentRoute } from '@app';
-import { errorText, t } from '@i18n';
+import { DEVICE_GROUP_ROLES, deviceGroupOf, errorText, HEATING_KIND_ORDER, ROLE_HEATING_KIND, t, type DeviceGroup } from '@i18n';
 import { toast } from '@ui';
 
-export type EmitterChoice = CreateRoomRequest['emitterKinds'][number];
+export type EmitterChoice = RoomHeatingKind;
 export type WizardStep = 1 | 2 | 3 | 4 | 5;
 
 /** A device found with the search rather than offered by the area. */
@@ -51,31 +56,25 @@ export interface ExtraDevice {
 }
 
 /** The blocks of the device step. */
-export type SectionKey = 'trv' | 'temp' | 'window' | 'ac' | 'heater' | 'floor' | 'dehum';
+export type SectionKey = DeviceGroup;
 
-export const SECTION_ROLES: Record<SectionKey, readonly WizardDeviceRole[]> = {
-  trv: ['trv'],
-  temp: ['temp_humidity', 'temperature', 'humidity'],
-  window: ['window', 'door'],
-  ac: ['ac'],
-  heater: ['heater'],
-  floor: ['floor_zone', 'floor_probe'],
-  dehum: ['dehumidifier'],
-};
+export const SECTION_ROLES = DEVICE_GROUP_ROLES;
 
-export function sectionOf(role: WizardDeviceRole): SectionKey {
-  return (Object.keys(SECTION_ROLES) as SectionKey[]).find((k) => SECTION_ROLES[k].includes(role)) ?? 'temp';
+export const sectionOf = deviceGroupOf;
+
+/** The device roles of a heating kind (unticking the kind drops them from the draft). */
+const KIND_ROLES = (k: EmitterChoice): WizardDeviceRole[] =>
+  (Object.keys(ROLE_HEATING_KIND) as WizardDeviceRole[]).filter((r) => ROLE_HEATING_KIND[r] === k);
+
+/** The one-time setup of the house floor circuit (when the house has none yet). */
+export interface FloorSetup {
+  name: string;
+  pumpEntityId: string | null;
+  mode: CircuitMode;
+  /** Empty: every central heat source. */
+  sourceIds: Id[];
+  runOnMin: number;
 }
-
-/** What heats or cools the room follows from its devices (the server checks the same pairs). */
-const ROLE_KIND: Partial<Record<WizardDeviceRole, EmitterChoice>> = {
-  trv: 'trv',
-  ac: 'ac',
-  heater: 'local',
-  floor_zone: 'floor',
-  floor_probe: 'floor',
-};
-const KIND_ORDER: readonly EmitterChoice[] = ['trv', 'floor', 'ac', 'local'];
 
 /** A device the house already uses elsewhere: a source switches it, or it is a pump of the plant. */
 export type DeviceInUse = { as: 'source'; name: string } | { as: 'pump' };
@@ -100,8 +99,10 @@ export interface Wizard {
   areaId: string | null;
   setArea: (id: string | null) => void;
   areas: { id: string; name: string; hint?: string }[];
-  /** Read from the devices picked (and an opened underfloor block). */
+  /** Ticked on step 1, plus what the devices picked bring (a head ticks smart radiators). */
   kinds: EmitterChoice[];
+  /** Ticks or unticks a kind; unticking drops that kind's devices, the two radiator kinds exclude each other. */
+  toggleKind: (k: EmitterChoice) => void;
   demand: SourceDemandPolicy;
   setDemand: (p: SourceDemandPolicy) => void;
   candidates: DiscoveryCandidate[];
@@ -126,9 +127,21 @@ export interface Wizard {
   opened: SectionKey[];
   openSection: (k: SectionKey) => void;
   closeSection: (k: SectionKey) => void;
-  floor: { circuitId: Id | null; newName: string; pumpEntityId: string | null };
-  setFloor: (f: Partial<Wizard['floor']>) => void;
-  floorCircuits: { id: Id; name: string }[];
+  /** The house floor circuit chosen (with several), and the one-time setup when there is none. */
+  floor: { circuitId: Id | null; setup: FloorSetup };
+  setFloor: (f: { circuitId?: Id | null; setup?: Partial<FloorSetup> }) => void;
+  floorCircuits: CircuitDto[];
+  /** The circuit the room joins: the chosen or the only one; null while it has to be chosen or set up. */
+  floorCircuit: CircuitDto | null;
+  /** This room's zone valve is used: the circuit (or the one being set up) runs by zones. */
+  floorZoned: boolean;
+  radiatorCircuits: CircuitDto[];
+  radiatorCircuitId: Id | null;
+  setRadiatorCircuit: (id: Id | null) => void;
+  /** The circuit the radiators go on (the chosen or the first); null: one is created, fed by every heat source. */
+  radiatorCircuit: CircuitDto | null;
+  /** Central sources that can heat (a new circuit is fed by them). */
+  heatSources: { id: Id; name: string }[];
   method: AggregationMethod;
   setMethod: (m: AggregationMethod) => void;
   /** What each method gives with the chosen sensors (from the server's step validation). */
@@ -168,6 +181,8 @@ interface Draft {
   nameTouched: boolean;
   areaId: string | null;
   demand: SourceDemandPolicy;
+  /** Kinds ticked on step 1 (the devices may add more). */
+  chosen: EmitterChoice[];
   pickedIds: string[];
   /** «Use as…» of area candidates, by entity id. */
   roles: Record<string, WizardDeviceRole>;
@@ -176,6 +191,7 @@ interface Draft {
   preselectedFor: string | null;
   extras: ExtraDevice[];
   floor: Wizard['floor'];
+  radiatorCircuitId: Id | null;
   method: AggregationMethod | null;
   heatTol: Band | null;
   coolTol: Band | null;
@@ -193,12 +209,14 @@ const EMPTY: Draft = {
   nameTouched: false,
   areaId: null,
   demand: 'call',
+  chosen: [],
   pickedIds: [],
   roles: {},
   opened: [],
   preselectedFor: null,
   extras: [],
-  floor: { circuitId: null, newName: '', pumpEntityId: null },
+  floor: { circuitId: null, setup: { name: '', pumpEntityId: null, mode: 'follow_source', sourceIds: [], runOnMin: 10 } },
+  radiatorCircuitId: null,
   method: null,
   heatTol: null,
   coolTol: null,
@@ -252,7 +270,7 @@ export function useWizard(): Wizard {
     [],
   );
 
-  const { step, name, areaId, demand, extras, opened, floor, method, heatTol, coolTol, reaction, strategy, issues, hints, reportId } = d;
+  const { step, name, areaId, demand, chosen, extras, opened, floor, radiatorCircuitId, method, heatTol, coolTol, reaction, strategy, issues, hints, reportId } = d;
   const pickedIds = useMemo(() => new Set(d.pickedIds), [d.pickedIds]);
 
   const discovery = useResource(areaId ? `area-discovery:${areaId}` : null, () => api.ha.discoverArea(areaId as string));
@@ -268,17 +286,23 @@ export function useWizard(): Wizard {
   );
   const usesKnown = sourcesRes.settled && pumpsRes.settled;
 
-  // the area's devices arrive: pre-check what the server suggests — never what belongs to another
-  // room, and never the heat pump or a circuit pump that happen to hang in the same area
+  // on the device step the area's devices are pre-checked as the server suggests — never what belongs
+  // to another room, never the heat pump or a circuit pump that happen to hang in the same area, and
+  // not a head or an AC when step 1 said the room is heated otherwise (they are still offered)
+  const onDevices = step >= 2;
   useEffect(() => {
     const data = discovery.data;
-    if (!data || data.areaId !== areaId || !usesKnown) return;
+    if (!data || data.areaId !== areaId || !usesKnown || !onDevices) return;
     patch((x) => {
       if (x.preselectedFor === data.areaId) return {};
-      const suggested = data.candidates.filter((c) => c.preselected && !c.takenByRoomId && !inUse(c));
+      const fits = (c: DiscoveryCandidate) => {
+        const kind = ROLE_HEATING_KIND[c.role];
+        return !kind || !x.chosen.length || x.chosen.includes(kind);
+      };
+      const suggested = data.candidates.filter((c) => c.preselected && !c.takenByRoomId && !inUse(c) && fits(c));
       return { preselectedFor: data.areaId, pickedIds: suggested.map((c) => c.entityId), roles: {} };
     });
-  }, [discovery.data, areaId, usesKnown, inUse, patch]);
+  }, [discovery.data, areaId, usesKnown, inUse, patch, onDevices]);
 
   const areas = useMemo(
     () =>
@@ -323,21 +347,47 @@ export function useWizard(): Wizard {
   }, [candidates, pickedIds, extras, roleOf]);
 
   const kinds = useMemo<EmitterChoice[]>(() => {
-    const set = new Set<EmitterChoice>();
+    const set = new Set<EmitterChoice>(chosen);
     for (const dev of devices) {
-      const k = ROLE_KIND[dev.role];
+      const k = ROLE_HEATING_KIND[dev.role];
       if (k) set.add(k);
     }
-    // a floor circuit can heat a room without a zone valve of its own
-    if (opened.includes('floor')) set.add('floor');
-    return KIND_ORDER.filter((k) => set.has(k));
-  }, [devices, opened]);
+    // radiators are with heads or without: a head picked wins
+    if (set.has('trv')) set.delete('radiator_plain');
+    return HEATING_KIND_ORDER.filter((k) => set.has(k));
+  }, [devices, chosen]);
 
   const tempCount = devices.filter((d) => d.role === 'temperature' || d.role === 'temp_humidity').length;
   const needsCool = kinds.includes('ac') || kinds.includes('floor');
-  const floorCircuits = useMemo(
-    () => (circuitsRes.data ?? []).filter((c) => c.config.kind === 'floor').map((c) => ({ id: c.config.id, name: c.config.name })),
-    [circuitsRes.data],
+  const circuits = circuitsRes.data;
+  const floorCircuits = useMemo(() => (circuits ?? []).filter((c) => c.config.kind === 'floor'), [circuits]);
+  const radiatorCircuits = useMemo(() => (circuits ?? []).filter((c) => c.config.kind === 'radiators'), [circuits]);
+  // the house's only floor circuit is the one; with several the user picks, with none it is set up here
+  const floorCircuit = floorCircuits.find((c) => c.config.id === floor.circuitId) ?? (floorCircuits.length === 1 ? floorCircuits[0] : null);
+  const settingUpFloor = kinds.includes('floor') && circuitsRes.settled && floorCircuits.length === 0;
+  const floorZoned = floorCircuit ? floorCircuit.config.mode === 'zoned' : settingUpFloor && floor.setup.mode === 'zoned';
+  // several radiator circuits (one per room from 0.1.0): the first one unless the user picks another
+  const radiatorCircuit = radiatorCircuits.find((c) => c.config.id === radiatorCircuitId) ?? radiatorCircuits[0] ?? null;
+  const heatSources = useMemo(
+    () =>
+      (sourcesRes.data ?? [])
+        .filter((s) => s.config.scope === 'central' && s.config.capabilities.heat)
+        .map((s) => ({ id: s.config.id, name: names.sourceLabel(s.config.id) ?? s.config.name })),
+    [sourcesRes.data, names],
+  );
+
+  const newFloor = useMemo<NewCircuitRequest | null>(
+    () =>
+      settingUpFloor
+        ? {
+            name: floor.setup.name.trim() || t('Underfloor heating'),
+            pumpEntityId: floor.setup.pumpEntityId,
+            sourceIds: floor.setup.sourceIds,
+            mode: floor.setup.mode,
+            runOnMin: floor.setup.runOnMin,
+          }
+        : null,
+    [settingUpFloor, floor.setup],
   );
 
   const request = useMemo<CreateRoomRequest>(
@@ -349,12 +399,9 @@ export function useWizard(): Wizard {
       demandPolicy: demand,
       devices,
       circuits: {
-        radiatorCircuitId: null,
-        floorCircuitId: kinds.includes('floor') ? floor.circuitId : null,
-        newFloorCircuit:
-          kinds.includes('floor') && !floor.circuitId && floor.pumpEntityId
-            ? { name: floor.newName.trim() || t('Floor heating · {room}', { room: name.trim() }), pumpEntityId: floor.pumpEntityId, sourceIds: [] }
-            : null,
+        radiatorCircuitId: kinds.includes('trv') || kinds.includes('radiator_plain') ? (radiatorCircuit?.config.id ?? null) : null,
+        floorCircuitId: kinds.includes('floor') ? (floorCircuit?.config.id ?? null) : null,
+        newFloorCircuit: newFloor,
       },
       // with one sensor or none there is nothing to choose: the server takes what fits the count
       method: tempCount >= 2 ? method : null,
@@ -363,7 +410,7 @@ export function useWizard(): Wizard {
       windowReaction: reaction,
       trvStrategy: strategy,
     }),
-    [name, areaId, kinds, demand, devices, floor, method, tempCount, heatTol, coolTol, needsCool, defaults, reaction, strategy],
+    [name, areaId, kinds, demand, devices, newFloor, radiatorCircuit, floorCircuit, method, tempCount, heatTol, coolTol, needsCool, defaults, reaction, strategy],
   );
 
   // the newest check wins: a slow answer to an older draft must not bring back a fixed problem
@@ -465,7 +512,45 @@ export function useWizard(): Wizard {
 
   const reset = useCallback(() => setDraft(EMPTY), []);
 
-  const dirty = step < 5 && (name.trim() !== '' || areaId !== null || extras.length > 0 || opened.length > 0);
+  const dirty = step < 5 && (name.trim() !== '' || areaId !== null || chosen.length > 0 || extras.length > 0 || opened.length > 0);
+
+  const toggleKind = useCallback(
+    (k: EmitterChoice) =>
+      patch((x) => {
+        if (kinds.includes(k)) {
+          // unticked: the kind goes with its devices (a head's own reading as the sensor too)
+          const roles = KIND_ROLES(k);
+          const extrasLeft = x.extras.filter((y) => !roles.includes(y.role));
+          const pickedLeft = x.pickedIds.filter((id) => {
+            const c = candidates.find((cc) => cc.entityId === id);
+            return !c || !roles.includes(x.roles[id] ?? c.role);
+          });
+          const heads = new Set([
+            ...extrasLeft.filter((y) => y.role === 'trv').map((y) => y.entityId),
+            ...pickedLeft.filter((id) => (x.roles[id] ?? candidates.find((c) => c.entityId === id)?.role) === 'trv'),
+          ]);
+          return {
+            chosen: x.chosen.filter((y) => y !== k),
+            extras: extrasLeft.filter((y) => !y.ownTemperature || heads.has(y.entityId)),
+            pickedIds: pickedLeft,
+          };
+        }
+        // smart heads and ordinary valves are the same radiators: one replaces the other
+        if (k === 'radiator_plain' && kinds.includes('trv')) {
+          const roles = KIND_ROLES('trv');
+          return {
+            chosen: [...x.chosen.filter((y) => y !== 'trv'), k],
+            extras: x.extras.filter((y) => !roles.includes(y.role) && !y.ownTemperature),
+            pickedIds: x.pickedIds.filter((id) => {
+              const c = candidates.find((cc) => cc.entityId === id);
+              return !c || !roles.includes(x.roles[id] ?? c.role);
+            }),
+          };
+        }
+        return { chosen: [...x.chosen.filter((y) => !(k === 'trv' && y === 'radiator_plain')), k] };
+      }),
+    [kinds, candidates, patch],
+  );
 
   const addDevice = useCallback(
     (e: HaEntityDto, role: WizardDeviceRole) =>
@@ -484,7 +569,8 @@ export function useWizard(): Wizard {
         const extra: ExtraDevice = {
           role,
           entityId: e.entityId,
-          name: e.name,
+          // a combined sensor is named after its device («Garage sensor»), not after its temperature entity
+          name: role === 'temp_humidity' && e.deviceName ? e.deviceName : e.name,
           roles: possible.includes(role) ? possible : [role, ...possible],
           areaName: e.areaName,
           state: e.available ? e.state : 'unavailable',
@@ -540,6 +626,7 @@ export function useWizard(): Wizard {
     setArea,
     areas,
     kinds,
+    toggleKind,
     demand,
     setDemand: (v) => patch({ demand: v }),
     candidates,
@@ -560,8 +647,18 @@ export function useWizard(): Wizard {
     openSection: (k) => patch((x) => (x.opened.includes(k) ? {} : { opened: [...x.opened, k] })),
     closeSection: (k) => patch((x) => ({ opened: x.opened.filter((y) => y !== k) })),
     floor,
-    setFloor: (f) => patch((x) => ({ floor: { ...x.floor, ...f } })),
+    setFloor: (f) =>
+      patch((x) => ({
+        floor: { circuitId: f.circuitId !== undefined ? f.circuitId : x.floor.circuitId, setup: { ...x.floor.setup, ...f.setup } },
+      })),
     floorCircuits,
+    floorCircuit,
+    floorZoned,
+    radiatorCircuits,
+    radiatorCircuitId: radiatorCircuit?.config.id ?? null,
+    setRadiatorCircuit: (id) => patch({ radiatorCircuitId: id }),
+    radiatorCircuit,
+    heatSources,
     method: method ?? methodForCount(tempCount),
     setMethod: (m) => patch({ method: m }),
     methodValues: hints?.methodValues,

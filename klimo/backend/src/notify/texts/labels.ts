@@ -11,6 +11,8 @@ import type {
   OverrideKind,
   PumpReason,
   PumpStateKind,
+  RoomBinding,
+  RoomHeatingKind,
   RoomStateKind,
   Season,
   SourceFaultCode,
@@ -18,6 +20,7 @@ import type {
   SourceStateKind,
   TrvManualPolicy,
   WindowReaction,
+  WizardDeviceRole,
 } from '../../shared/model';
 import type { Fmt } from './format';
 
@@ -147,6 +150,36 @@ const POLICY: Record<TrvManualPolicy, Label> = {
   slot: ['kept until the next slot', 'діє до наступного інтервалу'],
   revert: ['reverted', 'повернуто'],
   save: ['saved to the profile', 'збережено в профіль'],
+};
+
+const DEVICE_ROLE: Record<WizardDeviceRole, Label> = {
+  trv: ['radiator head', 'головку'],
+  temperature: ['temperature sensor', 'датчик температури'],
+  humidity: ['humidity sensor', 'датчик вологості'],
+  temp_humidity: ['sensor', 'датчик'],
+  window: ['window contact', 'датчик вікна'],
+  door: ['door contact', 'датчик дверей'],
+  ac: ['air conditioner', 'кондиціонер'],
+  heater: ['heater', 'обігрівач'],
+  floor_zone: ['floor zone valve', 'клапан зони підлоги'],
+  floor_probe: ['floor probe', 'датчик підлоги'],
+  dehumidifier: ['dehumidifier', 'осушувач'],
+};
+
+const HEATING_KIND: Record<RoomHeatingKind, Label> = {
+  trv: ['radiators with smart heads', 'радіатори з розумними головками'],
+  radiator_plain: ['radiators with ordinary valves', 'радіатори зі звичайними кранами'],
+  floor: ['underfloor heating', 'тепла підлога'],
+  ac: ['air conditioner', 'кондиціонер'],
+  local: ['own heater', 'власний обігрівач'],
+};
+
+const RELEASE: Record<RoomBinding['release'], Label> = {
+  trv_handback: ['the head got its own setpoint back', 'головці повернуто її власну уставку'],
+  switch_off: ['switched off', 'вимкнено'],
+  zone_open: ['the zone was left open', 'зону залишено відкритою'],
+  zone_close: ['the zone was closed', 'зону закрито'],
+  none: ['', ''],
 };
 
 const OVERRIDE_KIND: Record<OverrideKind, Label> = {
@@ -300,6 +333,9 @@ const TABLES: Partial<Record<Fmt, Record<string, Label>>> = {
   action: ACTION_LABEL,
   rstate: ROOM_STATE,
   srcverb: SOURCE_VERB,
+  drole: DEVICE_ROLE,
+  hkind: HEATING_KIND,
+  release: RELEASE,
 };
 
 /** Label of an enum value in `lang`; null for an unknown value (shown as is). */

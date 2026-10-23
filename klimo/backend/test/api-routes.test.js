@@ -40,6 +40,10 @@ POST   /api/rooms/:id/sensors                                A
 PATCH  /api/rooms/:id/sensors/:sensorId                      A
 DELETE /api/rooms/:id/sensors/:sensorId                      A
 PUT    /api/rooms/:id/sensors/order                          A
+POST   /api/rooms/:id/bindings                               A
+PUT    /api/rooms/:id/bindings/:key                          A
+DELETE /api/rooms/:id/bindings/:key                          A
+PUT    /api/rooms/:id/heating                                A
 POST   /api/rooms/:id/emitters                               A
 PATCH  /api/rooms/:id/emitters/:emitterId                    A
 DELETE /api/rooms/:id/emitters/:emitterId                    A
@@ -130,10 +134,14 @@ POST   /api/sources/:id/test                                 U
 DELETE /api/sources/:id/test                                 U
 PUT    /api/sources/:id/lock                                 U
 DELETE /api/sources/:id/lock                                 U
+GET    /api/sources/:id/consumption                          U
 GET    /api/circuits                                         U
 POST   /api/circuits                                         A
 PATCH  /api/circuits/:id                                     A
 DELETE /api/circuits/:id                                     A
+POST   /api/circuits/:id/merge                               A
+POST   /api/circuits/:id/rooms                               A
+DELETE /api/circuits/:id/rooms/:roomId                       A
 GET    /api/pumps                                            U
 GET    /api/pumps/:id                                        U
 POST   /api/pumps                                            A
@@ -159,6 +167,7 @@ PATCH  /api/strategy/season                                  A
 GET    /api/energy                                           U
 PATCH  /api/energy                                           A
 POST   /api/energy/setup                                     A
+GET    /api/energy/consumption                               U
 GET    /api/triggers                                         U
 POST   /api/triggers                                         A
 PATCH  /api/triggers/:id                                     A

@@ -22,6 +22,13 @@ export {
 export { BivalenceChart, type BivalenceChartProps, type BivalenceTrack } from './charts/BivalenceChart';
 export { WeatherCurveChart, type CurvePoint, type WeatherCurveChartProps } from './charts/WeatherCurveChart';
 export {
+  ConsumptionChart,
+  consumptionScale,
+  type ConsumptionChartBucket,
+  type ConsumptionChartProps,
+  type ConsumptionSeriesColor,
+} from './charts/ConsumptionChart';
+export {
   BatteryBar,
   ComfortBar,
   SignalBars,

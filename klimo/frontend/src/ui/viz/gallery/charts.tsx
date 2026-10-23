@@ -8,8 +8,9 @@ import { ProfileStrip } from '../charts/ProfileStrip';
 import { DayTimelineVertical, WeekTimeline } from '../charts/WeekTimeline';
 import { BivalenceChart } from '../charts/BivalenceChart';
 import { WeatherCurveChart, type CurvePoint } from '../charts/WeatherCurveChart';
+import { ConsumptionChart } from '../charts/ConsumptionChart';
 import { hhmm } from '../internal/util';
-import { FRIDAY, galleryDay, HOUR, HP_RUNNING_SINCE, HP_SPANS, LIVING_TEMPS, P, SPARK, WEEKDAY, WEEKEND } from './fixtures';
+import { FRIDAY, GAS_MONTH, galleryDay, HOUR, HP_RUNNING_SINCE, HP_SPANS, LIVING_TEMPS, P, SPARK, WEEKDAY, WEEKEND } from './fixtures';
 import { Group, Item, Pair, Panel } from './parts';
 
 export function GalleryCharts() {
@@ -44,6 +45,17 @@ export function GalleryCharts() {
     { key: 'pump:rad', label: ut('Radiator pump'), spans: pump(3) },
     { key: 'pump:floor', label: ut('Floor pump'), spans: pump(10) },
   ];
+
+  const gasMonth = GAS_MONTH.map((d) => ({
+    label: String(d.day),
+    title: ut('{day} October', { day: d.day }),
+    value: d.gas,
+    partial: d.day === 21,
+    future: d.day > 21,
+    outdoorC: d.outdoorC,
+    runtimeMin: d.runtimeMin,
+    details: d.gas != null ? [{ label: ut('Cost'), value: `€${(d.gas * 1.05).toFixed(2)}` }] : [],
+  }));
 
   const [sel, setSel] = useState<{ d: number; i: number }>({ d: 2, i: 3 });
   const week = [ut('Mo'), ut('Tu'), ut('We'), ut('Th'), ut('Fr'), ut('Sa'), ut('Su')].map((label, d) => {
@@ -208,6 +220,37 @@ export function GalleryCharts() {
           </Panel>
           <Panel>
             <WeatherCurveChart points={curve} editable onChange={setCurve} range={[25, 60]} ariaLabel={ut('Weather curve, editable')} />
+          </Panel>
+        </Pair>
+      </Item>
+
+      <Item name="ConsumptionChart">
+        <Panel>
+          <ConsumptionChart
+            buckets={gasMonth}
+            series={{ label: ut('Gas'), unit: 'm³', color: 'gas', format: (v) => `${v.toFixed(2)} m³` }}
+            outdoor={{ label: ut('Outdoor, average'), format: (c) => `${c.toFixed(1)}°`, axis: (c) => `${Math.round(c)}°` }}
+            runtime={{ label: ut('Running time'), format: (m) => (m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`) }}
+            ariaLabel={ut('Gas per day this month: 52 m³ so far, the most on the 17th')}
+            emptyText={ut('No readings in this period yet')}
+          />
+        </Panel>
+        <Pair min={300}>
+          <Panel narrow>
+            <ConsumptionChart
+              buckets={gasMonth.slice(0, 7).map((b, i) => ({ ...b, label: [ut('Mo'), ut('Tu'), ut('We'), ut('Th'), ut('Fr'), ut('Sa'), ut('Su')][i] }))}
+              series={{ label: ut('Electricity'), unit: ut('kWh'), color: 'electricity', format: (v) => `${(v * 4).toFixed(1)} kWh` }}
+              runtime={{ label: ut('Running time'), format: (m) => `${m} min` }}
+              ariaLabel={ut('Electricity per day this week')}
+            />
+          </Panel>
+          <Panel narrow>
+            <ConsumptionChart
+              buckets={gasMonth.map((b) => ({ ...b, value: null }))}
+              series={{ label: ut('Gas'), unit: 'm³', color: 'gas', format: (v) => `${v.toFixed(2)} m³` }}
+              ariaLabel={ut('No gas readings yet')}
+              emptyText={ut('No readings in this period yet')}
+            />
           </Panel>
         </Pair>
       </Item>

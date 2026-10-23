@@ -408,6 +408,6 @@ family('target change with manual control', S.setTargetRequest, {
 });
 
 family('changes from Home Assistant are temporary or written to the profile, never manual by setting', S.generalSettingsPatch, {
-  ok: [{ haTargetChangeDuration: 'slot' }, { haTargetChangeDuration: 'forever' }],
-  bad: [[{ haTargetChangeDuration: 'manual' }, 'haTargetChangeDuration']],
+  ok: [{ haTargetChangeDuration: 'slot' }, { haTargetChangeDuration: 'forever' }, { haTargetChangeDuration: 'manual' }],
+  bad: [[{ haTargetChangeDuration: 'temporary' }, 'haTargetChangeDuration']],
 });

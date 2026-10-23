@@ -147,6 +147,7 @@ export const CARDS: Record<CardTextKey, Row> = {
   ],
   'card.dev.valve': [(v) => `valve {pct}${fromSource(v, 0, ' · ')}`, (v) => `клапан {pct}${fromSource(v, 1, ' · ')}`],
   'card.dev.floor': [(v) => `floor${fromSource(v, 0)}`, (v) => `підлога${fromSource(v, 1)}`],
+  'card.dev.radiator': [(v) => `radiators${fromSource(v, 0)}`, (v) => `радіатори${fromSource(v, 1)}`],
   'card.dev.trvfloor': ['floor[ + {extra}]', 'підлога[ + {extra}]'],
   'card.dev.ac': ['air conditioner on[ · {mode}]', 'кондиціонер працює[ · {mode}]'],
   'card.dev.ac_idle': ['air conditioner waiting', 'кондиціонер чекає'],

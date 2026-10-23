@@ -67,9 +67,9 @@ device with what it expects before it sends a command.
 - **Climate source** — whatever makes heat or cold: gas or electric boiler, heat pump, air conditioner,
   electric radiator, electric floor, infrared panel, or anything else. *Whole-house* sources feed circuits;
   *room* sources serve one room.
-- **Circuit and pumps** — a hydronic branch (radiators, floor, fan coils) fed by sources, with any number
-  of pumps, each with its own rule and run-on, optionally behind a manifold with supply/return sensors
-  and its own pump.
+- **Circuit and pumps** — a hydronic branch of the house (radiators, floor, fan coils) fed by sources and
+  joined by rooms. It runs as a whole with its source or by zones and rooms, with any number of pumps
+  sharing one run-on, optionally behind a manifold with supply/return sensors and its own pump.
 - **Profile** — named targets for heating and cooling with per-room exceptions (own targets or off).
   Home, Away and Eco are system profiles (renamable, not deletable); Vacation is frost protection only.
 - **Schedule** — a weekly plan of profile blocks (30-minute steps) for the house, optional room schedules
@@ -190,17 +190,96 @@ control method is chosen per room:
   where it comes from and until when. The room page shows it as "Target 20.0° · Home until 23:00".
 - **Who wins when rules disagree** (Schedule page): frost protection › open window (both locked) ›
   manual change › calendar › presence › room schedule › house schedule; the last four can be reordered.
-- **Manual changes** last until the end of the slot, a chosen time, or forever (which writes the value
-  into the active profile). Boost (+1° for 30 min) and airing (10 min) are one tap. Every change can be
-  undone for 30 seconds.
+- **Manual changes** last until the end of the slot, a chosen time, until you resume the schedule
+  (manual control, see below), or forever (which writes the value into the active profile). Boost (+1°
+  for 30 min) and airing (10 min) are one tap. Every change can be undone for 30 seconds.
 - **A target set in Home Assistant** (a thermostat card, HomeKit, voice) lasts until the next slot by
-  default (Settings → Behaviour).
+  default (Settings → Behaviour); in a room under manual control it stays manual with the new value.
 - **Presence**: *everyone left* (all persons away for 15 min → Away), *someone is coming* (within 3 km),
   *someone is home* (cancels Away in the middle of a schedule slot). Choose the people in Settings first.
 - **Calendar**: an event matching a text on a calendar entity switches to a profile, with pre-heating
   (Guests 60 min before "Guests" on the family calendar).
 - **Vacation**: until a date, returning to normal 3 hours early so the house is warm on arrival.
 - **Exceptions** in the schedule cover holidays and days off.
+
+## Manual control
+
+Every room is in one of three modes, chosen next to its target on the room page, on the thermostat
+card or from Home Assistant:
+
+| Mode | What it means |
+|---|---|
+| **Schedule** | The room follows its profiles and schedules. A change for 1 hour or until the next slot is temporary: the room page shows its end, and the room goes back by itself. |
+| **Manual** | The room holds its own target with no end. The schedule, a house profile change and presence do not touch it. −/+ change the value without asking how long. |
+| **Off** | The room is off with no end. Frost protection stays: below the frost limit (7° by default) it is heated anyway. |
+
+An open window still pauses a room under manual control, and frost protection acts in every mode.
+Rule offsets and blackout limits apply as to any manual change. A temporary change made in a manual or
+switched-off room returns to that mode when it ends.
+
+**Resume schedule** in a room ends its manual, temporary, boost and off changes. The house has two
+modes on the house profile tile: **Schedule**, and **Manual** — the house schedule is paused and the
+current house profile holds. **Resume schedule for the whole house** resumes the house schedule and
+every room's manual or temporary change; rooms switched off stay off until they are resumed one by
+one. Manual control survives a restart of the add-on. The journal records who changed a mode and
+through which entity.
+
+### From Home Assistant
+
+An add-on cannot add services to Home Assistant; these entities and one event do the job:
+
+| Entity | What it does |
+|---|---|
+| `climate.klimo_<room>` | `auto` resumes the schedule, `heat` / `cool` / `heat_cool` switch the room to manual control at its current target, `off` switches it off. A temperature set while the room is manual keeps it manual; otherwise it lasts as Settings → Behaviour says. |
+| `select.klimo_<room>_control` | `Schedule`, `Manual` or `Off`. Attributes: `mode` (also `temporary`), `since`, `until`, `set_by`. A temporary change reads `Schedule`. |
+| `switch.klimo_schedule` | On = the house follows the schedule, off = the house schedule is paused. Turning it on resumes the whole house. |
+| `button.klimo_<room>_resume_schedule` | Resumes the room. |
+| `button.klimo_resume_schedule` | Resumes the whole house; rooms switched off stay off. |
+
+```yaml
+# a room under manual control at 21°
+action: climate.set_temperature
+target:
+  entity_id: climate.klimo_vitalnia
+data:
+  hvac_mode: heat
+  temperature: 21
+
+# back to the schedule
+action: button.press
+target:
+  entity_id: button.klimo_vitalnia_resume_schedule
+
+# the room's mode through its select
+action: select.select_option
+target:
+  entity_id: select.klimo_vitalnia_control
+data:
+  option: Manual
+
+# pause the house schedule (turn_on resumes the whole house)
+action: switch.turn_off
+target:
+  entity_id: switch.klimo_schedule
+```
+
+Scripts and automations can also fire the event `klimo_command`:
+
+```yaml
+- event: klimo_command
+  event_data:
+    command: set_target      # resume_schedule | set_schedule | set_manual | set_off | set_target
+    room: Living room        # room id, slug, name or one of its Klimo entities
+    target: 21.5
+    duration: 2h             # slot | 1h | 2h | 3h | morning | until | manual | forever
+```
+
+Without `room`, `resume_schedule`, `set_schedule` and `set_manual` act on the whole house. `set_manual`
+with a `target` holds that value. `set_target` without a `duration` lasts as Settings → Behaviour says,
+or stays manual in a room under manual control; `duration: until` takes `until` as a time (ISO or epoch
+milliseconds). A command that cannot be applied — an unknown command or room, a missing target — is
+written to the journal with the reason. Settings → Integrations has these examples with your rooms'
+entity ids, ready to copy.
 
 ## Climate sources
 
@@ -247,6 +326,40 @@ running and pauses the timers.
 - When the add-on stops, a relay without a watchdog is switched off; a relay with a watchdog and
   climate or flow sources are left as they are, and the watchdog or the device's own regulation takes
   over.
+
+### Consumption and cost
+
+A source can have **meters** — one for gas, one for electricity and one for heat — chosen on the source
+page under *Consumption meters*:
+
+- **Gas**: a counter in m³, ft³, L, kWh or MJ (device class `gas`, state class `total_increasing` or
+  `total`). A boiler and a stove on one meter: the hours, days and months show everything the meter
+  counted; a single run gets only the gas used while the boiler ran.
+- **Electricity**: an energy counter in kWh, or a power sensor in W or kW, which is added up over time
+  (an estimate). A source saved before meters existed uses its power sensor.
+- **Heat**: a heat meter in kWh. With it the page shows the boiler's efficiency (heat ÷ the energy of
+  the gas) or the heat pump's COP (heat ÷ electricity).
+
+Klimo stores no readings. The **Consumption** block of a source reads the meters' long-term statistics
+in Home Assistant — by the hour for a day, by the day for a week or a month, by the month for a year —
+so a meter bound today shows its whole recorded past. Under the bars are the outdoor temperature and
+the running time, each on its own scale; hover, tap or use the arrow keys for all values of one column,
+or switch to the table. The tiles show the total, the change against the period before (up to the same
+point while the period runs), the cost, the gas per degree-day and the running time. A degree-day is
+one degree below 18° outdoors for a whole day; dividing by it takes the weather out, so a lower number
+means the house or the boiler got more efficient, not that the month was warmer.
+
+For a day or a week, **Runs** lists every start with what it used. A single run needs the meter's state
+history, which the recorder keeps for `purge_keep_days` (10 days by default): older runs show only
+their time. Values marked ≈ are estimates — the meter reported rarely, or one reading covered several
+runs and was shared out by running time. A meter that is reset or replaced is skipped, not counted.
+Without a state class Home Assistant keeps no statistics and the chart stays empty: set
+`state_class: total_increasing` in the integration or with `homeassistant: customize:`.
+
+**Prices** are set in *Settings → Energy prices*: the currency, the price of a kWh of electricity, the
+price of gas per m³ or per kWh, and the calorific value of the gas (10.5 kWh per m³ unless the bill says
+otherwise). The **Energy** tile of the overview adds today's gas, electricity and cost of all sources
+with meters.
 
 ## Strategy
 
@@ -304,8 +417,24 @@ running and pauses the timers.
 
 ## Circuits and pumps
 
-- **The pump runs when**: *a room of the circuit asks* (and a source runs), *a source runs* (like the
-  usual "pump with the boiler" automation), or *source and room* both.
+Circuits belong to the house: set one up once (System → Schema → Circuits & pumps, or from the add-room
+wizard) and rooms join it. Each card shows what feeds the circuit, how it runs, its pump and run-on, and
+the rooms on it.
+
+- **How a floor runs**: *the whole floor — together with the source* (the default; the usual "floor pump
+  with the boiler": the pump runs whenever a source of the circuit runs, rooms only ask for heat by their
+  temperature), or *by zones — a valve in each room* (a cold room opens its zone valve, the pump runs
+  while any zone is open, the last zone closing starts the run-on).
+- **When the radiator pump runs**: *by the rooms* (the default: while smart heads are open or a room with
+  ordinary radiators is colder than its target) or *together with the source*. A room with ordinary
+  valves works as a room thermostat in either mode: it starts the source and this pump.
+- **Rooms on the circuit**: add a room, take one off (its heads get their own setpoints back, its zone
+  valve is left open on a heating-only floor and closed on one that also cools), or give a room a zone
+  valve on a zoned floor.
+- **Merge into…**: a house set up with a circuit per room merges them into one; rooms and pumps move,
+  the empty circuit goes.
+- A zoned floor without a **bypass** never has its pump push against closed zones: while a source must
+  keep running, all zones open.
 - **Run-on after a stop** takes the remaining heat out of the loop: 3 min for radiators and 10 min for a
   floor by default, separately for heating and cooling. A new request during the run-on restarts it, it
   never stacks.
@@ -444,7 +573,9 @@ lovelace:
 The cards read `sensor.klimo_hub`, `sensor.klimo_<room>_card` and `sensor.klimo_reply`, find them by
 their attributes (renamed ids keep working) and send commands through `mqtt.publish` on `klimo/command`.
 Texts arrive in the notification language; the card chrome follows `language` (`auto` = Home Assistant).
-A target change waits 3 s for more taps, then offers an undo for 8 s.
+A target change waits 3 s for more taps, then offers an undo for 8 s. The thermostat card switches the
+room between Schedule, Manual and Off; under manual control a new target asks no duration, and the
+house card's **Resume schedule for the whole house** works as on the house profile tile.
 
 ## Native entities
 
@@ -453,14 +584,15 @@ ids are pinned when they are created; renaming a room does not change them.
 
 | Entity | Purpose |
 |---|---|
-| `climate.klimo_<room>` per room | Current temperature and humidity, target (low/high between seasons), modes `off` / `auto` / `heat` / `cool` / `heat_cool` by season, presets = profiles, action. `auto` resumes the schedule, `off` switches the room off, a target lasts per Settings (until the next slot by default), a preset sets the room profile until the next slot; `none` clears it. |
+| `climate.klimo_<room>` per room | Current temperature and humidity, target (low/high between seasons), modes `off` / `auto` / `heat` / `cool` / `heat_cool` by season, presets = profiles, action. `auto` resumes the schedule, `heat` / `cool` / `heat_cool` switch to manual control, `off` switches the room off; a target lasts per Settings (until the next slot by default) or stays manual in a manual room; a preset sets the room profile until the next slot, `none` clears it. |
+| `select.klimo_<room>_control` | The room's mode: `Schedule`, `Manual`, `Off` ([Manual control](#manual-control)). |
 | `sensor.klimo_<room>_temperature` | Klimo's aggregated room temperature (recorded; the room charts read it back). |
 | `sensor.klimo_<room>_target` | The effective target (recorded; the target band in the charts). |
 | `sensor.klimo_<room>_humidity` / `_dew_point` | With humidity sensors. |
 | `binary_sensor.klimo_<room>_heat_demand` / `_cool_demand` | The room asks for heat or cold. |
 | `binary_sensor.klimo_<room>_window` | The effective window state (contacts or a temperature drop). |
 | `sensor.klimo_<room>_state` | heating, cooling, holding, window, off… (diagnostic). |
-| `button.klimo_<room>_resume_schedule` / `_boost` | Back to the schedule; +1° for 30 min. |
+| `button.klimo_<room>_resume_schedule` / `_boost` | Back to the schedule (ends manual, temporary and off changes); +1° for 30 min. |
 | `select.klimo_house_profile` | The house profile; selecting one sets it until the next slot. |
 | `select.klimo_season_mode` | `auto`, `heat`, `cool`, `off`. |
 | `sensor.klimo_season` | `heating`, `neutral`, `cooling`. |
@@ -469,7 +601,8 @@ ids are pinned when they are created; renaming a room does not change them.
 | `binary_sensor.klimo_heat_demand` / `_cool_demand` | Any room asks. |
 | `binary_sensor.klimo_problem` / `sensor.klimo_alerts` | An open warning or critical alert / the count. |
 | `sensor.klimo_power_used` | kW drawn by Klimo's electric sources (with energy entities set up). |
-| `button.klimo_resume_schedule` / `button.klimo_resync` | Clear the house profile override / resend every target. |
+| `switch.klimo_schedule` | On = the house follows the schedule, off = the house schedule is paused on the current profile. |
+| `button.klimo_resume_schedule` / `button.klimo_resync` | Resume the schedule for the whole house — the house profile change and every room's manual or temporary change; rooms switched off stay off / resend every target. |
 | `binary_sensor.klimo_source_<id>` | A source runs; attributes: mode, role, since, power, supply, COP, fault. |
 | `binary_sensor.klimo_pump_<circuit>` | A pump of the circuit runs; attributes: reason, run-on deadline. |
 | `binary_sensor.klimo_trigger_<id>` | A trigger holds. |

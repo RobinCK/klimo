@@ -237,7 +237,7 @@ test('manual control is reachable from HA by default: room control select, sched
     const room = byId(entities, 'klimo_r_9f2a1c_resume_schedule');
     assert.equal(house.entityId, 'button.klimo_resume_schedule');
     assert.equal(room.entityId, 'button.klimo_vitalnia_resume_schedule');
-    assert.equal(house.config.name, 'Повернути розклад');
+    assert.equal(house.config.name, 'Повернути розклад для всього дому');
     assert.equal(room.config.name, 'Вітальня повернути розклад');
     // everyday control: enabled, not tucked away as configuration or diagnostics
     for (const e of [select, sw, house, room]) {
@@ -250,5 +250,7 @@ test('manual control is reachable from HA by default: room control select, sched
   // in English
   const en = discover({ cfg: houseConfig({ lang: 'en' }), lang: 'en' });
   assert.equal(byId(en, 'klimo_schedule').config.name, 'Follow schedule');
+  assert.equal(byId(en, 'klimo_resume_schedule').config.name, 'Resume schedule for the whole house');
+  assert.equal(byId(en, 'klimo_r_9f2a1c_resume_schedule').config.name.endsWith(' resume schedule'), true);
   assert.equal(byId(en, 'klimo_r_9f2a1c_control').config.name.endsWith(' control'), true);
 });

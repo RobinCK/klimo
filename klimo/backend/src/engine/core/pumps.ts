@@ -10,6 +10,7 @@ import type {
   Pump,
   PumpMemory,
   PumpReason,
+  PumpRule,
   PumpState,
   PumpStateKind,
   ReasonParams,
@@ -22,9 +23,9 @@ import type { EnergyPhase } from './energy';
 import { fromLocal, hhmmToMinute, toLocal } from './time';
 
 /* =====================================================================================================
- * Circulation pumps. Each pump follows its own rule — `source` (runs with a feeding source, the old
- * «насос з котлом» automation), `rooms` (runs while a member room's emitter is open) or both — and keeps
- * running for its run-on («вибіг») after the rule falls: floor 10 min, radiators 3 min. Safety forces a
+ * Circulation pumps. Each pump follows its circuit's mode — follow_source (runs with a feeding source, the
+ * old «насос з котлом» automation) or zoned (runs while a member room's zone is open) — and keeps running
+ * for its run-on («вибіг») after that falls: floor 10 min, radiators 3 min. Safety forces a
  * pump on regardless: frost in a member room, flow through a running boiler or heat pump, a source held
  * by its minimum run, the pre-run before a start. Chilled water never reaches radiators.
  * ===================================================================================================== */
@@ -277,8 +278,10 @@ export function stepPumps(x: PumpStepInput): PumpStepResult {
     }
 
     const demandOnly = x.overlay.pumpsDemandOnly;
+    // the circuit's mode decides; zoned pumps are shared by every open zone (on with the first, off after the last)
+    const circuitRule: PumpRule = demandOnly || c.mode !== 'follow_source' ? 'rooms' : 'source';
     for (const p of pumps) {
-      const rule = demandOnly && p.rule !== 'rooms' ? 'rooms' : p.rule;
+      const rule = circuitRule;
       const sourceCond = flow.feedingOn;
       const roomsCond = flow.openDemand && (flow.feedingOn || flow.frost);
       const cond = rule === 'source' ? sourceCond : rule === 'rooms' ? roomsCond : sourceCond && roomsCond;

@@ -13,7 +13,7 @@ import type {
   ProfileRoomSetting,
   RoutingCell,
 } from '../shared/model';
-import { collectionFromRow, emptyGraph, prKey, routeKey, singletonFromRow, type ConfigGraph } from './graph';
+import { collectionFromRow, emptyGraph, legacyCircuitModes, prKey, routeKey, singletonFromRow, type ConfigGraph } from './graph';
 
 /* =====================================================================================================
  * Backup bundle ↔ configuration graph. The bundle holds every configuration table and nothing else:
@@ -140,6 +140,9 @@ export function graphFromBundle(bundle: unknown): ParsedBundle {
   many('watchRules', 'notify.watch', notify.watch);
   many('z2m', 'devices.z2m', devices.z2m);
   for (const c of g.circuits.values()) c.sourceIds = Array.isArray(c.sourceIds) ? [...new Set(c.sourceIds.filter((x) => typeof x === 'string'))] : [];
+  // an export of 0.1.x has circuits without a mode: read from their pumps as on load
+  const circuitRows = Array.isArray(bundle.circuits) ? (bundle.circuits as unknown[]).filter(isPlainObject) : [];
+  legacyCircuitModes(g, circuitRows.filter((r) => typeof r.id === 'string' && !r.mode).map((r) => r.id as Id));
 
   for (const r of list('profileRooms', bundle.profileRooms) as unknown as ProfileRoomSetting[]) {
     g.profileRooms.set(prKey(r.profileId, r.roomId), { profileId: r.profileId, roomId: r.roomId, mode: r.mode, heatC: r.heatC ?? null, coolC: r.coolC ?? null, writtenAt: r.writtenAt ?? null });

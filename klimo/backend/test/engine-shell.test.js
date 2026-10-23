@@ -349,3 +349,35 @@ test('«Скинути» lifts a floor-cooling lockout before midnight, journall
   await assert.rejects(() => e.engine.resetDewLockout('c_nope', actor), (err) => err.status === 404 || err.getStatus?.() === 404);
   e.engine.onModuleDestroy();
 });
+
+test('a zone valve or a dehumidifier taken off a room is left safe: a heat-only zone open, the dehumidifier off', async () => {
+  const cfg = h.makeCfg({ safety: NO_DRY_RUN });
+  const room = cfg.rooms[0];
+  // a warm room: nothing asks, so the floor zone stays shut; a damp room: the dehumidifier runs
+  room.humidity = { ...room.humidity, dehumidifier: { entityId: 'switch.living_dehum', onAbovePct: 62, offBelowPct: 57, minOnMin: 0 } };
+  cfg.sensorsByRoom[room.id].push({ ...h.d.DEFAULT_SENSOR(), id: 'rs_h', roomId: room.id, entityId: 'sensor.living_h', role: 'humidity', name: 'h', order: 2 });
+  cfg.circuits.push({ ...h.d.DEFAULT_CIRCUIT(), id: 'c_floor', name: 'Підлога', shortName: 'Підлога', kind: 'floor', sourceIds: ['s_boiler'], capabilities: { heat: true, cool: false }, mode: 'zoned' });
+  cfg.emittersByRoom[room.id].push({ ...h.d.DEFAULT_EMITTER(), id: 'e_floor', roomId: room.id, kind: 'floor', name: 'Підлога', circuitId: 'c_floor', roles: { heat: 'primary', cool: null }, order: 1 });
+  cfg.devicesByEmitter.e_floor = [{ ...h.d.DEFAULT_EMITTER_DEVICE(), id: 'd_zone', emitterId: 'e_floor', roomId: room.id, kind: 'zone_switch', entityId: 'switch.living_zone', name: 'Зона', capabilities: null, siblings: null }];
+  const e = h.makeEngine({ cfg, states: { t: 23.5 } });
+  e.ha.set('sensor.living_h', '75', { unit_of_measurement: '%', device_class: 'humidity' }, { silent: true });
+  e.ha.set('switch.living_zone', 'on', {}, { silent: true });
+  e.ha.set('switch.living_dehum', 'off', {}, { silent: true });
+  await e.boot();
+  // the humidity has to stay high for 2 min before the dehumidifier starts
+  await e.advance(3 * MIN);
+  assert.equal(e.ha.getState('switch.living_zone').state, 'off', 'the room asks nothing: its zone is shut');
+  assert.equal(e.ha.getState('switch.living_dehum').state, 'on');
+
+  cfg.devicesByEmitter.e_floor = [];
+  room.humidity = { ...room.humidity, dehumidifier: null };
+  cfg.revision++;
+  await e.advance(10 * SEC);
+  assert.equal(e.ha.getState('switch.living_zone').state, 'on', 'a heat-only loop keeps heating the room through its zone');
+  assert.equal(e.ha.getState('switch.living_dehum').state, 'off');
+  // once released they are left alone
+  const released = e.callsTo('switch.living_zone').length + e.callsTo('switch.living_dehum').length;
+  await e.advance(10 * MIN);
+  assert.equal(e.callsTo('switch.living_zone').length + e.callsTo('switch.living_dehum').length, released);
+  e.engine.onModuleDestroy();
+});

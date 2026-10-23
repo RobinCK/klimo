@@ -68,8 +68,11 @@ export function SyncIndicator({ phase, text }: SyncIndicatorProps) {
 export interface PendingChangePanelProps<T> {
   /** What the new value will do («Почне гріти · ≈ 25 хв, до 19:40»). */
   consequence: { tone: Tone; icon: IconName; text: string };
-  /** How long the change lasts; focusing the list pauses the countdown. */
-  duration: { value: T; options: SelectOption<T>[]; onChange: (value: T) => void; onFocusChange: (focused: boolean) => void };
+  /** How long the change lasts; focusing the list pauses the countdown. Left out when the length is
+   *  not a choice (a room under manual control holds every new value). */
+  duration?: { value: T; options: SelectOption<T>[]; onChange: (value: T) => void; onFocusChange: (focused: boolean) => void };
+  /** In place of the duration list: how long the value holds («Вручну, поки не повернете розклад»). */
+  durationNote?: string;
   /** «Надішлю 20.5° на 2 головки за 3 с». */
   countdown: { remaining: number; total: number; text: string; frozen?: boolean };
   onCancel: () => void;
@@ -79,7 +82,7 @@ export interface PendingChangePanelProps<T> {
 }
 
 /** The 3-second window before a change is sent: consequence, duration, countdown, cancel. */
-export function PendingChangePanel<T>({ consequence, duration, countdown, onCancel, cancelLabel, editingLabel }: PendingChangePanelProps<T>) {
+export function PendingChangePanel<T>({ consequence, duration, durationNote, countdown, onCancel, cancelLabel, editingLabel }: PendingChangePanelProps<T>) {
   const ut = useUiText();
   return (
     <div className={s.statusPanel} role="group" aria-label={editingLabel}>
@@ -88,14 +91,21 @@ export function PendingChangePanel<T>({ consequence, duration, countdown, onCanc
         {consequence.text}
       </span>
       <div className={s.pendingRow}>
-        <Select
-          value={duration.value}
-          options={duration.options}
-          onChange={duration.onChange}
-          onFocusChange={duration.onFocusChange}
-          size="sm"
-          ariaLabel={ut('How long the new value lasts')}
-        />
+        {duration ? (
+          <Select
+            value={duration.value}
+            options={duration.options}
+            onChange={duration.onChange}
+            onFocusChange={duration.onFocusChange}
+            size="sm"
+            ariaLabel={ut('How long the new value lasts')}
+          />
+        ) : durationNote ? (
+          <span className={s.durationNote}>
+            <Icon name="hand" size={16} />
+            {durationNote}
+          </span>
+        ) : null}
         <span className={s.countdown}>
           <span className={s.countdownText}>{countdown.text}</span>
           <CountdownBar remaining={countdown.remaining} total={countdown.total} frozen={countdown.frozen} />

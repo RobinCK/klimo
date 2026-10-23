@@ -2,9 +2,21 @@
  * Words of the add-room wizard: the device rows' details and the server's step checks in plain
  * language (the generic field texts cover the rest).
  */
-import type { ApiErrorIssue, CreateRoomRequest, CreateRoomStep, DiscoveryCandidate, HaEntityDto, WizardDeviceRole } from '@api/model';
-import { fmtKw, fmtTemp, issueText, renderReason, t, wizardDeviceRoleLabel, type CodeContext } from '@i18n';
-import type { IconName } from '@ui';
+import type { ApiErrorIssue, CreateRoomRequest, CreateRoomStep, DiscoveryCandidate } from '@api/model';
+import {
+  DEVICE_ROLE_ICON,
+  deviceGroupWords,
+  deviceRoleLabel,
+  deviceValueText,
+  entityValueText,
+  fmtKw,
+  fmtTemp,
+  heatingIssueText,
+  issueText,
+  renderReason,
+  t,
+  type CodeContext,
+} from '@i18n';
 import type { DeviceInUse, ExtraDevice, SectionKey } from './useWizard';
 
 const FEATURE: Partial<Record<DiscoveryCandidate['features'][number], () => string>> = {
@@ -39,106 +51,18 @@ export function extraMeta(x: ExtraDevice): string {
 }
 
 /** What a device is, on chips and in «Use as…». */
-export function roleLabel(role: WizardDeviceRole): string {
-  return wizardDeviceRoleLabel(role);
-}
+export const roleLabel = deviceRoleLabel;
+export const ROLE_ICON = DEVICE_ROLE_ICON;
+export const resultValue = entityValueText;
+export const candidateValue = deviceValueText;
 
-export const ROLE_ICON: Record<WizardDeviceRole, IconName> = {
-  trv: 'radiator',
-  temperature: 'thermometer',
-  humidity: 'droplet',
-  temp_humidity: 'thermometer',
-  window: 'windowClosed',
-  door: 'windowClosed',
-  ac: 'ac',
-  heater: 'convector',
-  floor_zone: 'floor',
-  floor_probe: 'floor',
-  dehumidifier: 'droplet',
-};
-
-/** The value on the right of a search result: a room temperature where there is one. */
-export function resultValue(e: HaEntityDto): string | null {
-  if (!e.available) return null;
-  if (e.valueC != null) return fmtTemp(e.valueC);
-  const role = e.wizard?.suggested[0];
-  return role ? candidateValue({ role, state: e.state, valueC: null }) : null;
-}
-
-/** A device block: its title, the quiet tag beside it, and what helps when it is empty. */
-export function sectionWords(k: SectionKey): { title: string; tag: string; hint: string; find: string; chip: string } {
-  switch (k) {
-    case 'trv':
-      return {
-        title: t('Radiator valve'),
-        tag: t('a head or a thermostat'),
-        hint: t('The thermostatic head on the radiator, or the thermostat that drives it.'),
-        find: t('Find a radiator valve or a thermostat'),
-        chip: t('Radiator valve'),
-      };
-    case 'temp':
-      return {
-        title: t('Temperature and humidity'),
-        tag: t('for the calculation'),
-        hint: t('A sensor away from the radiator and the window measures the room best.'),
-        find: t('Find a temperature sensor'),
-        chip: t('Temperature sensor'),
-      };
-    case 'window':
-      return {
-        title: t('Window'),
-        tag: t('optional'),
-        hint: t('A contact sensor pauses heating while the window is open.'),
-        find: t('Find a window or door sensor'),
-        chip: t('Window'),
-      };
-    case 'ac':
-      return {
-        title: t('Air conditioner'),
-        tag: t('cold and top-up heat'),
-        hint: t('The climate entity of the split unit.'),
-        find: t('Find the air conditioner'),
-        chip: t('Air conditioner'),
-      };
-    case 'heater':
-      return {
-        title: t('Heater'),
-        tag: t('a relay or a plug'),
-        hint: t('A relay, a smart plug or the climate entity of an electric heater.'),
-        find: t('Find the heater'),
-        chip: t('Heater'),
-      };
-    case 'floor':
-      return {
-        title: t('Underfloor heating'),
-        tag: t('a zone valve and a floor probe'),
-        hint: t('The zone valve or relay of this room’s loop, if it has one. A floor probe: add the sensor and pick «Floor probe» in «Use as».'),
-        find: t('Find the zone valve'),
-        chip: t('Underfloor heating'),
-      };
-    case 'dehum':
-      return {
-        title: t('Dehumidifier'),
-        tag: t('optional'),
-        hint: t('A dehumidifier entity, or the plug it hangs on.'),
-        find: t('Find the dehumidifier'),
-        chip: t('Dehumidifier'),
-      };
-  }
-}
-
-/** The live value on the right of a device row. */
-export function candidateValue(c: Pick<DiscoveryCandidate, 'role' | 'state' | 'valueC'>): string {
-  if (c.valueC != null && (c.role === 'trv' || c.role === 'temperature' || c.role === 'temp_humidity' || c.role === 'floor_probe')) return fmtTemp(c.valueC);
-  const s = c.state;
-  if (s == null || s === 'unavailable' || s === 'unknown') return '—';
-  if (c.role === 'window' || c.role === 'door') return s === 'on' ? t('open') : t('closed');
-  if (s === 'off') return t('off');
-  if (s === 'on') return t('on');
-  if (s === 'heat') return t('heating');
-  if (s === 'cool') return t('cooling');
-  if (c.role === 'humidity' && Number.isFinite(Number(s))) return `${s}%`;
-  return s;
+/** A device block of the wizard: the shared words, with the zone valve said only where the floor has zones. */
+export function sectionWords(k: SectionKey, zoned = false): ReturnType<typeof deviceGroupWords> {
+  const w = deviceGroupWords(k);
+  if (k !== 'floor') return w;
+  return zoned
+    ? { ...w, hint: t('The zone valve or the floor thermostat of this room opens its loop when the room asks for heat.') }
+    : { ...w, hint: t('The floor runs as a whole with the source, so this room needs no valve of its own.') };
 }
 
 function deviceOf(req: CreateRoomRequest, path: string): string {
@@ -157,7 +81,8 @@ export function wizardIssue(issue: ApiErrorIssue, req: CreateRoomRequest): strin
     if (issue.code === 'unique') return t('A room with this name already exists.');
     if (issue.code === 'length') return t('The name is up to 40 characters.');
   }
-  if (path === 'emitterKinds' && issue.code === 'min_items') return t('Add what heats or cools the room: a radiator valve, an air conditioner, a heater or underfloor heating.');
+  if (path === 'emitterKinds' && issue.code === 'min_items') return t('Choose what heats or cools the room: radiators, underfloor heating, an air conditioner or a heater.');
+  if (path === 'demandPolicy' && issue.code === 'needs_call') return heatingIssueText(issue) ?? issueText(issue);
   if (path === 'haAreaId' && issue.code === 'not_found') return t('This area no longer exists in Home Assistant.');
   if (path === 'devices') {
     if (issue.code === 'needs_temperature') return t('Add a temperature sensor, or a radiator valve that measures the room.');
@@ -171,14 +96,19 @@ export function wizardIssue(issue: ApiErrorIssue, req: CreateRoomRequest): strin
     if (issue.code === 'bound_elsewhere') return t('«{device}» belongs to «{room}» — tick it to move it here.', { device, room: String(p.room ?? '') });
     if (issue.code === 'in_use') return t('«{device}» is used by the source «{source}».', { device, source: String(p.source ?? '') });
     if (issue.code === 'unexpected') return t('«{device}» does not fit what heats or cools the room.', { device });
+    if (issue.code === 'circuit_not_zoned')
+      return t('«{device}»: the floor heats as a whole, so a zone valve of one room is not used — remove it, or switch the floor circuit to zones.', { device });
     if (issue.code === 'not_found') return t('«{device}» is not in Home Assistant.', { device });
     if (issue.code === 'domain') return t('«{device}» is the wrong kind of entity for its role.', { device });
     if (issue.code === 'unique') return t('«{device}» is picked twice.', { device });
   }
   if (path.startsWith('circuits.')) {
-    if (issue.code === 'required') return t('Choose the floor circuit, or the pump of a new one.');
+    if (issue.code === 'required' && p.reason === 'choose') return t('Choose which floor circuit the room joins.');
+    if (issue.code === 'required' && p.reason === 'setup') return t('The house has no underfloor heating yet — set it up below, once for every room.');
     if (issue.code === 'unique') return t('This pump already drives another circuit.');
     if (issue.code === 'not_found') return t('This circuit or pump no longer exists.');
+    const known = heatingIssueText(issue);
+    if (known) return known;
   }
   if (path === 'method' && issue.code === 'needs_sensor') return t('«Main sensor» needs a temperature sensor.');
   if (path.startsWith('heatTolerance') || path.startsWith('coolTolerance')) return t('The tolerance is from 0.1° to 1.0°.');

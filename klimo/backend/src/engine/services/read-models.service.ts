@@ -65,6 +65,8 @@ import {
   roomCapabilities,
   roomScheduleOf,
   servedByRows,
+  roomHeatingOf,
+  circuitMemberRows,
   sourceFeeds,
   spanTone,
   stripFor,
@@ -144,6 +146,7 @@ export class ReadModelsService implements IReadModels {
       overrides,
       haEntities: haEntitiesOf(cfg, room, this.registries()),
       servedBy: servedByRows(cfg, room),
+      heating: roomHeatingOf(cfg, room),
     };
   }
 
@@ -351,6 +354,7 @@ export class ReadModelsService implements IReadModels {
       config: c,
       pumps: cfg.pumps.filter((p) => p.circuitId === c.id),
       memberRoomIds: circuitMembers(cfg, c.id),
+      members: circuitMemberRows(cfg, c.id),
       state: plant?.circuits.find((x) => x.circuitId === c.id) ?? emptyCircuitState(cfg, c),
     }));
   }

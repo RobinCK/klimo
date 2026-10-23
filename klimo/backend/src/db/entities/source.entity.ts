@@ -52,6 +52,9 @@ export class CircuitRow {
   @FloatCol(true) dewMarginC: number | null;
   @EnumCol() pumpGroupMode: string;
   @BoolCol() flowSafety: boolean;
+  /** NULL in rows saved before circuits had a mode (derived from their pumps on load). */
+  @EnumCol(true) mode: string | null;
+  @BoolCol(true) bypass: boolean | null;
   @IntCol() order: number;
 }
 

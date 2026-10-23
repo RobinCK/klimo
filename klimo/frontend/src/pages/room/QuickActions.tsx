@@ -4,11 +4,12 @@ import { liveStore, useMutation } from '@data';
 import { QuickActionPill, Row } from '@ui';
 import { fmtDelta, fmtDur, t } from '@i18n';
 
-type Action = 'boost' | 'cancelBoost' | 'airing' | 'cancelAiring' | 'ignoreWindow' | 'cancelIgnore' | 'resume' | 'on';
+type Action = 'boost' | 'cancelBoost' | 'airing' | 'cancelAiring' | 'ignoreWindow' | 'cancelIgnore';
 
 /**
- * One-tap changes next to the target: a short boost, airing, ignoring an open window, back to
- * the schedule. Hidden while a target change is pending or can still be undone.
+ * One-tap changes next to the target: a short boost, airing, ignoring an open window. Back to the
+ * schedule and switching the room on are the control above the target. Hidden while a target
+ * change is pending or can still be undone.
  */
 export function QuickActions({ room, state }: { room: RoomDetailDto; state: RoomState }) {
   const id = room.config.id;
@@ -27,10 +28,6 @@ export function QuickActions({ room, state }: { room: RoomDetailDto; state: Room
           return api.rooms.ignoreWindow(id, { minutes: 30 });
         case 'cancelIgnore':
           return api.rooms.cancelIgnoreWindow(id);
-        case 'resume':
-          return api.rooms.resume(id);
-        case 'on':
-          return api.rooms.on(id);
       }
     },
     { onSuccess: (s) => liveStore.putRoomState(s) },
@@ -42,12 +39,9 @@ export function QuickActions({ room, state }: { room: RoomDetailDto; state: Room
   const cool = tg.mode === 'cool' || (state.activeModes.cool && !state.activeModes.heat);
   const pills: { key: Action; icon: Parameters<typeof QuickActionPill>[0]['icon']; label: string }[] = [];
 
-  if (tg.layer === 'room_off') pills.push({ key: 'on', icon: 'power', label: t('Switch the room on') });
   if (state.window.reactionActive && state.window.ignoredUntil == null) pills.push({ key: 'ignoreWindow', icon: 'windowOpen', label: t('Ignore for 30 min') });
   if (state.window.ignoredUntil != null) pills.push({ key: 'cancelIgnore', icon: 'windowOpen', label: t('Stop ignoring the window') });
   if (tg.display === 'boost') pills.push({ key: 'cancelBoost', icon: 'close', label: t('Stop the boost') });
-  else if (tg.display === 'manual' || tg.display === 'range' || tg.display === 'room_profile')
-    pills.push({ key: 'resume', icon: 'undo', label: t('Back to schedule') });
   else if (tg.layer !== 'room_off' && tg.display !== 'airing' && tg.display !== 'window' && tg.display !== 'off' && tg.mode !== 'none' && tg.mode !== 'dual') {
     const delta = cool ? -quick.boostDeltaC : quick.boostDeltaC;
     pills.push({ key: 'boost', icon: 'bolt', label: t('{delta} for {dur}', { delta: fmtDelta(delta, { sign: true }), dur: fmtDur(quick.boostMin) }) });

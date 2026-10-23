@@ -5,7 +5,7 @@ import { paths } from '@app';
 import { fmtTemp, t } from '@i18n';
 import { Hero } from './Hero';
 import { SectionBody } from './SectionBody';
-import { DangerZone, LEFT_SECTIONS, RIGHT_SECTIONS, type SectionDef, type SectionProps } from './sections';
+import { DangerZone, LEFT_SECTIONS, RIGHT_SECTIONS, SETUP_SECTION, type SectionDef, type SectionProps } from './sections';
 import type { TargetEditor } from './useTargetEditor';
 
 /** The tab dot: a problem wins over the state; a room that only holds is grey. */
@@ -68,6 +68,7 @@ export function RoomDesktop({
         addLabel={t('Add a room')}
       />
       <Hero room={room} state={state} ed={ed} ctx={p.ctx} now={now} profiles={profiles} />
+      <SectionCard def={SETUP_SECTION} p={p} />
       <AutoGrid min={560} gap="xl">
         <Stack gap="xl">
           {LEFT_SECTIONS.map((def) => (

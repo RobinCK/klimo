@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { IconName } from '../../types';
 import { useUiText } from '../../UiTextContext';
 import { Icon } from '../../basic/Icon';
@@ -22,7 +22,7 @@ export interface SegmentedControlProps<T extends ChoiceValue> {
   onChange: (value: T) => void;
   /** xs 32 (table cells) · sm 36 · md 40; phones grow every size to a 44 px target. */
   size?: 'xs' | 'sm' | 'md';
-  /** Equal columns across the full width. */
+  /** Across the full width: equal columns while the labels fit. */
   full?: boolean;
   /** An option that waits for confirmation is outlined until it is applied or dropped. */
   pending?: T | null;
@@ -61,7 +61,6 @@ export function SegmentedControl<T extends ChoiceValue>({
       data-size={size}
       data-full={full ? '' : undefined}
       data-surface={surface === 'well' ? 'well' : undefined}
-      style={full ? ({ '--cols': options.length } as CSSProperties) : undefined}
     >
       {options.map((o, i) => {
         const on = i === selected;

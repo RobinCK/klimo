@@ -4,7 +4,7 @@
  */
 import { useMemo } from 'react';
 import { useCodeContext, useHouse, useMe, useNow, useRoomSummaries, useRoomsLoaded } from '@data';
-import { EmptyState, IconButton, MobileTopBar, RoomCard, Skeleton, Stack, Button } from '@ui';
+import { EmptyState, IconButton, MobileTopBar, RoomCard, Row, Skeleton, Stack, Button } from '@ui';
 import { InboxBell, paths } from '@app';
 import { t } from '@i18n';
 import { attentionRank, roomRow } from './rows';
@@ -43,9 +43,19 @@ export default function RoomsPage(): JSX.Element {
         </Stack>
       ) : sorted.length ? (
         <Stack gap="xs">
-          {sorted.map((r) => (
-            <RoomCard key={r.id} {...roomRow(r, ctx, now)} />
-          ))}
+          {sorted.map((r) =>
+            canEdit ? (
+              // the room opens with a tap; its devices and heating are one tap away beside it
+              <Row key={r.id} gap="xs" align="center">
+                <Stack grow>
+                  <RoomCard {...roomRow(r, ctx, now)} />
+                </Stack>
+                <IconButton icon="pencil" label={t('Edit «{room}»', { room: r.name })} to={paths.roomSettings(r.id, 'setup')} variant="ghost" size={44} />
+              </Row>
+            ) : (
+              <RoomCard key={r.id} {...roomRow(r, ctx, now)} />
+            ),
+          )}
           {canEdit ? (
             <Button variant="secondary" icon="plus" to={paths.wizard()} fullWidth>
               {t('Add a room')}

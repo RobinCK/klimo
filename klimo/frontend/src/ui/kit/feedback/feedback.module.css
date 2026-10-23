@@ -73,6 +73,15 @@
   gap: var(--ui-space-10);
 }
 
+.durationNote {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-space-6);
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-caption);
+  font-weight: 500;
+}
+
 .countdown {
   flex: 1 1 160px;
   min-width: 0;

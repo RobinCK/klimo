@@ -1,0 +1,186 @@
+const assert = require('node:assert/strict');
+const test = require('node:test');
+const { FakeClock, FakeHa, state } = require('./ha-harness');
+const { ConsumptionService } = require('../dist/ha/consumption.service');
+const { defaultSettings, newSourceConfig } = require('../dist/shared/defaults');
+
+const MIN = 60_000;
+const HOUR = 60 * MIN;
+const DAY = 24 * HOUR;
+const MIDNIGHT = Date.UTC(2026, 9, 20, 21, 0); // 2026-10-21 00:00 in Kyiv
+const NOW = MIDNIGHT + 14.5 * HOUR; // 14:30
+const FT3 = 0.028316846592;
+const near = (a, b, eps = 1e-3) => assert.ok(a !== null && Math.abs(a - b) < eps, `${a} ≉ ${b}`);
+
+/** A gas meter in ft³ read every 10 min: 10 ft³/h, 30 more during the boiler run 06:00–07:00, replaced (back to 0) at 05:20. */
+function gasMeter() {
+  const growth = (t) => {
+    const h = (t - (MIDNIGHT - DAY)) / HOUR;
+    const run = Math.min(Math.max(0, (t - (MIDNIGHT + 6 * HOUR)) / HOUR), 1);
+    return 10 * h + 30 * run;
+  };
+  const replacedAt = MIDNIGHT + 5 * HOUR + 20 * MIN;
+  const readings = [];
+  for (let t = MIDNIGHT - DAY - 2 * HOUR; t < NOW; t += 10 * MIN) {
+    const g = growth(t);
+    readings.push({ t, g, state: t < replacedAt ? 1000 + g : g - growth(replacedAt) });
+  }
+  /** What HA's sum holds at an hour boundary: the last reading before it. */
+  const before = (t) => readings.filter((r) => r.t < t).at(-1)?.g ?? null;
+  const hour = (h) => before(h + HOUR) - before(h);
+  return { readings, before, hour };
+}
+
+function setup({ meterUnit = 'ft³', failRecorder = false } = {}) {
+  const clock = new FakeClock(NOW);
+  const ha = new FakeHa();
+  const meter = gasMeter();
+  ha.set(state('sensor.gas', meter.readings.at(-1).state, { unit_of_measurement: meterUnit, state_class: 'total_increasing', device_class: 'gas', friendly_name: 'Газ' }));
+  ha.set(state('sensor.out', 5, { unit_of_measurement: '°C', state_class: 'measurement' }));
+  ha.statisticsFn = (ids, start, end, period, types) => {
+    if (failRecorder) throw new Error('recorder timeout');
+    const out = {};
+    for (const id of ids) {
+      const rows = [];
+      // like HA: hours once complete
+      for (let h = Math.floor(start / HOUR) * HOUR; h < end && h + HOUR <= NOW; h += HOUR) {
+        if (id === 'sensor.gas' && types.includes('change') && meter.before(h) !== null) rows.push({ start: h, change: meter.hour(h) });
+        if (id === 'sensor.out') rows.push({ start: h, mean: h < MIDNIGHT ? 10 : 5 });
+      }
+      if (rows.length) out[id] = rows;
+    }
+    return out;
+  };
+  ha.historyFn = (ids, start, end) => {
+    const rows = meter.readings.filter((r) => r.t >= start && r.t <= end);
+    const first = meter.readings.filter((r) => r.t < start).at(-1);
+    const list = [...(first ? [{ ...first, t: start }] : []), ...rows].map((r) => ({ s: String(r.state), lu: r.t / 1000 }));
+    return ids.includes('sensor.gas') ? { 'sensor.gas': list } : {};
+  };
+
+  const settings = defaultSettings('uk');
+  settings.outdoor = { ...settings.outdoor, sensorEntityIds: ['sensor.out'] };
+  settings.tariffs = { ...settings.tariffs, currency: '₴', gasPrice: 8, gasPriceUnit: 'm³' };
+  const boiler = { ...newSourceConfig('gas_boiler', { id: 's_boiler', name: 'Котел', now: 0 }), meters: [{ kind: 'gas', entityId: 'sensor.gas', unit: 'ft³' }] };
+  const config = {
+    sources: [boiler],
+    settings,
+    get: (c, id) => (c === 'sources' ? config.sources.find((s) => s.id === id) : undefined),
+    list: (c) => (c === 'sources' ? config.sources : []),
+    singleton: (k) => config[k],
+    revision: () => 1,
+  };
+  const spanList = [
+    { id: 'a', subject: 'source', subjectId: 's_boiler', kind: 'run', mode: 'heat', startTs: MIDNIGHT + 6 * HOUR, endTs: MIDNIGHT + 7 * HOUR, meta: null },
+    { id: 'b', subject: 'source', subjectId: 's_boiler', kind: 'run', mode: 'heat', startTs: MIDNIGHT + 14 * HOUR, endTs: null, meta: null },
+  ];
+  const spans = { range: async (from, to, subject, id) => spanList.filter((s) => s.startTs < to && (s.endTs ?? NOW) > from && (!id || s.subjectId === id)) };
+  return { service: new ConsumptionService(ha, config, spans, clock), ha, config, meter };
+}
+
+test('a day of a gas boiler: hours from statistics, the running hour from the history, runs from readings, in m³', async () => {
+  const { service, meter } = setup();
+  const d = await service.source('s_boiler', { range: 'day' });
+  assert.equal(d.date, '2026-10-21');
+  assert.equal(d.bucket, 'hour');
+  assert.equal(d.buckets.length, 24);
+  assert.deepEqual(d.units, { gas: 'm³', electricity: null, heat: null, currency: '₴' });
+  assert.deepEqual(d.meters, [{ kind: 'gas', entityId: 'sensor.gas', name: 'Газ', unit: 'ft³', reading: 'meter', status: 'ok', statistics: true }]);
+  assert.equal(d.recorder, 'ok');
+
+  // the meter was replaced at 05:20: HA's change already continues, no negative or huge hour
+  near(d.buckets[5].gas, 10 * FT3);
+  // an hour holds the readings up to its end: the run's last 10 minutes count in the next one
+  near(d.buckets[6].gas, 35 * FT3);
+  near(d.buckets[7].gas, 15 * FT3);
+  assert.ok(d.buckets.every((b) => b.gas === null || (b.gas >= 0 && b.gas < 2)));
+  near(d.buckets[6].cost, 35 * FT3 * 8, 0.01);
+  // 14:00–14:30 is not compiled yet: read from the states (14:00, 14:10, 14:20)
+  const running = d.buckets[14];
+  assert.equal(running.partial, true);
+  near(running.gas, (meter.before(NOW) - meter.before(MIDNIGHT + 14 * HOUR)) * FT3);
+  assert.equal(d.buckets[15].future, true);
+  assert.equal(d.buckets[15].gas, null);
+  near(d.totals.gas, (meter.before(NOW) - meter.before(MIDNIGHT)) * FT3);
+  assert.equal(d.totals.runs, 2);
+  assert.equal(d.totals.runtimeMin, 90);
+  near(d.buckets[6].hdd, 13 / 24, 0.01);
+  // degree-days of the compiled hours: 00:00–14:00
+  near(d.totals.hdd, (13 * 14) / 24, 0.01);
+  near(d.totals.gasPerHdd, d.totals.gas / d.totals.hdd, 0.002);
+
+  // yesterday up to 14:30 is the comparison, with readings from its start
+  assert.equal(d.previous.date, '2026-10-20');
+  assert.equal(d.previous.to, NOW - DAY);
+  assert.equal(d.previous.complete, true);
+  near(d.previous.totals.gas, 10 * 14.5 * FT3, 0.01);
+
+  assert.equal(d.runs.length, 2);
+  near(d.runs[0].gas, 40 * FT3);
+  assert.equal(d.runs[0].estimated, false);
+  assert.equal(d.runs[0].minutes, 60);
+  assert.equal(d.runs[1].end, null);
+  near(d.runs[1].gas, (20 / 60) * 10 * FT3);
+});
+
+test('a month by days and a year by months come from the same statistics; runs only for day and week', async () => {
+  const { service } = setup();
+  const month = await service.source('s_boiler', { range: 'month', date: '2026-10-15' });
+  assert.equal(month.date, '2026-10-01');
+  assert.equal(month.bucket, 'day');
+  assert.equal(month.buckets.length, 31);
+  assert.equal(month.runs, null);
+  near(month.buckets[19].gas, 10 * 24 * FT3, 0.01);
+  near(month.buckets[18].gas, 10 * FT3, 0.01, 'the meter came in at 22:00');
+  assert.equal(month.buckets[17].gas, null, 'no statistics before the meter existed');
+  assert.equal(month.previous.complete, false);
+  const week = await service.source('s_boiler', { range: 'week' });
+  assert.equal(week.date, '2026-10-19');
+  assert.equal(week.runs.length, 2);
+});
+
+test('a recorder that does not answer leaves the amounts unknown, the runtime still counts', async () => {
+  const { service } = setup({ failRecorder: true });
+  const d = await service.source('s_boiler', { range: 'day' });
+  assert.equal(d.recorder, 'unavailable');
+  assert.equal(d.totals.gas, null);
+  assert.equal(d.totals.cost, null);
+  assert.equal(d.totals.runtimeMin, 90);
+});
+
+test('a meter in a unit that does not fit is reported, never read', async () => {
+  const { service, ha } = setup();
+  ha.set(state('sensor.gas', '21.5', { unit_of_measurement: '°C', friendly_name: 'Газ' }));
+  const d = await service.source('s_boiler', { range: 'day' });
+  assert.equal(d.meters[0].status, 'unsupported_unit');
+  assert.equal(d.meters[0].statistics, false);
+  assert.equal(d.totals.gas, null);
+  assert.equal(d.units.gas, null);
+});
+
+test('the house today: a shared meter counts once, gas in kWh as soon as one meter counts energy', async () => {
+  const { service, ha, config } = setup();
+  ha.set(state('sensor.gas_kwh', '5000', { unit_of_measurement: 'kWh', state_class: 'total_increasing', device_class: 'gas' }));
+  const second = { ...newSourceConfig('gas_boiler', { id: 's_boiler2', name: 'Котел 2', now: 0 }), meters: [{ kind: 'gas', entityId: 'sensor.gas', unit: 'ft³' }] };
+  config.sources.push(second);
+  let h = await service.house();
+  assert.equal(h.configured, true);
+  assert.equal(h.units.gas, 'm³');
+  const gasToday = (10 * 14.5 + 30) * FT3;
+  near(h.gas, gasToday, 0.01);
+  assert.equal(h.sources.length, 2);
+  near(h.sources[1].gas, gasToday, 0.01);
+  near(h.cost, gasToday * 8, 0.05);
+
+  config.sources.push({ ...newSourceConfig('gas_boiler', { id: 's_boiler3', name: 'Котел 3', now: 1 }), meters: [{ kind: 'gas', entityId: 'sensor.gas_kwh', unit: 'kWh' }] });
+  h = await service.house('2026-10-20');
+  assert.equal(h.units.gas, 'kWh');
+  near(h.gas, 10 * 24 * FT3 * 10.5, 0.1);
+  near(h.sources[0].gas, 10 * 24 * FT3 * 10.5, 0.1);
+});
+
+test('unknown sources and ranges are refused', async () => {
+  const { service } = setup();
+  await assert.rejects(() => service.source('nope', { range: 'day' }), (e) => e.status === 404);
+  await assert.rejects(() => service.source('s_boiler', { range: 'decade' }), (e) => e.status === 400);
+});

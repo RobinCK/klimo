@@ -16,6 +16,7 @@ const { RoomActionsService } = require('../dist/engine/services/room-actions.ser
 const { HouseActionsService } = require('../dist/engine/services/house-actions.service');
 const { ReadModelsService } = require('../dist/engine/services/read-models.service');
 const { RoomSetupService } = require('../dist/engine/services/room-setup.service');
+const { RoomEditService } = require('../dist/engine/services/room-edit.service');
 const { SystemPreviewService } = require('../dist/engine/services/system-preview.service');
 const { DeviceHealthService } = require('../dist/engine/services/device-health.service');
 const { emptyRoomState, emptySeasonState, emptyHouseProfileState, emptyPlantState } = require('../dist/engine/services/mappers');
@@ -320,6 +321,7 @@ async function openServices(opts = {}) {
   const houseActions = new HouseActionsService(config, overrides, clock, access, undo, support);
   const readModels = new ReadModelsService(config, overrides, spans, clock, ha, access, roomActions, houseActions);
   const setup = new RoomSetupService(config, clock, ha, search, events, access, support, readModels);
+  const edit = new RoomEditService(config, ha, search, readModels, access, support, setup);
   const preview = new SystemPreviewService(config, overrides, clock, ha, access);
   const history = { series: async (q) => (t.series ? t.series(q) : []), statistics: async () => [], roomDay: async () => null, sparks: async () => ({}), outdoor: async () => null };
   const inputs = { z2mBridges: () => t.bridges ?? {} };
@@ -345,6 +347,7 @@ async function openServices(opts = {}) {
     houseActions,
     readModels,
     setup,
+    edit,
     preview,
     devices,
     /** A full RoomState for a room with the given fields on top of an empty one. */

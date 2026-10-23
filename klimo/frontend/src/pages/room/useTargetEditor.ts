@@ -8,6 +8,9 @@
  * While pending, the consequence is computed locally at once (the same rules as the server)
  * and replaced by the server's preview a moment later. After sending, the devices' confirmation
  * arrives over the socket under the command's reqId.
+ *
+ * A room under manual control holds every new value until the schedule is resumed, so its
+ * changes are not asked how long they last.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
@@ -30,7 +33,7 @@ import { toast, type Tone } from '@ui';
 import { newReqId } from './reqId';
 import { syncText } from './texts';
 
-export const EDIT_DURATIONS = ['slot', '1h', '3h', 'forever'] as const satisfies readonly RoomTargetDuration[];
+export const EDIT_DURATIONS = ['slot', '1h', '3h', 'manual', 'forever'] as const satisfies readonly RoomTargetDuration[];
 export type EditDuration = (typeof EDIT_DURATIONS)[number];
 export type EditValue = number | { lo: number; hi: number };
 export type EditPhase = 'view' | 'pending' | 'applied';
@@ -66,6 +69,8 @@ export interface TargetEditor {
   dragStart: () => void;
   dragEnd: () => void;
   duration: EditDuration;
+  /** Manual control: the new value holds with no end, there is no length to choose. */
+  holds: boolean;
   setDuration: (d: EditDuration) => void;
   setDurationFocus: (focused: boolean) => void;
   durationOptions: (short: boolean) => { value: EditDuration; label: string }[];
@@ -103,7 +108,8 @@ function baseValue(th: ThermostatModel, state: RoomState, mode: EditMode): EditV
   return th.t ?? (mode === 'cool' ? state.target.coolC : state.target.heatC) ?? state.target.displayC;
 }
 
-function baseDuration(th: ThermostatModel): EditDuration {
+function baseDuration(th: ThermostatModel, holds: boolean): EditDuration {
+  if (holds) return 'manual';
   const d = th.override?.kind === 'room_target' ? th.override.duration : null;
   return d && (EDIT_DURATIONS as readonly string[]).includes(d) ? (d as EditDuration) : 'slot';
 }
@@ -198,7 +204,8 @@ export function useTargetEditor(room: RoomDetailDto | undefined, state: RoomStat
 
   const mode: EditMode = th && state ? editModeOf(th, state) : 'heat';
   const base = th && state ? baseValue(th, state, mode) : null;
-  const baseDur = th ? baseDuration(th) : 'slot';
+  const holds = room?.summary.control.mode === 'manual';
+  const baseDur = th ? baseDuration(th, holds) : 'slot';
   const canEdit = Boolean(th && state && !th.locked && state.tempC != null && roomId);
 
   const [phase, setPhase] = useState<EditPhase>('view');
@@ -226,12 +233,12 @@ export function useTargetEditor(room: RoomDetailDto | undefined, state: RoomStat
   const set = useCallback(
     (value: EditValue, which: 'lo' | 'hi' | 't' = 't') => {
       if (!canEdit) return;
-      setPending((p) => ({ value, duration: p?.duration ?? baseDur, which: typeof value === 'number' ? 't' : which }));
+      setPending((p) => ({ value, duration: holds ? 'manual' : (p?.duration ?? baseDur), which: typeof value === 'number' ? 't' : which }));
       setPhase('pending');
       setApplied(null);
       setRemaining(PENDING_MS);
     },
-    [canEdit, baseDur],
+    [canEdit, baseDur, holds],
   );
 
   const shownRef = useRef(shown);
@@ -310,7 +317,8 @@ export function useTargetEditor(room: RoomDetailDto | undefined, state: RoomStat
       return;
     }
     const reqId = newReqId();
-    const sent = pending;
+    // the room went to manual control while the change waited: it holds the new value too
+    const sent = holds ? { ...pending, duration: 'manual' as const } : pending;
     setApplied({ value: sent.value, duration: sent.duration, reqId, result: null });
     setPending(null);
     setPhase('applied');
@@ -326,7 +334,7 @@ export function useTargetEditor(room: RoomDetailDto | undefined, state: RoomStat
         setApplied((a) => (a && a.reqId === reqId ? null : a));
         setPhase((p) => (p === 'applied' ? 'view' : p));
       });
-  }, [pending, roomId, unchanged]);
+  }, [pending, roomId, unchanged, holds]);
 
   useEffect(() => {
     if (phase === 'pending' && remaining <= 0) commit();
@@ -390,7 +398,7 @@ export function useTargetEditor(room: RoomDetailDto | undefined, state: RoomStat
           const until = th?.untils.slot ?? null;
           return { value: d, label: until != null ? t('Until {time}', { time: fmtClock(until) }) : t('Until the next slot') };
         }
-        if (short) return { value: d, label: d === '1h' ? t('1 h') : d === '3h' ? t('3 h') : t('Permanently') };
+        if (short) return { value: d, label: d === '1h' ? t('1 h') : d === '3h' ? t('3 h') : d === 'manual' ? t('Manual') : t('Permanently') };
         return { value: d, label: roomDurationLabel(d) };
       }),
     [th],
@@ -414,7 +422,9 @@ export function useTargetEditor(room: RoomDetailDto | undefined, state: RoomStat
     const res = applied.result;
     const v = valueText(applied.value);
     let text: string;
-    if (applied.duration === 'forever') {
+    if (applied.duration === 'manual') {
+      text = t('Target {t} · manual control', { t: v });
+    } else if (applied.duration === 'forever') {
       const pid = res?.profileWritten?.profileId ?? state?.target.profileId ?? null;
       text = pid ? t('Target {t} saved to «{profile}»', { t: v, profile: ctx.profile?.(pid) ?? pid }) : t('Target {t} saved to the profile', { t: v });
     } else {
@@ -463,6 +473,7 @@ export function useTargetEditor(room: RoomDetailDto | undefined, state: RoomStat
     dragStart,
     dragEnd,
     duration: pending?.duration ?? baseDur,
+    holds,
     setDuration,
     setDurationFocus,
     durationOptions,

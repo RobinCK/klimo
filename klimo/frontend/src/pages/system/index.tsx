@@ -15,7 +15,7 @@ import { GuardsSection } from './Guards';
 import { HaEntitiesSection } from './HaEntities';
 import { HouseModeSection } from './HouseMode';
 import { JournalSection } from './Journal';
-import { PhoneStatus } from './PhoneStatus';
+import { PhoneCircuits, PhoneStatus } from './PhoneStatus';
 import { SchemaSection, WhySection } from './Schema';
 import { useSystemData, type SystemData } from './shared';
 import { SourcesTab } from './sources/SourcesTab';
@@ -59,7 +59,7 @@ function SchemaTab({ d, focusJournal }: { d: SystemData; focusJournal: boolean }
           <WhySection d={d} view={view} />
         </Stack>
         <Stack>
-          <CircuitsSection d={d} />
+          <CircuitsSection d={d} focus={route.query.section === 'circuits'} />
         </Stack>
       </AutoGrid>
       <AutoGrid min={420} gap="xl">
@@ -88,6 +88,6 @@ export default function SystemPage(): JSX.Element {
   if (route.name === 'strategy') {
     return <StrategyTab d={d} phone={phone} nav={phone ? null : <SystemNav current="strategy" />} />;
   }
-  if (phone) return <PhoneStatus d={d} />;
+  if (phone) return route.query.section === 'circuits' ? <PhoneCircuits d={d} /> : <PhoneStatus d={d} />;
   return <SchemaTab d={d} focusJournal={route.name === 'journal'} />;
 }

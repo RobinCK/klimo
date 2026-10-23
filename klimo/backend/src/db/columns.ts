@@ -23,6 +23,6 @@ export const TextCol = () => Column({ type: 'text' });
 export const TsCol = (nullable = false) => Column({ type: 'bigint', nullable, transformer: ms });
 export const FloatCol = (nullable = false) => Column({ type: 'double precision', nullable });
 export const IntCol = () => Column({ type: 'int' });
-export const BoolCol = () => Column({ type: 'boolean' });
+export const BoolCol = (nullable = false) => Column({ type: 'boolean', nullable });
 /** Nested objects and arrays; nullable so later fields need no database default (read via withDefaults). */
 export const JsonCol = () => Column({ type: 'simple-json', nullable: true });

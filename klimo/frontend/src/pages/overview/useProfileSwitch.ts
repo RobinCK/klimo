@@ -1,6 +1,6 @@
 /**
  * The «Змінити профіль будинку» panel: pick a profile and a duration, see what the switch
- * will do, apply it with an 8-second undo, or go back to the schedule.
+ * will do, apply it with an 8-second undo. Going back to the schedule is the house control.
  *
  * The consequence is shown at once from a local estimate (the same rules as the server:
  * which rooms go up or down and how many would start) and replaced by the server's own preview
@@ -42,10 +42,6 @@ export interface ProfileSwitch {
   canApply: boolean;
   apply: () => void;
   applying: boolean;
-  /** «Повернути розклад»: only while the house profile is set by hand. */
-  overridden: boolean;
-  resume: () => void;
-  resuming: boolean;
 }
 
 const EPS = 0.05;
@@ -255,17 +251,6 @@ export function useProfileSwitch(ctx: CodeContext): ProfileSwitch {
     },
   });
 
-  const resumeMut = useMutation(() => api.house.clearProfile(), {
-    onSuccess: (res) => {
-      houseProfile.setData(res);
-      refreshHouse();
-      toast({
-        tone: 'ok',
-        message: t('Back to the schedule: «{profile}».', { profile: ctx.profile?.(res.state.activeProfileId) ?? res.state.activeProfileId }),
-      });
-    },
-  });
-
   return {
     open,
     openPanel,
@@ -284,8 +269,5 @@ export function useProfileSwitch(ctx: CodeContext): ProfileSwitch {
       if (pick && !same) void applyMut.run(pick, duration);
     },
     applying: applyMut.pending,
-    overridden: house?.profile.layer === 'house_manual',
-    resume: () => void resumeMut.run(),
-    resuming: resumeMut.pending,
   };
 }

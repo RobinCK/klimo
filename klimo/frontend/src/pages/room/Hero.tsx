@@ -1,6 +1,7 @@
 import type { EpochMs, ProfileDto, RoomDetailDto, RoomState } from '@api/model';
 import {
   BigReadout,
+  Button,
   ExplainCallout,
   Page,
   PendingChangePanel,
@@ -14,7 +15,9 @@ import {
   TrendIndicator,
   UndoBar,
 } from '@ui';
+import { paths } from '@app';
 import { fmtRate, fmtTemp, roomStateLabel, t, type CodeContext } from '@i18n';
+import { isControllable, RoomControlBar } from './Control';
 import { QuickActions } from './QuickActions';
 import { RoomToday } from './RoomToday';
 import { readoutCaption, sourceText, whyText, whyTitle } from './texts';
@@ -83,6 +86,11 @@ function HeroMain({ room, state, ed, ctx, now }: { room: RoomDetailDto; state: R
           {room.config.name} <RoomStateChip state={state.state} label={roomStateLabel(state.state)} tone={state.tone} size={30} />
         </>
       }
+      actions={
+        <Button variant="secondary" size="sm" icon="pencil" to={paths.roomSettings(room.config.id, 'setup')}>
+          {t('Edit room')}
+        </Button>
+      }
     >
       <Stack gap="lg">
         <BigReadout
@@ -91,7 +99,9 @@ function HeroMain({ room, state, ed, ctx, now }: { room: RoomDetailDto; state: R
           aside={<TargetBlock ed={ed} state={state} />}
         />
         <Stack gap="xs">
-          {ed.phase === 'pending' ? (
+          {isControllable(room, state) ? (
+            <RoomControlBar room={room} state={state} ctx={ctx} now={now} editing={ed.phase === 'pending' ? t('New target · not sent yet') : null} />
+          ) : ed.phase === 'pending' ? (
             <TargetSourceLine kind="pending" text={t('New target · not sent yet')} />
           ) : (
             <TargetSourceLine
@@ -105,7 +115,10 @@ function HeroMain({ room, state, ed, ctx, now }: { room: RoomDetailDto; state: R
         {ed.phase === 'pending' && ed.consequence ? (
           <PendingChangePanel<EditDuration>
             consequence={ed.consequence}
-            duration={{ value: ed.duration, options: ed.durationOptions(false), onChange: ed.setDuration, onFocusChange: ed.setDurationFocus }}
+            duration={
+              ed.holds ? undefined : { value: ed.duration, options: ed.durationOptions(false), onChange: ed.setDuration, onFocusChange: ed.setDurationFocus }
+            }
+            durationNote={ed.holds ? t('Manual control: holds until you resume the schedule') : undefined}
             countdown={{ remaining: ed.countdown.remaining, total: ed.countdown.total, frozen: ed.countdown.frozen, text: ed.countdown.text(false) }}
             onCancel={ed.cancel}
             cancelLabel={t('Cancel')}

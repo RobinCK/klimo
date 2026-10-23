@@ -186,6 +186,7 @@ const REASONS: Record<ReasonCode, (p: P, c: Ctx) => string> = {
       ? t('{source} is working since {since}.', { source: source(p, c), since: clock(p, 'since', c) })
       : t('{source} is working.', { source: source(p, c) }),
   'why.trvs_open': (p) => t('Radiator valves open: {n} of {total}.', { n: num(p, 'n') ?? 0, total: num(p, 'total') ?? 0 }),
+  'why.rooms_asking': (p) => t('Rooms asking for heat: {n} of {total}.', { n: num(p, 'n') ?? 0, total: num(p, 'total') ?? 0 }),
   'why.trvs_closed': (p) => t('Radiator valves closed ({n}).', { n: num(p, 'n') ?? 0 }),
   'why.ac_running': (p, c) => t('{source} is running: {mode}.', { source: source(p, c), mode: sourceMode(p) }),
   'why.ac_assist': (p, c) => t('{source} helps: the room is {deficit} from its target.', { source: source(p, c), deficit: delta(p, 'deficitC') }),
@@ -440,6 +441,67 @@ export function renderReasons(rs: readonly Reason[] | null | undefined, ctx: Cod
 
 /* ======================================== journal ======================================== */
 
+/** Wizard device roles in journal lines («додано датчик температури»). */
+function deviceRoleLabel(role: string | null): string {
+  switch (role) {
+    case 'trv':
+      return t('radiator head');
+    case 'temperature':
+      return t('temperature sensor');
+    case 'humidity':
+      return t('humidity sensor');
+    case 'window':
+      return t('window contact');
+    case 'door':
+      return t('door contact');
+    case 'ac':
+      return t('air conditioner');
+    case 'heater':
+      return t('heater');
+    case 'floor_zone':
+      return t('floor zone valve');
+    case 'floor_probe':
+      return t('floor probe');
+    case 'dehumidifier':
+      return t('dehumidifier');
+    default:
+      return t('sensor');
+  }
+}
+
+function heatingKindLabel(kind: string): string {
+  switch (kind) {
+    case 'trv':
+      return t('radiators with smart heads');
+    case 'radiator_plain':
+      return t('radiators with ordinary valves');
+    case 'floor':
+      return t('underfloor heating');
+    case 'ac':
+      return t('air conditioner');
+    case 'local':
+      return t('own heater');
+    default:
+      return kind;
+  }
+}
+
+/** What happened to a device removed from a room. */
+function releaseLabel(release: string | null): string | null {
+  switch (release) {
+    case 'trv_handback':
+      return t('the head got its own setpoint back');
+    case 'switch_off':
+      return t('switched off');
+    case 'zone_open':
+      return t('the zone was left open');
+    case 'zone_close':
+      return t('the zone was closed');
+    default:
+      return null;
+  }
+}
+
 type JRender = (p: P, c: Ctx, e: JournalEntry) => string;
 
 const subjectSource = (e: JournalEntry, c: Ctx) => lookup(c.source, e.sourceId);
@@ -579,6 +641,7 @@ const JOURNAL: Record<JournalCode, JRender> = {
   'pump.off': (p, c, e) => t('{pump} off', { pump: subjectPump(p, c, e) }),
   'pump.exercise': (p, c, e) => t('{pump}: anti-seize run for {dur}', { pump: subjectPump(p, c, e), dur: fmtDurSec(num(p, 'durationSec')) }),
   'pump.flow_safety': (p, c, e) => t('{pump} forced on — {source} needs circulation', { pump: subjectPump(p, c, e), source: source(p, c) }),
+  'circuit.merged': (p) => t('«{from}» merged into «{to}»: rooms moved — {n}', { from: str(p, 'from') ?? '', to: str(p, 'to') ?? '', n: num(p, 'n') ?? 0 }) + byWhom(p),
   'pump.duty_switch': (p, c) =>
     t('Duty pump: {from} → {to}', { from: lookup(c.pump, str(p, 'from')), to: lookup(c.pump, str(p, 'to')) }),
   'frost.fallback': (p, c) => t('Frost protection: {source} heats {room}', { source: source(p, c), room: room(p, c) }),
@@ -624,6 +687,31 @@ const JOURNAL: Record<JournalCode, JRender> = {
   },
   'room.created': (p, c, e) => t('{room}: room added', { room: subjectRoom(e, c) }) + byWhom(p),
   'room.deleted': (p, c, e) => t('Room deleted: {room}', { room: subjectRoom(e, c) }) + byWhom(p),
+  'room.device_added': (p, c, e) => t('{room}: {what} added — {name}', { room: subjectRoom(e, c), what: deviceRoleLabel(str(p, 'role')), name: str(p, 'name') ?? '' }) + byWhom(p),
+  'room.device_removed': (p, c, e) => {
+    const release = releaseLabel(str(p, 'release'));
+    const text = t('{room}: {what} removed — {name}', { room: subjectRoom(e, c), what: deviceRoleLabel(str(p, 'role')), name: str(p, 'name') ?? '' });
+    return (release ? `${text}, ${release}` : text) + byWhom(p);
+  },
+  'room.device_replaced': (p, c, e) =>
+    t('{room}: {what} {from} replaced by {to}', { room: subjectRoom(e, c), what: deviceRoleLabel(str(p, 'role')), from: str(p, 'from') ?? '', to: str(p, 'to') ?? '' }) + byWhom(p),
+  'room.heating_changed': (p, c, e) => {
+    const kinds = (str(p, 'to') ?? '').split(',').filter(Boolean).map(heatingKindLabel).join(', ');
+    const none = t('nothing');
+    return t('{room}: heated by {kinds}', { room: subjectRoom(e, c), kinds: kinds || none }) + byWhom(p);
+  },
+  'room.circuit_joined': (p, c, e) => {
+    const id = str(p, 'circuitId');
+    const circuit = (id ? c.circuit?.(id) : undefined) ?? str(p, 'circuitName') ?? '';
+    return t('{room}: joined «{circuit}»', { room: subjectRoom(e, c), circuit }) + byWhom(p);
+  },
+  'room.circuit_left': (p, c, e) =>
+    t('{room}: left «{circuit}» — its pump no longer runs for this room', { room: subjectRoom(e, c), circuit: str(p, 'circuitName') ?? '' }) + byWhom(p),
+  'room.renamed': (p) => t('Room «{from}» renamed to «{to}»', { from: str(p, 'from') ?? '', to: str(p, 'to') ?? '' }) + byWhom(p),
+  'room.area_changed': (p, c, e) => {
+    const none = t('none');
+    return t('{room}: Home Assistant area — {area}', { room: subjectRoom(e, c), area: str(p, 'area') ?? none }) + byWhom(p);
+  },
   // devices
   'trv.retry': (p, c, e) => t('{device}: retry {attempt}/{of}', { device: subjectDevice(e, c), attempt: num(p, 'attempt') ?? 0, of: num(p, 'of') ?? 0 }),
   'trv.failed': (p, c, e) => t('{device} did not confirm after {count} attempts', { device: subjectDevice(e, c), count: num(p, 'attempts') ?? 0 }),

@@ -10,14 +10,16 @@ import { liveStore, useCodeContext, useHouse, useIncidents, useLayout, useLiveEv
 import { AutoGrid, Button, Page, ProfileTile, RowList, Row, Section, Skeleton, SourceRow, Stack, StatusBanner } from '@ui';
 import { LogoMark, Wordmark } from '@brand';
 import { HouseSeasonPill, InboxBell, paths } from '@app';
-import { errorText, fmtDur, fmtTemp, sourceStateLabel, t } from '@i18n';
+import { errorText, fmtAmount, fmtDur, fmtTemp, sourceStateLabel, t } from '@i18n';
 import { AttentionLine, AttentionSection } from './Attention';
 import { dateLine, headline, isRunning, profileOrigin, SOURCE_ICON, subline } from './house';
+import { HouseControlBlock, useHouseControl } from './HouseControl';
 import { Onboarding } from './Onboarding';
 import { ProfileSwitchPanel } from './ProfileSwitchPanel';
 import { RoomsList, RoomsSection } from './RoomsSection';
 import { runningSummary, SystemTiles } from './SystemTiles';
 import { TodaySection } from './TodaySection';
+import { useTodayUse } from './TodayUse';
 import { useProfileSwitch, type ProfileSwitch } from './useProfileSwitch';
 
 const FIVE_MIN = 5 * 60_000;
@@ -85,10 +87,21 @@ function Desktop({ d, sw, house }: { d: Data; sw: ProfileSwitch; house: HouseSta
   const cooling = house.season.season === 'cooling';
   const canEdit = d.me?.canEditConfig ?? false;
   const onboarding = d.overview.data?.onboarding ?? null;
+  const hc = useHouseControl(house, d.rooms, d.ctx);
   return (
     <Page eyebrow={dateLine(d.now)} title={headline(house)} subtitle={subline(house, d.plant, d.ctx)}>
       {onboarding ? <Onboarding onboarding={onboarding} canEdit={canEdit} /> : null}
-      <SystemTiles house={house} plant={d.plant} today={d.today.data ?? null} sources={d.sources.data} circuits={d.circuits.data} sw={sw} ctx={d.ctx} outdoor={d.overview.data?.outdoor} />
+      <SystemTiles
+        house={house}
+        plant={d.plant}
+        today={d.today.data ?? null}
+        sources={d.sources.data}
+        circuits={d.circuits.data}
+        sw={sw}
+        hc={hc}
+        ctx={d.ctx}
+        outdoor={d.overview.data?.outdoor}
+      />
       <ProfileSwitchPanel sw={sw} house={house} ctx={d.ctx} phone={false} />
       <AttentionSection items={d.attention.data ?? []} loading={!d.attention.settled} ctx={d.ctx} now={d.now} onChanged={() => void d.attention.reload()} />
       <RoomsSection rooms={d.rooms} loaded={d.roomsLoaded} sparks={d.sparks.data} cooling={cooling} ctx={d.ctx} now={d.now} canEdit={canEdit} />
@@ -113,10 +126,15 @@ function TodayRow({ d, house, sources }: { d: Data; house: HouseState; sources: 
   const leadId = house.leadSourceId ?? plant?.lead.heat ?? plant?.lead.cool ?? null;
   const lead = plant?.sources.find((s) => s.sourceId === leadId) ?? null;
   const today = d.today.data;
+  const use = useTodayUse();
   if (!lead || !today) return null;
   const kind = sources?.find((s) => s.config.id === lead.sourceId)?.config.kind ?? 'custom';
   const stat = today.stats.perSource.find((p) => p.sourceId === lead.sourceId);
-  const meta = stat && stat.cycles > 0 ? t('{count} cycles · {dur}', { count: stat.cycles, dur: fmtDur(stat.runtimeMin) }) : t('did not run today');
+  const ran = stat && stat.cycles > 0 ? t('{count} cycles · {dur}', { count: stat.cycles, dur: fmtDur(stat.runtimeMin) }) : t('did not run today');
+  // what its meters counted today, when it has any
+  const used = use?.recorder === 'ok' ? use.sources.find((x) => x.sourceId === lead.sourceId) : undefined;
+  const amount = used?.gas != null ? fmtAmount(used.gas, use?.units.gas ?? null) : used?.electricity != null ? fmtAmount(used.electricity, use?.units.electricity ?? null) : null;
+  const meta = amount ? `${ran} · ${amount}` : ran;
   return (
     <RowList ariaLabel={t('Today')}>
       <SourceRow
@@ -138,6 +156,7 @@ function Phone({ d, sw, house }: { d: Data; sw: ProfileSwitch; house: HouseState
   const running = runningSummary(d.plant, d.ctx);
   const outdoor = house.season.outdoorC;
   const line = [running, outdoor != null ? t('outdoor {t}', { t: fmtTemp(outdoor) }) : ''].filter(Boolean).join(' · ');
+  const hc = useHouseControl(house, d.rooms, d.ctx);
   return (
     <Stack gap="md">
       <Row justify="between" gap="sm">
@@ -159,18 +178,12 @@ function Phone({ d, sw, house }: { d: Data; sw: ProfileSwitch; house: HouseState
           subtitle={profileOrigin(house, d.ctx)}
           inlineAction
           action={
-            <Row gap="xs" wrap justify="end">
-              {sw.overridden ? (
-                <Button variant="link" size="sm" onClick={sw.resume} loading={sw.resuming}>
-                  {t('Back to schedule')}
-                </Button>
-              ) : null}
-              <Button variant="secondary" size="sm" onClick={sw.openPanel}>
-                {t('Change')}
-              </Button>
-            </Row>
+            <Button variant="secondary" size="sm" onClick={sw.openPanel}>
+              {t('Change')}
+            </Button>
           }
         />
+        <HouseControlBlock hc={hc} full />
       </Section>
       <AttentionLine items={d.attention.data ?? []} ctx={d.ctx} now={d.now} />
       <RoomsList rooms={d.rooms} loaded={d.roomsLoaded} ctx={d.ctx} now={d.now} canEdit={canEdit} />

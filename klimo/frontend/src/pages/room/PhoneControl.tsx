@@ -14,7 +14,9 @@ import {
   type Tone,
 } from '@ui';
 import { navigate, paths, previousRoute, usePref } from '@app';
-import { aggregationLabel, fmtClock, fmtPct, fmtRate, fmtTemp, roomStateLabel, t, trvStrategyLabel, windowReactionLabel } from '@i18n';
+import { brand } from '@brand';
+import { aggregationLabel, fmtClock, fmtPct, fmtRate, fmtTemp, heatingKindWords, roomStateLabel, t, trvStrategyLabel, windowReactionLabel } from '@i18n';
+import { isControllable, RoomControlBar } from './Control';
 import { QuickActions } from './QuickActions';
 import { RoomToday } from './RoomToday';
 import type { SectionProps } from './sections';
@@ -75,7 +77,16 @@ function settingsRows(
   const syncing = state.trvs.some((x) => x.sync.status === 'sending' || x.sync.status === 'retrying' || x.sync.status === 'queued');
   const failed = state.trvs.some((x) => x.sync.status === 'failed');
   const trvs = room.emitters.flatMap((e) => e.devices.filter((d) => d.kind === 'trv'));
+  const kinds = room.heating.kinds.map((k) => heatingKindWords(k, brand.productName).title.toLowerCase());
   const rows: ReturnType<typeof settingsRows> = [
+    {
+      // the way to change what the wizard set up: devices, what heats the room, its name
+      key: 'setup',
+      icon: 'pencil',
+      name: t('Edit room'),
+      meta: [t('{count} devices', { count: room.heating.bindings.length }), kinds.join(', ') || t('nothing heats yet')].join(' · '),
+      chip: { tone: 'hold', label: t('edit') },
+    },
     {
       key: 'src',
       icon: 'heatPump',
@@ -130,7 +141,7 @@ export function PhoneControl({ p, ed, profiles, now }: { p: SectionProps; ed: Ta
   const v = ed.value;
   const editing = ed.phase === 'pending' || ed.dragging;
   const why = whyText(state, p.ctx);
-  const sub = editing ? { icon: 'pencil' as const, text: t('new target · not sent yet'), strong: true } : phoneSubtitle(state, p.ctx, now);
+  const sub = editing ? { icon: 'pencil' as const, text: t('new target · not sent yet'), strong: true } : phoneSubtitle(state, p.ctx, now, room.summary.control);
   const back = () => {
     const prev = previousRoute();
     navigate(prev && (prev.name === 'overview' || prev.name === 'rooms') ? prev.path : paths.rooms());
@@ -178,7 +189,17 @@ export function PhoneControl({ p, ed, profiles, now }: { p: SectionProps; ed: Ta
           valueText: (x) => fmtTemp(x),
         }}
       />
-      {ed.dragging ? (
+      {isControllable(room, state) ? (
+        <RoomControlBar
+          room={room}
+          state={state}
+          ctx={p.ctx}
+          now={now}
+          full
+          editing={ed.dragging ? t('Drag along the arc — the value is under your finger') : ed.phase === 'pending' ? t('New target · not sent yet') : null}
+          scheduleLine={next}
+        />
+      ) : ed.dragging ? (
         <TargetSourceLine kind="pending" text={t('Drag along the arc — the value is under your finger')} />
       ) : ed.phase === 'view' && next ? (
         <TargetSourceLine kind={state.target.display === 'manual' ? 'manual' : 'schedule'} text={next} />
@@ -186,7 +207,10 @@ export function PhoneControl({ p, ed, profiles, now }: { p: SectionProps; ed: Ta
       {ed.phase === 'pending' && ed.consequence ? (
         <PendingChangePanel<EditDuration>
           consequence={ed.consequence}
-          duration={{ value: ed.duration, options: ed.durationOptions(true), onChange: ed.setDuration, onFocusChange: ed.setDurationFocus }}
+          duration={
+            ed.holds ? undefined : { value: ed.duration, options: ed.durationOptions(true), onChange: ed.setDuration, onFocusChange: ed.setDurationFocus }
+          }
+          durationNote={ed.holds ? t('Manual control: holds until you resume the schedule') : undefined}
           countdown={{ remaining: ed.countdown.remaining, total: ed.countdown.total, frozen: ed.countdown.frozen, text: ed.countdown.text(true) }}
           onCancel={ed.cancel}
           cancelLabel={t('Cancel')}

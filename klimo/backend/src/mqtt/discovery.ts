@@ -134,7 +134,7 @@ const NAMES = {
   problem: ['Problem', 'Проблема'],
   alerts: ['Alerts', 'Сповіщення'],
   power_used: ['Power used', 'Споживання'],
-  resume_schedule: ['Resume schedule', 'Повернути розклад'],
+  resume_schedule: ['Resume schedule for the whole house', 'Повернути розклад для всього дому'],
   schedule: ['Follow schedule', 'За розкладом'],
   control: ['control', 'керування'],
   resync: ['Resend targets', 'Переслати цілі'],

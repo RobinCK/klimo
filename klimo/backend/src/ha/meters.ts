@@ -14,6 +14,8 @@ const HOUR = 60 * MIN;
 const RESET_DROP = 0.1;
 /** Readings further apart than this pin consumption to a run only approximately. */
 const SPARSE_MS = 15 * MIN;
+/** A run is an estimate when more than this share of its amount could not be pinned to it. */
+const UNCERTAIN_SHARE = 0.1;
 
 /* ── periods ───────────────────────────────────────────────────────────────────────────────────── */
 
@@ -91,26 +93,6 @@ export function planPeriod(range: ConsumptionRange, date: LocalDate, tz: string)
   return { range, date: start, from, to, bucket: range === 'day' ? 'hour' : range === 'year' ? 'month' : 'day', edges };
 }
 
-/** Index of the bucket holding `t`, or -1 outside the edges. */
-export function bucketIndex(edges: readonly EpochMs[], t: EpochMs): number {
-  if (t < edges[0] || t >= edges[edges.length - 1]) {
-    return -1;
-  }
-
-  let lo = 0;
-  let hi = edges.length - 2;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (edges[mid] <= t) {
-      lo = mid;
-    } else {
-      hi = mid - 1;
-    }
-  }
-
-  return lo;
-}
-
 /* ── statistics rows ───────────────────────────────────────────────────────────────────────────── */
 
 export interface MeterStatRow {
@@ -129,6 +111,11 @@ export function readingStep(prev: number, next: number): number {
   }
 
   return next < prev * (1 - RESET_DROP) ? Math.max(0, next) : 0;
+}
+
+/** The reading the next one is measured from: a dip that is not a reset keeps the higher one, so the recovery is not counted twice. */
+export function readingBase(prev: number, next: number): number {
+  return next < prev && next >= prev * (1 - RESET_DROP) ? prev : next;
 }
 
 /**
@@ -157,9 +144,7 @@ export function rowChanges(rows: readonly MeterStatRow[]): (number | null)[] {
     }
 
     if (isNum(r.state)) {
-      // a dip that is not a reset keeps the higher baseline, so the recovery is not counted twice
-      const dip = prevState !== null && r.state < prevState && r.state >= prevState * (1 - RESET_DROP);
-      prevState = dip && prevState !== null ? prevState : r.state;
+      prevState = prevState === null ? r.state : readingBase(prevState, r.state);
     }
   }
 
@@ -196,22 +181,24 @@ export function runningTotal(readings: readonly MeterReading[]): TotalPoint[] {
     }
 
     total += readingStep(base, r.v);
-    const dip = r.v < base && r.v >= base * (1 - RESET_DROP);
-    base = dip ? base : r.v;
+    base = readingBase(base, r.v);
     out.push([r.t, total]);
   }
 
   return out;
 }
 
-/** The running total at `t` the way HA's statistics read a meter: the last reading at or before `t`. */
+/**
+ * The running total just before `t`, the way HA's statistics read a meter: an hour [a, b) holds the
+ * readings from `a` up to, not including, `b` — a reading exactly on the hour belongs to the next one.
+ */
 export function totalAt(points: readonly TotalPoint[], t: EpochMs): number | null {
   let lo = 0;
   let hi = points.length - 1;
   let found = -1;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
-    if (points[mid][0] <= t) {
+    if (points[mid][0] < t) {
       found = mid;
       lo = mid + 1;
     } else {
@@ -222,7 +209,7 @@ export function totalAt(points: readonly TotalPoint[], t: EpochMs): number | nul
   return found < 0 ? null : points[found][1];
 }
 
-/** Growth over [a, b] read as HA reads it (no interpolation); null when nothing was known by `b`. */
+/** Growth over [a, b) read as HA reads it (no interpolation); null when nothing was known before `b`. */
 export function totalDelta(points: readonly TotalPoint[], a: EpochMs, b: EpochMs): number | null {
   const end = totalAt(points, b);
   if (end === null) {
@@ -270,15 +257,16 @@ const overlap = (a: RunWindow, from: EpochMs, to: EpochMs): number => Math.max(0
  * What each run used. A meter reports only now and then, so every growth between two readings is shared
  * among the runs inside that interval by their running time: the meter grew while the source ran. Growth
  * with no run inside belongs to none (another appliance on the same gas meter, standby). A run's value is
- * an estimate when a growth was split between runs, when readings around it were sparse, or when the
- * readings stop before the run does.
+ * an estimate when a noticeable part of it was split between runs or came from sparse readings, or when
+ * the readings begin after the run did or stop well before it ends.
  */
 export function attributeRuns(points: readonly TotalPoint[], runs: readonly RunWindow[]): RunShare[] {
-  const out: RunShare[] = runs.map(() => ({ value: points.length ? 0 : null, estimated: points.length === 0 }));
   if (!points.length) {
-    return out;
+    return runs.map(() => ({ value: null, estimated: true }));
   }
 
+  const value = runs.map(() => 0);
+  const uncertain = runs.map(() => 0);
   const order = runs.map((r, i) => ({ r, i })).sort((x, y) => x.r.start - y.r.start);
   let first = 0;
   for (let p = 0; p + 1 < points.length; p++) {
@@ -303,23 +291,21 @@ export function attributeRuns(points: readonly TotalPoint[], runs: readonly RunW
 
     const ran = inside.reduce((s, x) => s + x.ms, 0);
     for (const x of inside) {
-      const share = out[x.i];
-      share.value = (share.value ?? 0) + (grew * x.ms) / ran;
+      const part = (grew * x.ms) / ran;
+      value[x.i] += part;
       if (x.ms < ran || b - a > SPARSE_MS) {
-        share.estimated = true;
+        uncertain[x.i] += part;
       }
     }
   }
 
   const firstAt = points[0][0];
   const lastAt = points[points.length - 1][0];
-  runs.forEach((r, i) => {
-    if (r.start < firstAt || r.end > lastAt) {
-      out[i].estimated = true;
-    }
-  });
 
-  return out;
+  return runs.map((r, i) => ({
+    value: value[i],
+    estimated: r.start < firstAt || r.end > lastAt + SPARSE_MS || uncertain[i] > UNCERTAIN_SHARE * value[i],
+  }));
 }
 
 /* ── degree-days ───────────────────────────────────────────────────────────────────────────────── */
@@ -402,9 +388,10 @@ export function costOf(gas: number | null, electricity: number | null, gasUnit: 
   return cost;
 }
 
-/** heat ÷ input energy; null for inputs too small to say anything. */
+/** heat ÷ input energy; null for inputs too small to say anything or without output. */
 export function ratio(heat: number | null, input: number | null, minInput: number): number | null {
-  if (heat === null || input === null || input < minInput) {
+  // nothing produced: the input was standby alone, a ratio of 0 would say nothing about the source
+  if (heat === null || input === null || input < minInput || heat <= 0) {
     return null;
   }
 

@@ -103,6 +103,11 @@ function UndoBody({ message, onUndo, seconds, close }: { message: string; onUndo
   );
 }
 
+/** Closes a toast early: a newer change makes an older «Undo» wrong. */
+export function closeToast(id: string): void {
+  notifications.hide(id);
+}
+
 /** «Done — Undo · 8»: the change is already applied, the button reverts it. */
 export function undoToast({ message, onUndo, seconds }: { message: string; onUndo: () => void; seconds: number }): string {
   const id = `undo-${++toastSeq}`;

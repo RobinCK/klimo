@@ -44,6 +44,7 @@ import type {
   PumpReason,
   PumpRule,
   PumpStateKind,
+  RoomControlMode,
   RoomProfileMode,
   RoomStateKind,
   RoomTargetDuration,
@@ -308,7 +309,15 @@ export const roomDurationLabel = table<RoomTargetDuration>(() => ({
   morning: t('Until morning'),
   until: t('Until…'),
   forever: t('Permanently, into the profile'),
-  manual: t('Manual control, no end'),
+  manual: t('Until I resume the schedule'),
+}));
+
+/** How a room is controlled («За розкладом», «Вручну», «Вимкнено», «Тимчасово»). */
+export const roomControlLabel = table<RoomControlMode>(() => ({
+  schedule: t('By schedule'),
+  manual: t('Manual'),
+  off: t('Off'),
+  temporary: t('Temporary change'),
 }));
 
 export const houseDurationLabel = table<HouseDuration>(() => ({
@@ -871,6 +880,9 @@ export const entityRoleLabel = table<EntityRolePreset>(() => ({
   weather: t('Weather'),
   proximity: t('Proximity'),
   script: t('Script'),
+  gas_meter: t('Gas meter'),
+  electricity_meter: t('Electricity meter'),
+  heat_meter: t('Heat meter'),
 }));
 
 /* ---------------- simulator ---------------- */

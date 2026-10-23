@@ -10,13 +10,12 @@ import type {
   DurationOption,
   Emitter,
   EmitterDevice,
-  HaPort,
   IConfigStore,
-  IEntitySearch,
   IHistory,
   Id,
   IReadModels,
   IRoomActions,
+  IRoomEdit,
   IRoomSetup,
   RoomConfig,
   RoomDayDto,
@@ -26,7 +25,7 @@ import type {
   SparkDto,
   ValidationResult,
 } from '../shared/model';
-import { CLOCK, CONFIG_STORE, ENTITY_SEARCH, HA_PORT, HISTORY, READ_MODELS, ROOM_ACTIONS, ROOM_SETUP } from '../tokens';
+import { CLOCK, CONFIG_STORE, HISTORY, READ_MODELS, ROOM_ACTIONS, ROOM_EDIT, ROOM_SETUP } from '../tokens';
 import { emitterName } from './names';
 import {
   createRoomRequest,
@@ -35,9 +34,13 @@ import {
   emitterDeviceCreateRequest,
   emitterDevicePatch,
   emitterPatch,
+  forceQuery,
   orderRequest,
   profileTargetRequest,
   releaseQuery,
+  roomBindingReplaceRequest,
+  roomDeviceRequest,
+  roomHeatingRequest,
   roomPatch,
   sensorCreateRequest,
   sensorOrderRequest,
@@ -56,12 +59,11 @@ export class RoomsController {
   constructor(
     @Inject(CONFIG_STORE) private readonly config: IConfigStore,
     @Inject(CLOCK) private readonly clock: ClockPort,
-    @Inject(HA_PORT) private readonly ha: HaPort,
-    @Inject(ENTITY_SEARCH) private readonly search: IEntitySearch,
     @Inject(HISTORY) private readonly history: IHistory,
     @Inject(READ_MODELS) private readonly readModels: IReadModels,
     @Inject(ROOM_SETUP) private readonly setup: IRoomSetup,
     @Inject(ROOM_ACTIONS) private readonly actions: IRoomActions,
+    @Inject(ROOM_EDIT) private readonly edit: IRoomEdit,
   ) {}
 
   /* ── list and wizard (fixed paths first: they would otherwise read as a room id) ─────────────── */
@@ -117,13 +119,42 @@ export class RoomsController {
     return found(this.readModels.roomDetail(idOrSlug), 'Room');
   }
 
-  /** Room settings autosave (the page debounces edits by 400 ms). */
+  /** Room settings autosave (the page debounces edits by 400 ms); a new name or HA area is journalled. */
   @Patch(':id')
   @AdminOnly()
-  async patch(@Param('id') idOrSlug: string, @Body() body: unknown, @CurrentActor() actor: Actor): Promise<RoomDetailDto> {
+  patch(@Param('id') idOrSlug: string, @Body() body: unknown, @CurrentActor() actor: Actor): Promise<RoomDetailDto> {
     const room = this.room(idOrSlug);
-    await this.config.update('rooms', room.id, parse(body, roomPatch) as Partial<RoomConfig>, actor);
-    return this.detailOf(room.id);
+    return this.edit.patch(room.id, parse(body, roomPatch) as Partial<RoomConfig>, actor);
+  }
+
+  /* ── room editing: bound devices and what heats the room ──────────────────────────────────── */
+
+  /** Binds a device in the wizard's terms; a head on a room without radiators puts them on a radiator circuit. */
+  @Post(':id/bindings')
+  @AdminOnly()
+  addBinding(@Param('id') idOrSlug: string, @Body() body: unknown, @CurrentActor() actor: Actor): Promise<RoomDetailDto> {
+    return this.edit.addBinding(this.room(idOrSlug).id, parse(body, roomDeviceRequest), actor);
+  }
+
+  /** «Замінити»: another entity in the same role (a head is handed back first). */
+  @Put(':id/bindings/:key')
+  @AdminOnly()
+  replaceBinding(@Param('id') idOrSlug: string, @Param('key') key: string, @Body() body: unknown, @CurrentActor() actor: Actor): Promise<RoomDetailDto> {
+    return this.edit.replaceBinding(this.room(idOrSlug).id, key, parse(body, roomBindingReplaceRequest), actor);
+  }
+
+  /** «Прибрати»: the device is released (head handed back, heater/AC/dehumidifier off); `force=1` for the last temperature. */
+  @Delete(':id/bindings/:key')
+  @AdminOnly()
+  removeBinding(@Param('id') idOrSlug: string, @Param('key') key: string, @Query() query: unknown, @CurrentActor() actor: Actor): Promise<RoomDetailDto> {
+    return this.edit.removeBinding(this.room(idOrSlug).id, key, { force: parse(query, forceQuery).force ?? false }, actor);
+  }
+
+  /** «Чим гріти»: smart heads ↔ ordinary radiators, joining or leaving a house circuit, an AC or a heater. */
+  @Put(':id/heating')
+  @AdminOnly()
+  setHeating(@Param('id') idOrSlug: string, @Body() body: unknown, @CurrentActor() actor: Actor): Promise<RoomDetailDto> {
+    return this.edit.setHeating(this.room(idOrSlug).id, parse(body, roomHeatingRequest), actor);
   }
 
   /** Deletes the room; its TRVs are handed back to their own regulation first unless told otherwise. */
@@ -154,27 +185,8 @@ export class RoomsController {
   /** 409 when the entity already serves another room in the same role (a door contact may serve two). */
   @Post(':id/sensors')
   @AdminOnly()
-  async addSensor(@Param('id') idOrSlug: string, @Body() body: unknown, @CurrentActor() actor: Actor): Promise<RoomDetailDto> {
-    const room = this.room(idOrSlug);
-    const req = parse(body, sensorCreateRequest);
-    if (this.ha.connected && !this.ha.getState(req.entityId) && !this.search.detail(req.entityId)) {
-      throw validationError([{ path: 'entityId', code: 'not_found' }]);
-    }
-    const device = this.search.deviceOf(req.entityId);
-    const sensor: Omit<RoomSensor, 'id' | 'order'> = {
-      roomId: room.id,
-      entityId: req.entityId,
-      role: req.role,
-      contactKind: req.role === 'contact' ? req.contactKind ?? 'window' : null,
-      name: req.name ?? this.entityName(req.entityId),
-      model: device?.model ?? null,
-      haDeviceId: device && !device.key.startsWith('entity:') ? device.key : null,
-      weight: req.weight ?? 1,
-      included: true,
-      excludedBy: null,
-    };
-    await this.config.create('sensors', sensor as Omit<RoomSensor, 'id'>, actor);
-    return this.detailOf(room.id);
+  addSensor(@Param('id') idOrSlug: string, @Body() body: unknown, @CurrentActor() actor: Actor): Promise<RoomDetailDto> {
+    return this.edit.addSensor(this.room(idOrSlug).id, parse(body, sensorCreateRequest), actor);
   }
 
   /** «Порядок» defines «Основний»: the first included temperature sensor. */
@@ -209,7 +221,8 @@ export class RoomsController {
   @AdminOnly()
   async removeSensor(@Param('id') idOrSlug: string, @Param('sensorId') sensorId: string, @CurrentActor() actor: Actor): Promise<RoomDetailDto> {
     const room = this.room(idOrSlug);
-    this.sensor(room, sensorId);
+    const sensor = this.sensor(room, sensorId);
+    if (sensor.role !== 'glass') return this.edit.removeBinding(room.id, `sensor:${sensorId}`, { force: true }, actor);
     await this.config.remove('sensors', sensorId, actor);
     return this.detailOf(room.id);
   }
@@ -283,12 +296,13 @@ export class RoomsController {
     return this.detailOf(room.id);
   }
 
+  /** A head is handed back to its own setpoint first; a zone valve is left as its loop needs. */
   @Delete(':id/devices/:deviceId')
   @AdminOnly()
   removeDevice(@Param('id') idOrSlug: string, @Param('deviceId') deviceId: string, @CurrentActor() actor: Actor): Promise<RoomDetailDto> {
     const room = this.room(idOrSlug);
     this.device(room, deviceId);
-    return this.setup.removeEmitterDevice(room.id, deviceId, actor);
+    return this.edit.removeBinding(room.id, `device:${deviceId}`, { force: true }, actor);
   }
 
   /** The room's own value in a profile; `inherit` removes it. */
@@ -326,12 +340,5 @@ export class RoomsController {
     const d = this.config.get('emitterDevices', deviceId);
     if (!d || d.roomId !== room.id) throw notFound('Device');
     return d;
-  }
-
-  /** The entity's HA name («Датчик біля дивана»), else its id. */
-  private entityName(entityId: string): string {
-    const friendly = this.ha.getState(entityId)?.attributes.friendly_name;
-    if (typeof friendly === 'string' && friendly.trim()) return friendly.trim().slice(0, 80);
-    return this.search.detail(entityId)?.entity.name.slice(0, 80) ?? entityId;
   }
 }

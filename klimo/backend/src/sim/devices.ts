@@ -47,6 +47,7 @@ export type Binding =
   | { kind: 'outdoor' }
   | { kind: 'sunny_wall' }
   | { kind: 'energy' }
+  | { kind: 'gas_meter' }
   | { kind: 'bridge'; instance: 1 | 2 }
   | { kind: 'phone'; personId: string }
   | { kind: 'spare' };
@@ -57,7 +58,7 @@ export type EntityRole =
   | 'external_temp' | 'sensor_select' | 'calibration' | 'valve_opening' | 'valve_closing' | 'child_lock'
   | 'window_detection' | 'position' | 'countdown' | 'flame' | 'compressor' | 'defrost' | 'cop' | 'supply'
   | 'error' | 'mixing_valve' | 'manifold_supply' | 'manifold_return' | 'floor_supply' | 'grid_offline' | 'pv'
-  | 'load' | 'soc' | 'bridge' | 'tracker' | 'outdoor_temp' | 'outdoor_humidity';
+  | 'load' | 'soc' | 'bridge' | 'tracker' | 'outdoor_temp' | 'outdoor_humidity' | 'gas_meter' | 'energy_meter' | 'heat_meter';
 
 export interface EntitySpec {
   entityId: string;
@@ -124,6 +125,9 @@ const measurement = (unit: string, deviceClass: string | null, extra: Record<str
   state_class: 'measurement',
   ...extra,
 });
+
+/** A cumulative counter HA compiles into a growing sum (energy and gas meters). */
+const counter = (unit: string, deviceClass: string) => ({ device_class: deviceClass, unit_of_measurement: unit, state_class: 'total_increasing' });
 
 function linkEntities(base: string, battery: number | null): EntitySpec[] {
   const out: EntitySpec[] = [];
@@ -365,9 +369,24 @@ function buildDevices(): DeviceSpec[] {
         ent('binary_sensor.heat_pump_defrost', 'defrost', 'defrost', 'Відтавання', 'off', {}),
         ent('sensor.heat_pump_power', 'power', 'power', 'Потужність', '0', measurement('W', 'power')),
         ent('sensor.heat_pump_cop', 'cop', 'cop', 'COP', '0', { state_class: 'measurement', icon: 'mdi:gauge' }),
+        ent('sensor.heat_pump_energy', 'energy', 'energy_meter', 'Спожита енергія', '0', counter('kWh', 'energy')),
+        ent('sensor.heat_pump_heat_energy', 'heat_energy', 'heat_meter', 'Вироблене тепло', '0', counter('kWh', 'energy')),
         ent('sensor.heat_pump_supply', 'supply', 'supply', 'Подача', '25', measurement(C, 'temperature')),
         ent('sensor.heat_pump_error_code', 'error', 'error', 'Код помилки', '0', { icon: 'mdi:alert-circle-outline' }, 'diagnostic'),
       ],
+    },
+    // a pulse counter on the house gas meter: the boiler and the kitchen stove
+    {
+      id: 'dev_gas_meter',
+      name: 'gas_meter',
+      label: 'Лічильник газу',
+      area: 'kotelnia',
+      model: 'ESP32 · імпульсний лічильник',
+      manufacturer: 'Espressif',
+      zigbee: null,
+      integration: 'esphome',
+      binding: { kind: 'gas_meter' },
+      entities: [ent('sensor.gas_meter', 'gas_consumption', 'gas_meter', null, '0', { ...counter('m³', 'gas'), icon: 'mdi:meter-gas' })],
     },
     ac('living_ac', 'living', 'Кондиціонер у вітальні'),
     ac('bedroom_ac', 'bedroom', 'Кондиціонер у спальні'),

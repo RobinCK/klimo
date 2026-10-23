@@ -138,6 +138,14 @@ export type CircuitKind = 'radiators' | 'floor' | 'fancoil' | 'other';
  *  source = a feeding source runs (the user's «насос з котлом»); both = source AND rooms. */
 export type PumpRule = 'rooms' | 'source' | 'both';
 export type PumpGroupMode = 'all' | 'duty_standby';
+/** follow_source = the whole loop at once: pumps run with a feeding source (+ run-on), member rooms only ask
+ *  the source by their temperature (the usual «floor pump with the boiler»); zoned = a room's demand opens
+ *  its zone and runs the pump the open zones share, the last zone closing starts the run-on. */
+export type CircuitMode = 'follow_source' | 'zoned';
+/** How a room is heated or cooled, in the add-room wizard's words: smart radiator heads, radiators with
+ *  ordinary valves (the room switches its circuit's pump and source like a room thermostat), a house
+ *  floor circuit, an air conditioner, an own heater ('local'). */
+export type RoomHeatingKind = 'trv' | 'radiator_plain' | 'floor' | 'ac' | 'local';
 
 export type ProfileKind = 'system' | 'custom';
 /** Absent ProfileRoomSetting row = 'inherit'. */
@@ -239,7 +247,7 @@ export type ReasonCode =
   | 'why.window.lower' | 'why.window.notify' | 'why.window.delay' | 'why.window.resuming' | 'why.window.ignored'
   | 'why.window.virtual' | 'why.airing' | 'why.off.room' | 'why.off.profile' | 'why.off.house_mode'
   | 'why.off.frost_only' | 'why.frost' | 'why.overheat' | 'why.monitor.control_disabled' | 'why.monitor.no_emitter'
-  | 'why.monitor.dew_blocked' | 'why.season_blocks' | 'why.min_request' | 'why.served' | 'why.trvs_open'
+  | 'why.monitor.dew_blocked' | 'why.season_blocks' | 'why.min_request' | 'why.served' | 'why.trvs_open' | 'why.rooms_asking'
   | 'why.trvs_closed' | 'why.ac_running' | 'why.ac_assist' | 'why.ac_dry' | 'why.trigger_heat' | 'why.preheat'
   | 'why.rule_offset' | 'why.weather_comp' | 'why.floor_limit' | 'why.eta.reach' | 'why.eta.cooling_down'
   | 'why.eta.warming_up' | 'why.cold_guard' | 'why.monitor.too_humid' | 'why.monitor.humidity_unknown'
@@ -304,6 +312,8 @@ export type JournalCode =
   | 'room.override_expired' | 'room.frost_on' | 'room.frost_off' | 'room.overheat_on' | 'room.overheat_off'
   | 'room.no_data' | 'room.data_back' | 'room.trv_fallback' | 'room.profile_written' | 'room.created'
   | 'room.deleted' | 'room.humidity_unknown' | 'room.humidity_back' | 'room.control'
+  | 'room.device_added' | 'room.device_removed' | 'room.device_replaced' | 'room.heating_changed'
+  | 'room.circuit_joined' | 'room.circuit_left' | 'room.renamed' | 'room.area_changed' | 'circuit.merged'
   // dev
   | 'trv.retry' | 'trv.failed' | 'trv.confirmed' | 'trv.manual' | 'trv.manual_reverted' | 'trv.handback'
   | 'sensor.stale' | 'sensor.back' | 'sensor.excluded' | 'sensor.included' | 'sensor.suggest_weight'
@@ -453,8 +463,23 @@ export interface GeneralSettings {
   glassCoefficient: number; // 0.35 (double glazing) — T_glass ≈ T_in − k·(T_in − T_out)
   presence: PresenceConfig;
   defaults: RoomDefaults;
+  /** Prices for the consumption charts of sources with meters. */
+  tariffs: EnergyTariffs;
   onboardingDismissed: boolean; // false
   updatedAt: EpochMs;
+}
+
+/** Unit a gas price is quoted per: suppliers bill by volume or by energy. */
+export type GasPriceUnit = 'm³' | 'kWh';
+
+export interface EnergyTariffs {
+  /** Shown as typed ('₴', 'UAH', '€'); '' = none. */
+  currency: string; // ''
+  electricityPerKwh: number | null; // null = cost not shown for electricity
+  gasPrice: number | null; // per `gasPriceUnit`
+  gasPriceUnit: GasPriceUnit; // 'm³'
+  /** Calorific value: converts gas volume to energy (boiler efficiency, gas billed per kWh). */
+  gasKwhPerM3: number; // 10.5 [5…15]
 }
 
 /** Singleton `safety` (System «Захист і запобіжники»). */
@@ -703,6 +728,20 @@ export interface SourceEnergy {
   staggerSec: number | null; // null = energy policy default (30)
 }
 
+/** What a meter counts. An electricity meter may also be a power sensor (W, kW): its readings are integrated. */
+export type MeterKind = 'electricity' | 'gas' | 'heat';
+
+/**
+ * A consumption meter of a source (HA `total_increasing` / `total` sensor). Klimo stores no readings:
+ * consumption comes from HA's long-term statistics, the current hour and single runs from its history.
+ */
+export interface SourceMeter {
+  kind: MeterKind;
+  entityId: EntityId;
+  /** The entity's unit when it was bound ('m³', 'ft³', 'kWh', 'MJ', 'W'…); the live unit wins when HA reports one. */
+  unit: string | null;
+}
+
 /** Confirmation that a source really runs. */
 export type ConfirmSpec =
   | { kind: 'none' } // confirmed immediately (weak; UI warns)
@@ -856,6 +895,9 @@ export interface SourceConfig {
   enabled: boolean;
   capabilities: { heat: boolean; cool: boolean; dry: boolean; fan: boolean };
   energy: SourceEnergy;
+  /** At most one meter per kind. Device bindings: a duplicate starts without them and links never copy them.
+   *  Sources saved before meters existed read their power sensor as the electricity meter. */
+  meters: SourceMeter[];
   adapter: SourceAdapter;
   curves: { heat: WeatherCurve | null; cool: CoolSupply | null };
   outdoorLimits: { heat: OutdoorLimit | null; cool: OutdoorLimit | null };
@@ -902,6 +944,11 @@ export interface Circuit {
   pumpGroupMode: PumpGroupMode; // 'all'
   /** The circuit whose pumps are forced on when a requiresFlow source runs and no other pump does. */
   flowSafety: boolean;
+  /** Pumps of the circuit follow it (their `rule` is kept in step); floor 'follow_source', radiators 'zoned'. */
+  mode: CircuitMode;
+  /** An open bypass (or an always-open loop): water may circulate with every zone closed. Without one a
+   *  zoned circuit opens all its zones while a source needs it for flow. */
+  bypass: boolean;
   order: number;
 }
 
@@ -914,7 +961,8 @@ export interface Pump {
   manifoldId: Id | null;
   /** switch.* | input_boolean.* | fan.* | valve.* | light.*. Unique across pumps. */
   entityId: EntityId;
-  rule: PumpRule; // radiators 'rooms', floor 'source'
+  /** Kept in step with the circuit's mode (follow_source → 'source', zoned → 'rooms'); 'both' is read as zoned. */
+  rule: PumpRule;
   runOnHeatMin: number; // 0..30 — radiators 3, floor 10
   runOnCoolMin: number; // 0
   minOnSec: number; // 60
@@ -1227,15 +1275,22 @@ export type OverrideKind =
 export type OverrideGroup = 'target' | 'airing' | 'window_ignore' | 'house_profile' | 'source_lock';
 
 export type OverrideValue =
-  | { kind: 'room_target'; mode: Mode | 'dual'; heatC: Celsius | null; coolC: Celsius | null }
+  | { kind: 'room_target'; mode: Mode | 'dual'; heatC: Celsius | null; coolC: Celsius | null; held?: HeldSince }
   | { kind: 'room_boost'; mode: Mode; deltaC: DeltaC; targetC: Celsius }
   | { kind: 'room_airing' }
-  | { kind: 'room_off' }
-  | { kind: 'room_profile'; profileId: Id }
+  | { kind: 'room_off'; held?: HeldSince }
+  | { kind: 'room_profile'; profileId: Id; held?: HeldSince }
   | { kind: 'room_window_ignore' }
-  | { kind: 'house_profile'; profileId: Id }
+  | { kind: 'house_profile'; profileId: Id; held?: HeldSince }
   | { kind: 'source_off'; reason: string | null }
   | { kind: 'source_force'; mode: SourceMode };
+
+/** A held change replacing one of the same control mode (a new value under manual control) keeps when and
+ *  through what that mode began: «Вручну з 19:40» stays 19:40 while the target is nudged. */
+export interface HeldSince {
+  since: EpochMs;
+  setBy: ControlSetBy | null;
+}
 
 export interface OverrideSnapshot {
   /** The override(s) of the same subject+group that were active before. */
@@ -2225,7 +2280,8 @@ export interface RoomSummary {
   humidityWarn: boolean;
   window: { open: boolean; openCount: number; total: number; openSince: EpochMs | null } | null;
   device: {
-    kind: 'trv' | 'floor' | 'trvfloor' | 'ac' | 'heater' | 'none';
+    /** 'radiator': radiators with ordinary valves (the room switches the pump and source). */
+    kind: 'trv' | 'radiator' | 'floor' | 'trvfloor' | 'ac' | 'heater' | 'none';
     acked: number;
     total: number;
     valvePct: Pct | null;
@@ -2351,6 +2407,42 @@ export interface RoomDetailDto {
   haEntities: { entityId: EntityId; role: 'climate' | 'control' | 'temperature' | 'humidity' | 'target' | 'heat_demand' | 'cool_demand' | 'window' | 'card' }[];
   /** «Чим гріти й охолоджувати» rows. */
   servedBy: { mode: Mode; emitterId: Id; role: EmitterRole; circuitId: Id | null; sourceIds: Id[] }[];
+  /** How the room is heated, the house circuits it belongs to and every device bound to it (room editing). */
+  heating: RoomHeating;
+}
+
+/** The room's radiators or floor and the house circuit they hang on. */
+export interface RoomCircuitLink {
+  emitterId: Id;
+  enabled: boolean;
+  /** null: its circuit was deleted — the room waits to be put on one again. */
+  circuit: { id: Id; name: string; kind: CircuitKind; mode: CircuitMode; pumpEntityIds: EntityId[]; sourceIds: Id[] } | null;
+  /** This room's zone valves/thermostats on the circuit (used when the circuit is zoned). */
+  zoneDeviceIds: Id[];
+  /** The other rooms on the same circuit (they share its pump). */
+  otherRoomIds: Id[];
+}
+
+/** One device bound to a room, in the wizard's terms. `key` addresses it in /api/rooms/:id/bindings/:key. */
+export interface RoomBinding {
+  key: string; // 'sensor:<id>' | 'device:<id>' | 'source:<id>' | 'dehumidifier'
+  role: WizardDeviceRole;
+  entityId: EntityId;
+  name: string;
+  /** What removing it does to the device: a head gets its own setpoint back, a heater, AC or dehumidifier is
+   *  switched off, a zone is left open (heat-only loop) or closed (a loop that also cools). */
+  release: 'trv_handback' | 'switch_off' | 'zone_open' | 'zone_close' | 'none';
+  /** The room's last temperature (no other sensor, no head): removing it needs `force`, replacing it does not. */
+  lastTemperature: boolean;
+}
+
+export interface RoomHeating {
+  kinds: RoomHeatingKind[];
+  radiators: (RoomCircuitLink & { heads: number }) | null;
+  floor: RoomCircuitLink | null;
+  bindings: RoomBinding[];
+  /** Where the room temperature comes from now. */
+  temperature: 'sensors' | 'trvs' | 'none';
 }
 
 export type RoomPatch = Partial<Pick<RoomConfig,
@@ -2361,18 +2453,33 @@ export type RoomPatch = Partial<Pick<RoomConfig,
 export type WizardDeviceRole =
   | 'trv' | 'temperature' | 'humidity' | 'temp_humidity' | 'window' | 'door' | 'ac' | 'heater' | 'floor_zone' | 'floor_probe' | 'dehumidifier';
 
+/** A house circuit set up once from the wizard or room settings and joined by later rooms. */
+export interface NewCircuitRequest {
+  name: string;
+  /** null: no pump of its own to switch (the source runs it, or it always runs). */
+  pumpEntityId: EntityId | null;
+  /** Empty: every central heat source of the house. */
+  sourceIds: Id[];
+  mode?: CircuitMode; // floor 'follow_source', radiators 'zoned'
+  runOnMin?: number; // floor 10, radiators 3
+  bypass?: boolean; // false
+}
+
+export type RoomDeviceRequest = { role: WizardDeviceRole; entityId: EntityId; name?: string; move?: boolean };
+
 export interface CreateRoomRequest {
   name: string;
   haAreaId: string | null;
   icon: IconName | null;
-  emitterKinds: ('trv' | 'floor' | 'ac' | 'local')[];
+  emitterKinds: RoomHeatingKind[];
   demandPolicy: SourceDemandPolicy;
-  devices: { role: WizardDeviceRole; entityId: EntityId; name?: string; move?: boolean }[];
-  /** Existing circuits to join, or a new floor circuit to create. */
+  devices: RoomDeviceRequest[];
+  /** Existing house circuits to join (null: the only one of its kind, if there is one), or new ones to set up. */
   circuits: {
     radiatorCircuitId: Id | null;
     floorCircuitId: Id | null;
-    newFloorCircuit: { name: string; pumpEntityId: EntityId; sourceIds: Id[] } | null;
+    newFloorCircuit: NewCircuitRequest | null;
+    newRadiatorCircuit?: NewCircuitRequest | null;
   };
   method: AggregationMethod | null; // null = by sensor count
   heatTolerance: Band;
@@ -2443,6 +2550,40 @@ export interface EmitterDeviceCreateRequest {
   label?: string | null;
 }
 export type EmitterDevicePatch = Partial<Pick<EmitterDevice, 'name' | 'label' | 'siblings' | 'order'>>;
+
+/** Room settings «Замінити»: the new device takes the old one's place (a sensor keeps its weight and order). */
+export interface RoomBindingReplaceRequest {
+  entityId: EntityId;
+  name?: string;
+  move?: boolean;
+}
+
+/**
+ * Room settings «Чим гріти»: what the room has after the change. Kinds left out go (their devices are
+ * released), new ones come with their devices; 'trv' and 'radiator_plain' are the same radiators with or
+ * without heads (switching hands the heads back). A circuit id moves the room to that circuit.
+ */
+export interface RoomHeatingRequest {
+  kinds: RoomHeatingKind[];
+  radiatorCircuitId?: Id | null;
+  newRadiatorCircuit?: NewCircuitRequest | null;
+  floorCircuitId?: Id | null;
+  newFloorCircuit?: NewCircuitRequest | null;
+  devices?: RoomDeviceRequest[];
+}
+
+/** Moves every room (and pump) of a circuit to another one and deletes the empty circuit. */
+export interface CircuitMergeRequest {
+  intoId: Id;
+  /** The pumps were the same physical pump as the target's: drop them instead of moving them. */
+  dropPumps?: boolean;
+}
+
+/** System page «Додати кімнату» to a circuit; a zone entity only on a zoned circuit. */
+export interface CircuitRoomRequest {
+  roomId: Id;
+  zoneEntityId?: EntityId | null;
+}
 
 export interface ProfileTargetRequest {
   mode: RoomProfileMode;
@@ -2556,7 +2697,10 @@ export interface RoomDayDto {
 
 export type EntityRolePreset =
   | 'trv' | 'ac' | 'climate_source' | 'temperature' | 'humidity' | 'contact' | 'switchable' | 'pump' | 'number'
-  | 'select' | 'power' | 'binary' | 'outdoor' | 'person' | 'calendar' | 'weather' | 'proximity' | 'script';
+  | 'select' | 'power' | 'binary' | 'outdoor' | 'person' | 'calendar' | 'weather' | 'proximity' | 'script'
+  /** Consumption meters of a source: a counter in a unit that fits (state class total / total_increasing),
+   *  for electricity also a power sensor. */
+  | 'gas_meter' | 'electricity_meter' | 'heat_meter';
 
 export interface HaEntityQuery {
   q?: string;
@@ -2791,9 +2935,20 @@ export interface CircuitDto {
   config: Circuit;
   pumps: Pump[];
   memberRoomIds: Id[];
+  /** Member rooms: how each takes part (heads, ordinary radiators, floor) and its zone devices. */
+  members: {
+    roomId: Id;
+    emitterId: Id;
+    kind: RoomHeatingKind;
+    zoneDeviceIds: Id[];
+    /** The same zone devices as the System page lists them (removed as room binding `device:<deviceId>`). */
+    zones: { deviceId: Id; entityId: EntityId; name: string }[];
+    heads: number;
+  }[];
   state: CircuitState;
 }
-export type CircuitCreateRequest = Omit<Circuit, 'id' | 'order'>;
+/** `mode` defaults by kind (floor 'follow_source', radiators 'zoned'), `bypass` to false. */
+export type CircuitCreateRequest = Omit<Circuit, 'id' | 'order' | 'mode' | 'bypass'> & Partial<Pick<Circuit, 'mode' | 'bypass'>>;
 export type CircuitPatch = Partial<Omit<Circuit, 'id'>>;
 export type PumpCreateRequest = Omit<Pump, 'id' | 'order'>;
 export type PumpPatch = Partial<Omit<Pump, 'id'>>;
@@ -3053,6 +3208,134 @@ export interface OutdoorHistoryDto {
   days: number;
 }
 
+/* Consumption of sources with meters (HA long-term statistics + Klimo's run spans) */
+
+export type ConsumptionRange = 'day' | 'week' | 'month' | 'year';
+/** day → hours, week and month → days, year → months. */
+export type ConsumptionBucketSize = 'hour' | 'day' | 'month';
+
+/** GET /api/sources/:id/consumption?range=day|week|month|year&date=YYYY-MM-DD */
+export interface ConsumptionQuery {
+  range: ConsumptionRange; // 'day'
+  /** Any day inside the period (HA time zone); default today. Weeks start on Monday. */
+  date?: LocalDate;
+}
+
+/** Amounts in `ConsumptionUnits`; null = no meter of that kind or nothing recorded. */
+export interface ConsumptionValues {
+  gas: number | null;
+  electricity: number | null;
+  heat: number | null;
+  /** Tariff currency; counts the carriers that have a price, null when none has one. */
+  cost: number | null;
+}
+
+export interface ConsumptionBucket extends ConsumptionValues {
+  start: EpochMs;
+  end: EpochMs;
+  /** Minutes the source ran (Klimo's own run spans). */
+  runtimeMin: number;
+  outdoorAvgC: Celsius | null;
+  /** Heating degree-days below `hddBaseC`; an hour bucket holds its 1/24 share. */
+  hdd: number | null;
+  /** heat ÷ gas energy (a gas source with a heat meter). */
+  efficiency: number | null;
+  /** heat ÷ electricity (a source without gas, with a heat meter). */
+  cop: number | null;
+  /** Includes now: its latest part is read from the meter's state history, not yet from statistics. */
+  partial: boolean;
+  /** Entirely after now (values null, runtime 0). */
+  future: boolean;
+}
+
+export interface ConsumptionTotals extends ConsumptionValues {
+  runtimeMin: number;
+  /** Runs that started in the period. */
+  runs: number;
+  outdoorAvgC: Celsius | null;
+  hdd: number | null;
+  /** Gas per degree-day (`units.gas` per K·day); null below one degree-day. */
+  gasPerHdd: number | null;
+  efficiency: number | null;
+  cop: number | null;
+}
+
+export interface ConsumptionRun {
+  start: EpochMs;
+  /** null = still running (counted up to now). */
+  end: EpochMs | null;
+  minutes: number;
+  mode: SourceMode | null;
+  gas: number | null;
+  electricity: number | null;
+  heat: number | null;
+  cost: number | null;
+  /** Shared out between runs, spread over sparse readings, or integrated from a power sensor. */
+  estimated: boolean;
+}
+
+export interface ConsumptionMeterDto {
+  kind: MeterKind;
+  entityId: EntityId;
+  name: string | null;
+  /** Live unit of the entity, else the one stored with the binding. */
+  unit: string | null;
+  /** meter = a cumulative counter; power = a W/kW sensor integrated over time (estimates). */
+  reading: 'meter' | 'power';
+  status: 'ok' | 'unavailable' | 'missing' | 'unsupported_unit';
+  /** HA keeps long-term statistics for it (the sensor has a state class). */
+  statistics: boolean;
+}
+
+export interface ConsumptionUnits {
+  /** m³ for volume meters (ft³, L… converted), kWh for gas meters that count energy. */
+  gas: GasPriceUnit | null;
+  electricity: 'kWh' | null;
+  heat: 'kWh' | null;
+  currency: string | null;
+}
+
+export interface SourceConsumptionDto {
+  sourceId: Id;
+  range: ConsumptionRange;
+  /** First day of the period. */
+  date: LocalDate;
+  from: EpochMs;
+  to: EpochMs;
+  bucket: ConsumptionBucketSize;
+  buckets: ConsumptionBucket[];
+  totals: ConsumptionTotals;
+  /** The period before; while this one is running it is cut at the same elapsed time («so far»).
+   *  `complete`: every meter has readings from its start — otherwise a ±% would compare against a part. */
+  previous: { date: LocalDate; from: EpochMs; to: EpochMs; totals: ConsumptionTotals; complete: boolean };
+  /** Day and week only (single runs need the recorder's state history, kept about ten days); null otherwise. */
+  runs: ConsumptionRun[] | null;
+  meters: ConsumptionMeterDto[];
+  units: ConsumptionUnits;
+  tariffs: EnergyTariffs;
+  hddBaseC: Celsius;
+  /** 'unavailable': HA or its recorder did not answer — meter values are null, runtime still counts. */
+  recorder: 'ok' | 'unavailable';
+  now: EpochMs;
+}
+
+/** GET /api/energy/consumption — the overview energy tile: today across the sources with meters. */
+export interface HouseConsumptionDto {
+  date: LocalDate;
+  from: EpochMs;
+  to: EpochMs;
+  gas: number | null;
+  electricity: number | null;
+  cost: number | null;
+  /** Yesterday up to the same time of day. */
+  previous: ConsumptionValues;
+  units: ConsumptionUnits;
+  sources: { sourceId: Id; gas: number | null; electricity: number | null; cost: number | null; runtimeMin: number }[];
+  /** At least one source has a meter (otherwise the tile invites to bind one). */
+  configured: boolean;
+  recorder: 'ok' | 'unavailable';
+}
+
 /* 7.10 Simulator (KLIMO_SIMULATE=1 only) --------------------------------------------------------------- */
 
 export type SimScenarioId = 'heating_evening' | 'frost_morning' | 'blackout_sun' | 'shoulder' | 'summer';
@@ -3072,7 +3355,8 @@ export interface SimClockRequest {
 }
 export interface SimFaultRequest {
   entityId: EntityId;
-  kind: 'unavailable' | 'stale' | 'no_ack' | 'weak' | 'battery' | 'knob' | 'error_code' | 'clear';
+  /** meter_reset: a consumption meter replaced or reset — its counter goes on from `value` (default 0). */
+  kind: 'unavailable' | 'stale' | 'no_ack' | 'weak' | 'battery' | 'knob' | 'error_code' | 'meter_reset' | 'clear';
   value?: number | string;
 }
 
@@ -3611,7 +3895,8 @@ export interface HaPort {
   /** Returns an unsubscribe function; callbacks keep firing across reconnects (re-subscribed). */
   subscribeTemplate(template: string, variables: Record<string, unknown>, cb: (result: unknown, error: string | null) => void): Promise<() => void>;
   history(entityIds: EntityId[], start: EpochMs, end: EpochMs, opts: { minimal: boolean; noAttributes: boolean }): Promise<Record<EntityId, { s: string; lu: number; a?: Record<string, unknown> }[]>>;
-  statistics(statIds: string[], start: EpochMs, end: EpochMs, period: '5minute' | 'hour' | 'day' | 'week', types: ('mean' | 'min' | 'max' | 'state' | 'sum' | 'change')[]): Promise<Record<string, { start: number; mean?: number | null; min?: number | null; max?: number | null; state?: number | null; sum?: number | null }[]>>;
+  /** `recorder/statistics_during_period`; day, week and month periods follow the HA time zone and include the period still running. */
+  statistics(statIds: string[], start: EpochMs, end: EpochMs, period: '5minute' | 'hour' | 'day' | 'week' | 'month', types: ('mean' | 'min' | 'max' | 'state' | 'sum' | 'change')[]): Promise<Record<string, { start: number; mean?: number | null; min?: number | null; max?: number | null; state?: number | null; sum?: number | null; change?: number | null }[]>>;
   registries(): HaRegistries;
   onRegistriesUpdated(cb: () => void): void;
   config(): HaConfigInfo | null;
@@ -3913,6 +4198,12 @@ export interface IHistory {
   outdoor(days: number): Promise<OutdoorHistoryDto>;
 }
 
+/** ha/consumption.service.ts — what sources used, from their meters' statistics and Klimo's run spans. */
+export interface IConsumption {
+  source(sourceId: Id, q: ConsumptionQuery): Promise<SourceConsumptionDto>;
+  house(date?: LocalDate): Promise<HouseConsumptionDto>;
+}
+
 /** Inputs the shell needs besides plain states (Home Assistant services; values are cached, cheap to read). */
 export interface IHaInputs {
   outdoor(): InputSnapshot['outdoor'];
@@ -4036,6 +4327,23 @@ export interface IRoomSetup {
   removeEmitterDevice(roomId: Id, deviceId: Id, actor: Actor): Promise<RoomDetailDto>;
 }
 
+/**
+ * Editing an existing room the way the wizard built it: bound devices (added, replaced, removed with a
+ * safe release), what heats it, the house circuits it is on, its name and area. Every change is journalled.
+ */
+export interface IRoomEdit {
+  patch(roomId: Id, patch: RoomPatch, actor: Actor): Promise<RoomDetailDto>;
+  addSensor(roomId: Id, req: SensorCreateRequest, actor: Actor): Promise<RoomDetailDto>;
+  addBinding(roomId: Id, req: RoomDeviceRequest, actor: Actor): Promise<RoomDetailDto>;
+  replaceBinding(roomId: Id, key: string, req: RoomBindingReplaceRequest, actor: Actor): Promise<RoomDetailDto>;
+  /** `force`: also the room's last temperature source. */
+  removeBinding(roomId: Id, key: string, opts: { force: boolean }, actor: Actor): Promise<RoomDetailDto>;
+  setHeating(roomId: Id, req: RoomHeatingRequest, actor: Actor): Promise<RoomDetailDto>;
+  joinCircuit(circuitId: Id, req: CircuitRoomRequest, actor: Actor): Promise<CircuitDto>;
+  leaveCircuit(circuitId: Id, roomId: Id, actor: Actor): Promise<CircuitDto>;
+  mergeCircuit(circuitId: Id, req: CircuitMergeRequest, actor: Actor): Promise<CircuitDto>;
+}
+
 /** Read models assembled from config + engine state (DTO mappers live here, controllers stay thin). */
 export interface IReadModels {
   overview(): Promise<OverviewDto>;
@@ -4138,7 +4446,7 @@ export type CardTextKey =
   | 'card.src.window' | 'card.src.window_pending' | 'card.src.airing' | 'card.src.off_profile' | 'card.src.off_room'
   | 'card.src.off_house' | 'card.src.monitor' | 'card.src.monitor_nothing' | 'card.src.frost' | 'card.src.presence'
   | 'card.src.calendar' | 'card.src.room_profile' | 'card.src.preheat' | 'card.src.no_data'
-  | 'card.dev.trv' | 'card.dev.trv_closed' | 'card.dev.trv_sync' | 'card.dev.valve' | 'card.dev.floor' | 'card.dev.trvfloor'
+  | 'card.dev.trv' | 'card.dev.trv_closed' | 'card.dev.trv_sync' | 'card.dev.valve' | 'card.dev.floor' | 'card.dev.trvfloor' | 'card.dev.radiator'
   | 'card.dev.ac' | 'card.dev.ac_idle' | 'card.dev.heater_on' | 'card.dev.heater_off' | 'card.dev.none'
   | 'card.win.closed' | 'card.win.closed_n' | 'card.win.open' | 'card.next' | 'card.room.sub'
   | 'card.house.head' | 'card.house.all_ok' | 'card.house.neutral' | 'card.house.off' | 'card.house.sub'
@@ -4169,12 +4477,17 @@ export const OUTDOOR_AGGREGATIONS = ['median', 'average', 'min', 'max', 'primary
 export const HOUSE_MODES = ['auto', 'heat', 'cool', 'off'] as const;
 export const SEASONS = ['heating', 'neutral', 'cooling'] as const;
 export const SOURCE_KINDS = ['gas_boiler', 'electric_boiler', 'heat_pump', 'ac', 'electric_radiator', 'electric_floor', 'ir_panel', 'custom'] as const;
+export const METER_KINDS = ['electricity', 'gas', 'heat'] as const satisfies readonly MeterKind[];
+export const CONSUMPTION_RANGES = ['day', 'week', 'month', 'year'] as const satisfies readonly ConsumptionRange[];
+export const GAS_PRICE_UNITS = ['m³', 'kWh'] as const satisfies readonly GasPriceUnit[];
 export const ADAPTER_TYPES = ['relay', 'climate', 'flow', 'script', 'custom'] as const;
 export const EMITTER_KINDS = ['radiator', 'floor', 'fancoil', 'towel_rail', 'direct'] as const;
 export const EMITTER_ROLES = ['primary', 'assist', 'trigger', 'reserve'] as const;
 export const TRV_STRATEGIES = ['external', 'calibration', 'onoff', 'valve'] as const;
 export const WINDOW_REACTIONS = ['pause', 'eco', 'lower', 'notify'] as const;
 export const PUMP_RULES = ['rooms', 'source', 'both'] as const;
+export const CIRCUIT_MODES = ['follow_source', 'zoned'] as const satisfies readonly CircuitMode[];
+export const ROOM_HEATING_KINDS = ['trv', 'radiator_plain', 'floor', 'ac', 'local'] as const satisfies readonly RoomHeatingKind[];
 export const SYSTEM_PROFILE_IDS = ['home', 'away', 'eco'] as const;
 export const PRIORITY_LOCKED = ['frost', 'window'] as const;
 export const PRIORITY_DEFAULT = ['frost', 'window', 'manual', 'calendar', 'presence', 'room_schedule', 'house_schedule'] as const;
@@ -4285,4 +4598,66 @@ export function round1(x: number): number {
 export function outdoorSensorIds(o: Pick<GeneralSettings['outdoor'], 'sensorEntityIds' | 'sensorEntityId'>): EntityId[] {
   if (Array.isArray(o.sensorEntityIds) && o.sensorEntityIds.length) return [...o.sensorEntityIds];
   return o.sensorEntityId ? [o.sensorEntityId] : [];
+}
+
+/** What a meter unit measures and its factor to the unit Klimo charts it in (kWh, m³, kW). */
+export interface MeterUnitInfo {
+  quantity: 'energy' | 'volume' | 'power';
+  factor: number;
+}
+
+/** HA's energy, volume and power units (sensor device classes energy, gas, power), as HA writes them. */
+export const METER_UNITS: Readonly<Record<string, MeterUnitInfo>> = {
+  mWh: { quantity: 'energy', factor: 1e-6 },
+  Wh: { quantity: 'energy', factor: 1e-3 },
+  kWh: { quantity: 'energy', factor: 1 },
+  MWh: { quantity: 'energy', factor: 1e3 },
+  GWh: { quantity: 'energy', factor: 1e6 },
+  TWh: { quantity: 'energy', factor: 1e9 },
+  J: { quantity: 'energy', factor: 1 / 3_600_000 },
+  kJ: { quantity: 'energy', factor: 1 / 3_600 },
+  MJ: { quantity: 'energy', factor: 1 / 3.6 },
+  GJ: { quantity: 'energy', factor: 1_000 / 3.6 },
+  cal: { quantity: 'energy', factor: 4.184 / 3_600_000 },
+  kcal: { quantity: 'energy', factor: 4.184 / 3_600 },
+  Mcal: { quantity: 'energy', factor: 4.184 / 3.6 },
+  Gcal: { quantity: 'energy', factor: 4_184 / 3.6 },
+  BTU: { quantity: 'energy', factor: 0.000293071 },
+  MMBtu: { quantity: 'energy', factor: 293.071 },
+  therm: { quantity: 'energy', factor: 29.3071 },
+  'm³': { quantity: 'volume', factor: 1 },
+  m3: { quantity: 'volume', factor: 1 },
+  'dm³': { quantity: 'volume', factor: 1e-3 },
+  L: { quantity: 'volume', factor: 1e-3 },
+  mL: { quantity: 'volume', factor: 1e-6 },
+  'ft³': { quantity: 'volume', factor: 0.028316846592 },
+  ft3: { quantity: 'volume', factor: 0.028316846592 },
+  CCF: { quantity: 'volume', factor: 2.8316846592 },
+  MCF: { quantity: 'volume', factor: 28.316846592 },
+  gal: { quantity: 'volume', factor: 0.003785411784 },
+  W: { quantity: 'power', factor: 1e-3 },
+  kW: { quantity: 'power', factor: 1 },
+  MW: { quantity: 'power', factor: 1e3 },
+};
+
+/** Gas is counted by volume or energy, electricity by energy (or integrated power), heat by energy. */
+export const METER_QUANTITIES: Readonly<Record<MeterKind, readonly MeterUnitInfo['quantity'][]>> = {
+  electricity: ['energy', 'power'],
+  gas: ['volume', 'energy'],
+  heat: ['energy'],
+};
+
+/** A meter unit as HA writes it, or a spelling that differs only in case when that is unambiguous ('KWH', 'M3'). */
+export function meterUnit(unit: string | null | undefined): MeterUnitInfo | null {
+  if (typeof unit !== 'string') return null;
+  const u = unit.trim();
+  if (METER_UNITS[u]) return METER_UNITS[u];
+  const folded = Object.keys(METER_UNITS).filter((k) => k.toLowerCase() === u.toLowerCase());
+  return folded.length === 1 ? METER_UNITS[folded[0]] : null;
+}
+
+/** Whether a meter of `kind` can be read in `unit`. */
+export function meterUnitFits(kind: MeterKind, unit: string | null | undefined): boolean {
+  const info = meterUnit(unit);
+  return !!info && METER_QUANTITIES[kind].includes(info.quantity);
 }

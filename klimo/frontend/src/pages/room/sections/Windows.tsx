@@ -7,6 +7,7 @@ import { fmtDelta, fmtDur, fmtDurSec, fmtPct, fmtSince, fmtTemp, t, windowDelayH
 import { AddEntityDialog } from '../AddEntityDialog';
 import { closeDialog, openDialog, useOpenDialog } from '../dialogs';
 import { lockable, SettingPill } from './readonly';
+import { EditSensorDialog } from './Sensors';
 import type { SectionDef, SectionProps } from './types';
 
 function stateText(kind: ContactKind, open: boolean | null, available: boolean, since: string | null): string {
@@ -47,6 +48,7 @@ function Body(p: SectionProps) {
     },
   );
   const contacts = room.sensors.filter((s) => s.role === 'contact').sort((a, b) => a.order - b.order);
+  const editing = dialog?.startsWith('edit-sensor:') ? (contacts.find((s) => `edit-sensor:${s.id}` === dialog) ?? null) : null;
   const w = win.value;
   const delays = windowDelayHints(w);
   const cooling = state.activeModes.cool && !state.activeModes.heat;
@@ -84,6 +86,7 @@ function Body(p: SectionProps) {
                 stateText={stateText(s.contactKind ?? 'window', open, c?.available ?? true, since)}
                 open={Boolean(open)}
                 unavailable={c ? !c.available : false}
+                onEdit={p.canEdit ? () => openDialog(`edit-sensor:${s.id}`) : undefined}
               />
             );
           })}
@@ -179,6 +182,7 @@ function Body(p: SectionProps) {
           />
         }
       />
+      <EditSensorDialog p={p} sensor={editing} weight={false} />
     </Stack>
   );
 }

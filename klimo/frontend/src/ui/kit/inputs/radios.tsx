@@ -32,10 +32,12 @@ export interface RadioCardListProps<T extends ChoiceValue> {
   /** One line per option (no hint), 52 px rows. */
   compact?: boolean;
   ariaLabel: string;
+  /** 'well': inside a grey card, the options stand out in the card colour. */
+  surface?: 'card' | 'well';
 }
 
 /** A vertical list of radio cards: dot, title, explanation — for choices that need a sentence. */
-export function RadioCardList<T extends ChoiceValue>({ value, options, onChange, compact, ariaLabel }: RadioCardListProps<T>) {
+export function RadioCardList<T extends ChoiceValue>({ value, options, onChange, compact, ariaLabel, surface = 'card' }: RadioCardListProps<T>) {
   const baseId = useId();
   const focusable = focusIndex(options, value);
   const { setRef, onKeyDown } = useRoving(options.length, {
@@ -44,7 +46,7 @@ export function RadioCardList<T extends ChoiceValue>({ value, options, onChange,
     onMove: (i) => onChange(options[i].value),
   });
   return (
-    <div role="radiogroup" aria-label={ariaLabel} className={s.radioList}>
+    <div role="radiogroup" aria-label={ariaLabel} className={s.radioList} data-surface={surface === 'well' ? 'well' : undefined}>
       {options.map((o, i) => {
         const on = o.value === value;
         const reasonId = o.disabled && o.disabledReason ? `${baseId}-r${i}` : undefined;

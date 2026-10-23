@@ -152,6 +152,8 @@ export function SchemaSection({ d, sim, onSim, onView }: Props) {
     const id = rest.join(':');
     if (kind === 'source' || kind === 'local') navigate(paths.source(id));
     else if ((kind === 'room' || kind === 'rooms') && n.roomIds.length === 1) navigate(paths.room(n.roomIds[0]));
+    // a loop's card (mode, pump, rooms) sits under the schema
+    else if (kind === 'circuit' || kind === 'rooms') document.getElementById('circuits')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   };
 
   const presetList = presets.data ?? [];

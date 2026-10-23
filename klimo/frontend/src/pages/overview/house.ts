@@ -5,6 +5,7 @@
 import type { EpochMs, HouseState, IconName, PlantState, SourceDto, SourceKind, SourceState, Tone } from '@api/model';
 import type { NameDirectory } from '@data';
 import {
+  fmtClock,
   fmtKw,
   fmtPct,
   fmtTemp,
@@ -65,7 +66,8 @@ export function subline(house: HouseState, plant: PlantState | null, ctx: CodeCo
   }
   const p = house.profile;
   const profile = ctx.profile?.(p.activeProfileId) ?? p.activeProfileId;
-  if (p.layer === 'house_manual') parts.push(t('profile «{profile}» set by hand', { profile }));
+  if (p.layer === 'house_manual' && house.control.mode === 'manual') parts.push(t('profile «{profile}», the schedule is paused', { profile }));
+  else if (p.layer === 'house_manual') parts.push(t('profile «{profile}» set by hand', { profile }));
   else if (p.scheduledUntil != null && p.layer === 'house_schedule')
     parts.push(t('profile «{profile}» {until}', { profile, until: fmtUntil(p.scheduledUntil, house.now) }));
   else parts.push(t('profile «{profile}»', { profile }));
@@ -99,7 +101,11 @@ export function profileOrigin(house: HouseState, ctx: CodeContext): string {
   switch (p.layer) {
     case 'house_manual': {
       const until = p.override?.until ?? null;
-      return until == null ? t('by hand, with no limit') : t('by hand {until}', { until: fmtUntil(until, house.now) });
+      if (until != null) return t('by hand {until}', { until: fmtUntil(until, house.now) });
+      const since = house.control.since;
+      return since != null
+        ? t('manual since {time} · the schedule is paused', { time: fmtClock(since, house.now) })
+        : t('manual · the schedule is paused');
     }
     case 'calendar':
       return p.scheduledUntil != null ? t('by the calendar {until}', { until: fmtUntil(p.scheduledUntil, house.now) }) : t('by the calendar');

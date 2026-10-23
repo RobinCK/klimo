@@ -71,7 +71,7 @@ function Sensors() {
 function Cards() {
   const ut = useUiText();
   const [on, setOn] = useState<Record<string, boolean>>({ blackout: true, solar: false, econ: true, preheat: false, pres: true });
-  const [rule, setRule] = useState<'rooms' | 'source' | 'both'>('rooms');
+  const [mode, setMode] = useState<'follow_source' | 'zoned'>('zoned');
   const [runOn, setRunOn] = useState(3);
   const [bypass, setBypass] = useState(true);
   const flip = (k: string) => setOn((o) => ({ ...o, [k]: !o[k] }));
@@ -141,20 +141,28 @@ function Cards() {
         </Stack>
       </Item>
       <Item name="CircuitCard">
-        <CircuitCard
-          name={ut('Radiator circuit')}
-          pumpEntity="switch.radiator_pump"
+        <CircuitCard<'follow_source' | 'zoned'>
+          name={ut('Underfloor heating')}
+          icon="floor"
+          pumpEntity="switch.floor_pump"
           extra={ut('Zigbee relay · LQI 128')}
           chip={{ tone: 'heat', label: ut('running') }}
-          ruleLabel={ut('The pump runs when')}
-          rule={{
-            value: rule,
-            onChange: setRule,
-            ariaLabel: ut('When the radiator pump runs'),
+          mode={{
+            label: ut('How the floor runs'),
+            value: mode,
+            onChange: setMode,
+            ariaLabel: ut('How the floor runs'),
             options: [
-              { value: 'rooms', label: ut('a room of the circuit asks') },
-              { value: 'source', label: ut('a source runs') },
-              { value: 'both', label: ut('both') },
+              {
+                value: 'follow_source',
+                title: ut('The whole floor — together with the source'),
+                hint: ut('The floor pump runs whenever the boiler or heat pump runs, and {min} min after it stops. A room colder than its target starts the source.', { min: runOn }),
+              },
+              {
+                value: 'zoned',
+                title: ut('By zones — a valve in each room'),
+                hint: ut('A room colder than its target opens its zone valve; the floor pump runs while any zone is open and {min} min after the last one closes.', { min: runOn }),
+              },
             ],
           }}
           runOn={{
@@ -169,8 +177,28 @@ function Cards() {
             ariaDec: ut('Shorter run-on'),
             ariaInc: ut('Longer run-on'),
           }}
-          chips={[{ label: ut('from the heat pump and the boiler'), tone: 'heat' }, { label: ut('heating only') }, { label: ut('Living room') }, { label: ut('Bedroom') }]}
-          note={ut('The pump does not spin idle: with every valve closed it stops even while the source runs.')}
+          chips={[{ label: ut('from the heat pump and the boiler'), tone: 'heat' }, { label: ut('heating only') }]}
+          rooms={{
+            label: ut('Rooms on the circuit'),
+            empty: ut('No rooms yet'),
+            add: { label: ut('Room'), onClick: () => undefined },
+            items: [
+              {
+                key: 'kitchen',
+                name: ut('Kitchen'),
+                meta: ut('underfloor heating'),
+                state: { tone: 'heat', label: ut('asks for heat') },
+                zones: mode === 'zoned' ? [{ key: 'z', name: ut('Zone valve'), entityId: 'valve.kitchen_floor', onRemove: () => undefined }] : [],
+                onAddZone: mode === 'zoned' ? () => undefined : undefined,
+                onRemove: () => undefined,
+              },
+              { key: 'hall', name: ut('Hall'), meta: ut('underfloor heating'), onRemove: () => undefined },
+            ],
+          }}
+          actions={[
+            { label: ut('Merge into…'), icon: 'layers', onClick: () => undefined },
+            { label: ut('Settings and pumps'), icon: 'pencil', onClick: () => undefined },
+          ]}
         />
       </Item>
       <Item name="ChannelCard">
@@ -341,6 +369,15 @@ function Devices() {
           value="21.5°"
           role={{ value: 'trv', options: roles, onChange: () => undefined }}
           onRemove={() => undefined}
+        />
+        <DeviceRow
+          title={ut('Kitchen sensor')}
+          meta="sensor.kitchen_temperature"
+          value="21.2°"
+          actions={[
+            { label: ut('Replace'), icon: 'swap', onClick: () => undefined },
+            { label: ut('Remove'), icon: 'trash', danger: true, onClick: () => undefined },
+          ]}
         />
       </Stack>
     </Item>

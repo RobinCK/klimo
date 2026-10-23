@@ -5,6 +5,7 @@
 import type { ApiErrorIssue, UsageRef } from '@api/model';
 import { ApiClientError } from '@api/client';
 import { t } from './core';
+import { heatingIssueText } from './heating';
 
 export function errorText(e: unknown): string {
   if (e instanceof ApiClientError) {
@@ -103,7 +104,7 @@ export function issueText(issue: ApiErrorIssue): string {
     case 'template':
       return typeof p.error === 'string' ? t('The template does not render: {error}', { error: p.error }) : t('The template does not render');
     default:
-      return t('Not accepted ({code})', { code: issue.code });
+      return heatingIssueText(issue) ?? t('Not accepted ({code})', { code: issue.code });
   }
 }
 

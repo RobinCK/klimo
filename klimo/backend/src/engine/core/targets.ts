@@ -101,17 +101,22 @@ export function roomControlOf(overrides: readonly Override[], roomId: Id, ts: Ep
   if (!o) return { mode: 'schedule', since: null, until: null, setBy: null };
   const held = isHeldOverride(o);
   const mode: RoomControlMode = held ? (o.kind === 'room_off' ? 'off' : 'manual') : 'temporary';
+  const began = held && 'held' in o.value ? o.value.held : undefined;
+  if (began) return { mode, since: began.since, until: null, setBy: began.setBy };
   return { mode, since: o.createdAt, until: held ? null : o.until, setBy: controlSetBy(o.by) };
 }
 
 /** House control: the house profile held with no end pauses the house schedule. */
 export function houseControlOf(overrides: readonly Override[], ts: EpochMs): HouseControl {
   const o = houseOverride({ overrides: overrides as Override[] }, ts);
-  return o && o.until === null ? { mode: 'manual', since: o.createdAt } : { mode: 'schedule', since: null };
+  if (!o || o.until !== null) return { mode: 'schedule', since: null };
+  return { mode: 'manual', since: o.value.kind === 'house_profile' && o.value.held ? o.value.held.since : o.createdAt };
 }
 
-/** The held change a temporary one replaced (kept one level down so a boost on a manual room ends in manual). */
+/** The held change a temporary one replaced (kept one level down so a boost on a manual room ends in manual).
+ *  A held change has none: what came before it is only undo history (off → manual → resume is the schedule). */
 export function heldUnder(o: Override): Override | null {
+  if (isHeldOverride(o)) return null;
   const prev = o.previous?.override ?? null;
   if (prev && isHeldOverride(prev)) return prev;
   const deeper = prev?.previous?.override ?? null;

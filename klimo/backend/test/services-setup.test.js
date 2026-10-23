@@ -263,7 +263,7 @@ test('adding a weaker head moves the room to a strategy every head supports', ()
     assert.deepEqual(s.engine.released, [{ roomId: report.roomId, deviceIds: [old.id], timeoutMs: 30_000 }], 'the removed head is handed back first');
   }));
 
-test('a floor on a new circuit with its pump, and a socket heater confirmed by its power meter', () =>
+test('a floor on a new zoned circuit with its pump, and a socket heater confirmed by its power meter', () =>
   withSetup(async (s, hp) => {
     s.ha.set('switch.study_heater', 'off', { friendly_name: 'Розетка' }, { deviceId: 'dev_plug' });
     s.ha.set('sensor.study_heater_power', '0', { device_class: 'power', unit_of_measurement: 'W' }, { deviceId: 'dev_plug' });
@@ -281,7 +281,7 @@ test('a floor on a new circuit with its pump, and a socket heater confirmed by i
           { role: 'floor_zone', entityId: 'switch.study_floor_zone' },
           { role: 'floor_probe', entityId: 'sensor.study_floor' },
         ],
-        circuits: { radiatorCircuitId: null, floorCircuitId: null, newFloorCircuit: { name: 'Підлога кабінету', pumpEntityId: 'switch.floor_pump', sourceIds: [hp.id] } },
+        circuits: { radiatorCircuitId: null, floorCircuitId: null, newFloorCircuit: { name: 'Підлога кабінету', pumpEntityId: 'switch.floor_pump', sourceIds: [hp.id], mode: 'zoned' } },
         coolTolerance: { below: 0.5, above: 0.5 },
       }),
       ACTOR,
@@ -294,8 +294,10 @@ test('a floor on a new circuit with its pump, and a socket heater confirmed by i
     assert.deepEqual(circuit.sourceIds, [hp.id]);
     // the heat pump can cool, so the new floor circuit may carry cold water too
     assert.deepEqual(circuit.capabilities, { heat: true, cool: true });
+    // a zone valve per room: the pump runs while a zone is open, with the floor's long run-on
+    assert.equal(circuit.mode, 'zoned');
     const [pump] = cfg.pumps;
-    assert.deepEqual([pump.circuitId, pump.entityId, pump.rule, pump.runOnHeatMin], [circuit.id, 'switch.floor_pump', 'source', 10]);
+    assert.deepEqual([pump.circuitId, pump.entityId, pump.rule, pump.runOnHeatMin], [circuit.id, 'switch.floor_pump', 'rooms', 10]);
 
     const emitters = cfg.emittersByRoom[room.id];
     const floor = emitters.find((e) => e.kind === 'floor');

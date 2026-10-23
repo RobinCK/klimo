@@ -40,6 +40,7 @@ export const CORE = 'CORE'; // ICoreFns
 export const ROOM_ACTIONS = 'ROOM_ACTIONS'; // IRoomActions
 export const HOUSE_ACTIONS = 'HOUSE_ACTIONS'; // IHouseActions
 export const ROOM_SETUP = 'ROOM_SETUP'; // IRoomSetup
+export const ROOM_EDIT = 'ROOM_EDIT'; // IRoomEdit
 export const READ_MODELS = 'READ_MODELS'; // IReadModels
 export const SYSTEM_PREVIEW = 'SYSTEM_PREVIEW'; // ISystemPreview
 export const DEVICE_HEALTH = 'DEVICE_HEALTH'; // IDeviceHealth

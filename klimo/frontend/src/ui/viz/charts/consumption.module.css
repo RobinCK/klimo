@@ -1,0 +1,492 @@
+/*
+ * ConsumptionChart: HTML columns (crisp 4 px rounded ends at any width) over hairline gridlines,
+ * and two small strips under them that share the x axis but keep their own scales. Every
+ * row of the body is a [gutter | slots] pair of one grid, so bars, strips, axis labels and the
+ * hit columns line up exactly.
+ */
+
+.figure {
+  --gutter: 40px;
+  --plot-h: 184px;
+  --well: color-mix(in srgb, var(--ui-surface-1) 55%, var(--ui-bg-page));
+  margin: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  container-type: inline-size;
+  transition: opacity var(--ui-motion);
+}
+
+/* the previous period stays on screen while the next one loads */
+.figure[data-pending] {
+  opacity: 0.55;
+}
+
+.caption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-caption);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swBar {
+  width: 10px;
+  height: 12px;
+  border-radius: 3px 3px 0 0;
+  background: var(--c);
+}
+
+.swBar[data-partial] {
+  background: color-mix(in srgb, var(--c) 42%, transparent);
+}
+
+.toggle {
+  appearance: none;
+  border: 0;
+  padding: 4px 8px;
+  margin: -4px -8px;
+  background: none;
+  border-radius: var(--ui-radius-sm);
+  color: var(--ui-text-2);
+  font: inherit;
+  font-size: var(--ui-fs-caption);
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+  text-underline-offset: 3px;
+}
+
+.toggle:hover {
+  color: var(--ui-text-1);
+}
+
+.toggle:focus-visible {
+  outline: 2px solid var(--ui-ring);
+  outline-offset: 2px;
+}
+
+/* ---------------- chart body ---------------- */
+
+.body {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--gutter) minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto;
+  column-gap: 6px;
+}
+
+.gutter {
+  position: relative;
+  grid-column: 1;
+  color: var(--ui-text-3);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-fs-micro);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+[data-row='plot'] {
+  grid-row: 1;
+}
+
+[data-row='outdoor'] {
+  grid-row: 2;
+  margin-top: 12px;
+}
+
+[data-row='runtime'] {
+  grid-row: 3;
+  margin-top: 10px;
+}
+
+.plot {
+  position: relative;
+  grid-column: 2;
+  height: var(--plot-h);
+}
+
+.yLabel {
+  position: absolute;
+  right: 0;
+  transform: translateY(50%);
+  line-height: 1;
+}
+
+.gridLine {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 1px solid var(--ui-divider);
+}
+
+.gridLine[data-zero] {
+  border-top-color: var(--ui-border-strong);
+}
+
+.slots {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+}
+
+.slot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-width: 0;
+  transition: opacity var(--ui-motion);
+}
+
+/* while one column is read the others step back */
+.slot[data-dim] {
+  opacity: 0.45;
+}
+
+.bar {
+  width: min(24px, 62%);
+  min-width: 2px;
+  border-radius: 4px 4px 0 0;
+  background: var(--c);
+}
+
+.bar[data-partial] {
+  background: color-mix(in srgb, var(--c) 42%, transparent);
+}
+
+/* nothing recorded: a short dotted stub on the baseline, so a gap does not read as zero */
+.gap {
+  width: min(12px, 50%);
+  height: 0;
+  border-top: 2px dotted var(--ui-text-3);
+  margin-bottom: -1px;
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-body-sm);
+  text-align: center;
+}
+
+/* ---------------- strips ---------------- */
+
+.strip {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.stripLabel {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-micro);
+  font-weight: 400;
+  line-height: 1.2;
+}
+
+.stripPlot {
+  position: relative;
+  border-radius: var(--ui-radius-sm);
+  background: var(--well);
+}
+
+[data-row='outdoor'] .stripPlot {
+  height: 44px;
+}
+
+[data-row='runtime'] .stripPlot {
+  height: 26px;
+  background: none;
+  border-bottom: 1px solid var(--ui-divider);
+  border-radius: 0;
+}
+
+[data-row='outdoor'].gutter,
+[data-row='runtime'].gutter {
+  /* the strip label sits above the plot of the strip */
+  padding-top: 14px;
+}
+
+.stripMax,
+.stripMin {
+  position: absolute;
+  right: 0;
+  line-height: 1;
+}
+
+.stripMax {
+  top: 14px;
+}
+
+.stripMin {
+  bottom: 0;
+}
+
+.strip svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.line {
+  fill: none;
+  stroke: var(--ui-text-1);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.zero {
+  fill: none;
+  stroke: var(--ui-border-strong);
+  stroke-width: 1;
+}
+
+.dot {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+  background: var(--ui-text-1);
+  box-shadow: 0 0 0 2px var(--ui-surface-1);
+  pointer-events: none;
+}
+
+.runBar {
+  width: min(12px, 44%);
+  min-width: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--ui-text-3);
+}
+
+/* ---------------- axis ---------------- */
+
+.axis {
+  grid-column: 2;
+  grid-row: 4;
+  margin-top: 6px;
+  display: grid;
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+  color: var(--ui-text-3);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-fs-micro);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.axis span {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: visible;
+}
+
+.axis span[data-future] {
+  color: var(--ui-text-disabled);
+}
+
+.axis span[data-active] {
+  color: var(--ui-text-1);
+  font-weight: 600;
+}
+
+/* ---------------- hit columns and the tooltip ---------------- */
+
+.hits {
+  position: relative;
+  z-index: 1;
+  grid-column: 2;
+  grid-row: 1 / 4;
+  display: grid;
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+}
+
+.hit {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  background: transparent;
+  border-radius: var(--ui-radius-sm);
+  cursor: default;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hit:disabled {
+  cursor: default;
+}
+
+.hit[data-active] {
+  background: color-mix(in srgb, var(--ui-text-1) 5%, transparent);
+}
+
+.hit:focus-visible {
+  outline: 2px solid var(--ui-ring);
+  outline-offset: -2px;
+}
+
+.tip {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 132px;
+  max-width: min(240px, 70%);
+  padding: 8px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface-elevated);
+  box-shadow: var(--ui-shadow-elevated);
+  pointer-events: none;
+  font-size: var(--ui-fs-caption);
+}
+
+.tipTitle {
+  color: var(--ui-text-2);
+  font-weight: 600;
+}
+
+.tipRow {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--ui-text-3);
+  white-space: nowrap;
+}
+
+.tipRow strong {
+  color: var(--ui-text-1);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* a short stroke of the series, not a filled box */
+.tipKey {
+  flex: none;
+  align-self: center;
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--c);
+}
+
+.tipKey[data-none] {
+  background: none;
+}
+
+.tipKey[data-line] {
+  height: 2px;
+  background: var(--ui-text-1);
+}
+
+.tipKey[data-run] {
+  background: var(--ui-text-3);
+}
+
+/* ---------------- table view ---------------- */
+
+.tableWrap {
+  overflow-x: auto;
+  border-radius: var(--ui-radius-md);
+  border: 1px solid var(--ui-border);
+}
+
+.tableWrap:focus-visible {
+  outline: 2px solid var(--ui-ring);
+  outline-offset: 2px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ui-fs-body-sm);
+}
+
+.table th,
+.table td {
+  padding: 7px 12px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--ui-divider);
+}
+
+.table thead th {
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+  font-weight: 600;
+}
+
+.table tbody th {
+  font-weight: 400;
+  color: var(--ui-text-2);
+}
+
+.table tbody tr:last-child th,
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table [data-num] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.soFar {
+  color: var(--ui-text-3);
+}
+
+/* the figure is the container: its narrow layout is set on what is inside it */
+@container (max-width: 520px) {
+  .body {
+    --gutter: 34px;
+    --plot-h: 150px;
+  }
+
+  .tip {
+    min-width: 120px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .figure,
+  .slot {
+    transition: none;
+  }
+}

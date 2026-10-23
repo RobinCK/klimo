@@ -1,10 +1,12 @@
 import { Inject, Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
+import { In } from 'typeorm';
 import { uuid } from '../common/ids';
 import { errorText } from '../common/logger';
 import { lazyRef } from '../common/refs';
 import { isRewindable } from '../common/rewind';
 import { Db } from '../db/database';
+import { RunSpanRow } from '../db/entities';
 import { SEED_HA_KEY } from '../db/seed';
 import { houseProfileEdges } from '../engine/core/targets';
 import { fromLocal, toLocal } from '../engine/core/time';
@@ -39,9 +41,10 @@ import type {
   SimStateDto,
 } from '../shared/model';
 import { CONFIG_STORE, ENGINE, EVALUATE, EVENTS, INCIDENTS, JOURNAL, MEMORY_STORE, OVERRIDE_STORE, SPAN_STORE } from '../tokens';
+import { buildArchive } from './archive';
 import { Autopilot, type Command } from './autopilot';
 import { readOutdoorSensors } from '../ha/outdoor';
-import { buildDemoHouse, ROOM_IDS, SUNNY_WALL_ENTITY } from './demo-house';
+import { buildDemoHouse, ROOM_IDS, SOURCE_IDS, SUNNY_WALL_ENTITY } from './demo-house';
 import { DEVICES, entityOfRole, entitySpec, ROOM_KEYS, type DeviceSpec, type RoomKey } from './devices';
 import { simText } from './language';
 import { FakeHaService, guestEvents } from './fake-ha.service';
@@ -49,6 +52,7 @@ import { stream, type Rng } from './random';
 import { climateFor, SCENARIOS, scenarioStart, type Scenario } from './scenarios';
 import { buildSnapshot } from './snapshot';
 import { SimClock } from './sim.clock';
+import { type ArchivedSpan, GAS_METER, HP_ENERGY_METER, HP_HEAT_METER, meterValue, READINGS_AT_ARCHIVE_START, RunTracker, runningSources, SIMULATED_HISTORY, SimMeters } from './sim-meters';
 import { advanceWorld, Environment, newWorld, relativeHumidity, trvLocalTemp, type Actuation, type World } from './thermal-model';
 
 /* =====================================================================================================
@@ -64,6 +68,8 @@ const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 const LIVE_STEP = 10_000;
 const WARMUP_DAYS = 7;
+/** Long-term statistics (and source runs) before the warm-up: a year and a bit, for the year charts. */
+const ARCHIVE_DAYS = 400;
 const WARMUP_STEP = 5 * MIN;
 const PREROLL_STEP = 2 * MIN;
 const SENSOR_HEARTBEAT = 15 * MIN;
@@ -93,6 +99,8 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
   private world!: World;
   private rng: Rng = stream(env.sim.seed, 'sensors');
   private readonly reports = new Map<string, ReportMemo>();
+  /** Rooms of the spare thermometers (the garage): their own temperature and when it was last stepped. */
+  private readonly spareRooms = new Map<string, { t: number; at: EpochMs }>();
   private outdoorSamples: [EpochMs, number][] = [];
   private outdoorHourly: [EpochMs, number][] = [];
   private rhHourly = Object.fromEntries(ROOM_KEYS.map((k) => [k, [] as [EpochMs, number][]])) as Record<RoomKey, [EpochMs, number][]>;
@@ -100,6 +108,7 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
   private wsTimer: NodeJS.Timeout | null = null;
   private globalsAt = 0;
   private compactedAt = 0;
+  private readonly meters = new SimMeters();
   private resetting: Promise<SimStateDto> | null = null;
 
   constructor(
@@ -186,6 +195,12 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
 
   fault(req: SimFaultRequest): SimStateDto {
     const now = this.simClock.now();
+    if (req.kind === 'meter_reset') {
+      this.tick();
+      if (!this.meters.restart(req.entityId, typeof req.value === 'number' ? req.value : 0)) throw new Error(`${req.entityId} is not a simulated meter`);
+      this.syncMeters(now, true);
+      return this.state();
+    }
     this.ha.fault(req, now);
     // the device reports right away (a cleared sensor wakes up, a new battery level shows)
     const device = DEVICES.find((d) => d.entities.some((e) => e.entityId === req.entityId));
@@ -242,6 +257,8 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
     const wasPaused = this.simClock.paused;
     this.simClock.setPaused(true);
     const start = scenarioStart(scenario);
+    // runs going on in the scenario being left end now; a later scenario would otherwise continue them
+    await this.spans.closeDangling(this.simClock.now(), () => false);
     if (start < this.simClock.now()) await this.forgetAfter(start);
     this.simClock.jumpTo(start);
     for (const o of this.overrides.active()) await this.overrides.remove(o.id);
@@ -302,11 +319,18 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
     this.compactedAt = t0;
     if (history) for (const k of ROOM_KEYS) if (sc.atStart[k]) this.world.rooms[k].calib = { at: t0, ...sc.atStart[k]! };
     this.world.energyCalib = { at: t0, socPct: sc.climate.socAtStartPct };
+    const archived = this.importArchive(from);
     // the first reports replace the catalogue's placeholder values
     this.syncHa(from, { exact: false, live: false });
 
-    if (history) await this.replayHistory(sc, t0);
-    else this.quickStart(sc, t0);
+    // without history (fast tests) the log stays as empty as the recorder's states
+    if (history) {
+      await this.forgetSimulatedRuns(from - ARCHIVE_DAYS * DAY, t0);
+      const replayed = await this.replayHistory(sc, t0);
+      await this.logRuns([...archived, ...replayed]);
+    } else {
+      this.quickStart(sc, t0);
+    }
 
     // the moment itself: exact values, no sensor noise
     this.world.now = t0;
@@ -352,8 +376,79 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
     }
   }
 
-  /** A week world-only, then the last day through the engine core (or the thermostat without one). */
-  private async replayHistory(sc: Scenario, t0: EpochMs): Promise<void> {
+  /**
+   * The year before the warm-up as HA keeps it after the states are gone: hourly statistics of the
+   * outdoor sensors and the meters, the readings the live meters go on from, and the source runs of
+   * that time (returned, written to the log once the replay is done).
+   */
+  private importArchive(from: EpochMs): ArchivedSpan[] {
+    const heat = this.config.engineConfig().heat;
+    const archive = buildArchive(
+      {
+        from: Math.floor((from - ARCHIVE_DAYS * DAY) / HOUR) * HOUR,
+        to: from,
+        tz: this.simClock.tz(),
+        seed: env.sim.seed,
+        near: (t) => this.env.outdoor(t),
+        bivalencePointC: heat.bivalence.pointC,
+        bivalenceHysteresisC: heat.bivalence.hysteresisC,
+        heatingCutoffC: heat.heatingCutoffOutdoorC ?? 15,
+        lag: heat.lag.enabled ? { deficitC: heat.lag.deficitC, forMin: heat.lag.forMin } : null,
+      },
+      READINGS_AT_ARCHIVE_START,
+    );
+    const rec = this.ha.recorder;
+    rec.importHours('sensor.outdoor_temperature', 'measurement', archive.outdoor);
+    rec.importHours(SUNNY_WALL_ENTITY, 'measurement', archive.sunnyWall);
+    rec.importHours(GAS_METER, 'meter', archive.gas);
+    rec.importHours(HP_ENERGY_METER, 'meter', archive.hpEnergy);
+    rec.importHours(HP_HEAT_METER, 'meter', archive.hpHeat);
+    this.meters.reset(archive.end, from);
+    const ids = { heatPump: SOURCE_IDS.heatPump, boiler: SOURCE_IDS.boiler };
+    return archive.runs
+      .filter((r) => this.config.get('sources', ids[r.source]))
+      .map((r) => ({ subject: 'source', subjectId: ids[r.source], kind: 'run', mode: 'heat', startTs: r.start, endTs: r.end, meta: { reason: SIMULATED_HISTORY } }));
+  }
+
+  /**
+   * Every scenario rebuilds the history before its engine day: the simulated runs an earlier one left
+   * in that time (cut at `t0` when the clock went back) go, so runs and meter statistics tell the same
+   * story. Runs the engine logged itself stay.
+   */
+  private async forgetSimulatedRuns(from: EpochMs, t0: EpochMs): Promise<void> {
+    try {
+      await this.db.tx(async (em) => {
+        const rows = await em
+          .getRepository(RunSpanRow)
+          .createQueryBuilder('s')
+          .where('s.subject = :subject AND s.kind = :kind', { subject: 'source', kind: 'run' })
+          .andWhere('s.endTs >= :from AND s.endTs <= :t0', { from, t0 })
+          .getMany();
+        const stale = rows.filter((r) => r.meta?.reason === SIMULATED_HISTORY).map((r) => r.id);
+        // SQLite caps the parameters of one statement
+        for (let i = 0; i < stale.length; i += 500) await em.delete(RunSpanRow, { id: In(stale.slice(i, i + 500)) });
+      });
+    } catch (e) {
+      this.log.warn(`source runs of an earlier history could not be removed: ${errorText(e)}`);
+    }
+  }
+
+  /** The source runs of the simulated history (the archive and the world-only warm-up). */
+  private async logRuns(spans: ArchivedSpan[]): Promise<void> {
+    try {
+      await this.db.tx(async (em) => {
+        for (let i = 0; i < spans.length; i += 100) await em.insert(RunSpanRow, spans.slice(i, i + 100).map((s) => ({ ...s, id: uuid(), meta: s.meta as never })));
+      });
+    } catch (e) {
+      this.log.warn(`source runs of the history could not be written: ${errorText(e)}`);
+    }
+  }
+
+  /**
+   * A week world-only, then the last day through the engine core (or the thermostat without one).
+   * Returns the source runs of the world-only part (the engine logs its own).
+   */
+  private async replayHistory(sc: Scenario, t0: EpochMs): Promise<ArchivedSpan[]> {
     const cfg = this.config.engineConfig();
     const pilot = new Autopilot(this.simClock.tz(), sc.season);
     const events = [...sc.events].sort((a, b) => a.atMin - b.atMin);
@@ -366,10 +461,12 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
     };
 
     const prerollFrom = t0 - DAY;
+    const runs = new RunTracker();
     for (let t = this.world.now; t < prerollFrom; t += WARMUP_STEP) {
       fireEvents(t);
       this.actuation();
       this.apply(pilot.decide(cfg, this.world, this.outdoorMean(t, 10 * MIN)), t);
+      runs.observe(t, runningSources(cfg.sources, (id) => this.ha.getState(id)));
       const act = this.actuation();
       for (let s = t; s < t + WARMUP_STEP; s += MIN) {
         advanceWorld(this.world, act, this.env, s + MIN, MIN);
@@ -442,6 +539,7 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
       if (stuck) this.seedRetry(stuck, last.desired, t0);
       await this.memory.flushNow();
     }
+    return runs.close(prerollFrom);
   }
 
   /** Fresh control memory a day before the start (the season already decided by the scenario). */
@@ -702,12 +800,29 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
     return a;
   }
 
-  /** Device logic that is not physics: the boiler relay's countdown. */
+  /** Device logic that is not physics: the boiler relay's countdown, the meters counting. */
   private tickDevices(at: EpochMs): void {
     this.ha.tickCountdown(at);
+    this.meters.advance(this.world, at, toLocal(at, this.simClock.tz()).minute);
   }
 
   /* ── world → HA ─────────────────────────────────────────────────────────────────────────────── */
+
+  /**
+   * A room Klimo does not know yet, like the garage: unheated it settles near the outdoor temperature;
+   * its ordinary radiator on the radiator loop warms it whenever the radiator pump moves warm water, so a
+   * room added with plain radiators has something to switch.
+   */
+  private spareRoomC(id: string, at: EpochMs): number {
+    const w = this.world;
+    const rest = w.outdoorC * 0.4 + 7;
+    const prev = this.spareRooms.get(id) ?? { t: rest, at };
+    const dtH = Math.min(Math.max(at - prev.at, 0), 30 * MIN) / HOUR;
+    const radiator = w.flows.radiators ? Math.max(0, (w.supplyC - prev.t) / 25) * 2 : 0;
+    const t = prev.t + ((rest - prev.t) / 6 + radiator) * dtH;
+    this.spareRooms.set(id, { t, at });
+    return t;
+  }
 
   /**
    * Publishes the world into HA the way devices report: thermometers on a change of 0.1 ° (or 1 %)
@@ -885,8 +1000,9 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
           break;
         }
         case 'spare':
-          if (entityOfRole(d, 'temperature') && due(d.id, [], '', [], 30 * MIN)) {
-            const t = round1(w.outdoorC * 0.4 + 7 + noise(0.05));
+          if (entityOfRole(d, 'temperature')) {
+            const t = round1(this.spareRoomC(d.id, at) + noise(0.05));
+            if (!due(d.id, [t], '', [0.1], 30 * MIN)) break;
             this.ha.report(entityOfRole(d, 'temperature')!.entityId, t.toFixed(1), null, at);
             this.ha.report(entityOfRole(d, 'humidity')!.entityId, String(Math.round(this.env.outdoorRh(at) - 10)), null, at);
             link(d);
@@ -896,10 +1012,26 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
           break;
       }
     }
+    this.syncMeters(at, opts.exact);
     if (opts.exact || at - this.globalsAt >= 5 * MIN) {
       this.globalsAt = at;
       this.syncGlobals(at);
     }
+  }
+
+  /** Meters report a new count when it changes, at most once a minute (pulse counters, Modbus polling). */
+  private syncMeters(at: EpochMs, exact: boolean): void {
+    const r = this.meters.readings;
+    const report = (entityId: EntityId, reading: number) => {
+      const value = meterValue(reading);
+      const m = this.reports.get(entityId);
+      if (!exact && m && (value === m.values[0] || at - m.at < MIN)) return;
+      this.reports.set(entityId, { at, values: [value], action: '' });
+      this.ha.report(entityId, value.toFixed(2), null, at);
+    };
+    report(GAS_METER, r.gasM3);
+    report(HP_ENERGY_METER, r.hpKwh);
+    report(HP_HEAT_METER, r.hpHeatKwh);
   }
 
   private syncGlobals(at: EpochMs): void {

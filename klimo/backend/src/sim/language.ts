@@ -51,6 +51,8 @@ const EN: Record<string, string> = {
   'Споживання будинку': 'House load',
   'Заряд батареї': 'Battery charge',
   'Стан з’єднання': 'Connection state',
+  'Спожита енергія': 'Energy consumed',
+  'Вироблене тепло': 'Heat produced',
 
   // devices, sensors and their places in the rooms
   'Радіатор під вікном': 'Radiator under the window',
@@ -99,6 +101,8 @@ const EN: Record<string, string> = {
   'Датчик у гаражі': 'Garage sensor',
   'Південна стіна': 'South wall',
   'Розетка в гаражі': 'Garage plug',
+  'Лічильник газу': 'Gas meter',
+  'ESP32 · імпульсний лічильник': 'ESP32 · pulse counter',
   'повітря — вода': 'air to water',
   'Повітря — вода': 'Air to water',
   'спліт-система': 'split system',

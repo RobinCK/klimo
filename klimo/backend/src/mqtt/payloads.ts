@@ -538,6 +538,8 @@ function deviceLine(ix: ViewIndex, room: RoomConfig, state: RoomState, summary: 
     }
     case 'floor':
       return { k: d.kind, t: ix.tx('card.dev.floor', { source, sourceKind }) };
+    case 'radiator':
+      return { k: d.kind, t: ix.tx('card.dev.radiator', { source, sourceKind }) };
     case 'trvfloor': {
       if (syncing) return { k: d.kind, t: ix.tx('card.dev.trv_sync', { acked: d.acked, total: d.total }) };
       const extra = (ix.view.cfg.emittersByRoom[room.id] ?? []).filter((e) => e.enabled && e.kind !== 'floor').map((e) => e.name).join(', ');
@@ -941,7 +943,7 @@ export function hubAttrs(ix: ViewIndex): HubAttrs {
         // the line and sub-line texts read a pump state (or 'summer') and either the asking rooms or
         // the source the pump follows, with its run-on
         const pumpCfg = cfg.pumps.filter((p) => p.circuitId === c.circuitId && p.enabled);
-        const followsSource = pumpCfg.some((p) => p.rule === 'source') || (!c.requestingRoomIds.length && pumpCfg.some((p) => p.rule === 'both'));
+        const followsSource = cfg.circuits.find((x) => x.id === c.circuitId)?.mode === 'follow_source';
         const runOnMin = pumpCfg.reduce((m, p) => Math.max(m, c.mode === 'cool' ? p.runOnCoolMin : p.runOnHeatMin), 0);
         const lineState =
           c.state.code === 'circuit.summer' ? 'summer' : c.runOnUntil !== null ? 'run_on' : pump?.state ?? (c.pumpOn ? 'running' : 'off');

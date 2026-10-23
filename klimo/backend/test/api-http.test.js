@@ -191,20 +191,16 @@ test('sensor order: listed sensors first, the rest of that role keep their order
   });
 });
 
-test('a new sensor takes its name and model from Home Assistant', async () => {
+// the name, model and existence checks live in the room editing service (services-room-edit tests)
+test('a new sensor goes to room editing with the parsed request', async () => {
   await withApi({}, async (api) => {
-    api.ha.states.set('sensor.sofa_t', { entity_id: 'sensor.sofa_t', state: '21.4', attributes: { friendly_name: 'Біля дивана' } });
     const res = await api.request('POST', '/api/rooms/r_living/sensors', { body: { entityId: 'sensor.sofa_t', role: 'temperature' }, headers: ADMIN });
     assert.equal(res.status, 201);
-    const [[c, value]] = api.calls.of('create');
-    assert.equal(c, 'sensors');
-    assert.equal(value.name, 'Біля дивана');
-    assert.equal(value.model, 'WSDCGQ11LM');
-    assert.equal(value.haDeviceId, 'dev_sensor.sofa_t');
-    assert.equal(value.contactKind, null);
-    const missing = await api.request('POST', '/api/rooms/r_living/sensors', { body: { entityId: 'binary_sensor.ghost', role: 'contact' }, headers: ADMIN });
-    assert.equal(missing.status, 400);
-    assert.equal(missing.body.issues[0].code, 'not_found');
+    const [[roomId, req]] = api.calls.of('edit.addSensor');
+    assert.equal(roomId, 'r_living');
+    assert.deepEqual(req, { entityId: 'sensor.sofa_t', role: 'temperature' });
+    const bad = await api.request('POST', '/api/rooms/r_living/sensors', { body: { entityId: 'not an entity', role: 'contact' }, headers: ADMIN });
+    assert.equal(bad.status, 400);
   });
 });
 

@@ -303,6 +303,26 @@ function makeFakes(opts = {}) {
     addEmitterDevice: async (roomId) => readModels.roomDetail(roomId),
     removeEmitterDevice: async (roomId) => readModels.roomDetail(roomId),
   });
+  const edit = recorder(calls, 'edit', {
+    patch: async (roomId, patch, actor) => {
+      await config.update('rooms', roomId, patch, actor);
+      return readModels.roomDetail(roomId);
+    },
+    addSensor: async (roomId, req, actor) => {
+      await config.create('sensors', { roomId, entityId: req.entityId, role: req.role, contactKind: req.role === 'contact' ? (req.contactKind ?? 'window') : null, name: req.name ?? req.entityId, model: null, haDeviceId: null, weight: req.weight ?? 1, included: true, excludedBy: null }, actor);
+      return readModels.roomDetail(roomId);
+    },
+    addBinding: async (roomId) => readModels.roomDetail(roomId),
+    replaceBinding: async (roomId) => readModels.roomDetail(roomId),
+    removeBinding: async (roomId, key, _opts, actor) => {
+      if (key.startsWith('sensor:')) await config.remove('sensors', key.slice(7), actor);
+      return readModels.roomDetail(roomId);
+    },
+    setHeating: async (roomId) => readModels.roomDetail(roomId),
+    joinCircuit: async (circuitId) => ({ config: { id: circuitId } }),
+    leaveCircuit: async (circuitId) => ({ config: { id: circuitId } }),
+    mergeCircuit: async (_id, req) => ({ config: { id: req.intoId } }),
+  });
   const search = recorder(calls, 'search', {
     search: (q) => [{ entityId: 'sensor.a', q }],
     detail: (id) => (id.startsWith('sensor.') ? { entity: { entityId: id, name: 'Датчик' }, attributes: {}, siblings: [], trv: null, climate: null } : null),
@@ -320,6 +340,13 @@ function makeFakes(opts = {}) {
     roomDay: async (roomId, date) => ({ roomId, date }),
     sparks: async () => ({}),
     outdoor: async (days) => ({ series: [], avgC: null, days }),
+  });
+  const consumption = recorder(calls, 'consumption', {
+    source: async (sourceId, q) => {
+      if (sourceId !== 's1') throw notFound('Source');
+      return { sourceId, range: q.range, date: q.date ?? '2026-10-21', buckets: [], runs: null };
+    },
+    house: async (date) => ({ date: date ?? '2026-10-21', gas: null, electricity: null, cost: null, configured: false }),
   });
   const inputs = recorder(calls, 'inputs', {
     renderTemplate: async (template) => ({ result: template.length, error: null }),
@@ -392,12 +419,14 @@ function makeFakes(opts = {}) {
     [T.HA_PORT]: ha,
     [T.ENTITY_SEARCH]: search,
     [T.HISTORY]: history,
+    [T.CONSUMPTION]: consumption,
     [T.HA_INPUTS]: inputs,
     [T.SUPERVISOR]: supervisor,
     [T.READ_MODELS]: readModels,
     [T.ROOM_ACTIONS]: roomActions,
     [T.HOUSE_ACTIONS]: houseActions,
     [T.ROOM_SETUP]: setup,
+    [T.ROOM_EDIT]: edit,
     [T.SYSTEM_PREVIEW]: preview,
     [T.DEVICE_HEALTH]: deviceHealth,
     [T.INCIDENTS]: incidents,

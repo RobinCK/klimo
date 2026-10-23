@@ -202,7 +202,7 @@ export class FakeHaService implements HaPort, TemplateHost, OnModuleDestroy {
     return this.recorder.history(entityIds, start, end, opts);
   }
 
-  async statistics(statIds: string[], start: EpochMs, end: EpochMs, period: '5minute' | 'hour' | 'day' | 'week', types: ('mean' | 'min' | 'max' | 'state' | 'sum' | 'change')[]) {
+  async statistics(statIds: string[], start: EpochMs, end: EpochMs, period: '5minute' | 'hour' | 'day' | 'week' | 'month', types: ('mean' | 'min' | 'max' | 'state' | 'sum' | 'change')[]) {
     return this.recorder.statistics(statIds, start, end, period, types, this.clock.now());
   }
 

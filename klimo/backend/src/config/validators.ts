@@ -7,6 +7,7 @@ import {
   AGGREGATION_METHODS,
   CHANNEL_KINDS,
   EMITTER_KINDS,
+  CIRCUIT_MODES,
   EMITTER_ROLES,
   EVENT_KINDS,
   GAS_PRICE_UNITS,
@@ -18,6 +19,7 @@ import {
   PRIORITY_DEFAULT,
   PRIORITY_LOCKED,
   PUMP_RULES,
+  ROOM_TARGET_DURATIONS,
   SEASONS,
   SOURCE_KINDS,
   SOURCE_LINKABLE_FIELDS,
@@ -888,6 +890,8 @@ export function validateCircuit(c: Circuit, g: ConfigGraph): Issues {
   v.numOrNull('dewMarginC', c.dewMarginC, 1, 5);
   v.oneOf('pumpGroupMode', c.pumpGroupMode, ['all', 'duty_standby']);
   v.bool('flowSafety', c.flowSafety);
+  v.oneOf('mode', c.mode, CIRCUIT_MODES);
+  v.bool('bypass', c.bypass);
   return v.issues;
 }
 
@@ -1370,7 +1374,7 @@ export function validateSettings(s: ConfigGraph['settings'], g: ConfigGraph): Is
     if (c && d && lim.coolMinC >= lim.coolMaxC) v.push('targetLimits.coolMaxC', 'order', { min: lim.coolMinC });
     v.oneOf('targetLimits.stepC', lim.stepC, [0.1, 0.5, 1]);
   }
-  v.oneOf('haTargetChangeDuration', s.haTargetChangeDuration, ['slot', '1h', '2h', '3h', 'morning', 'until', 'forever']);
+  v.oneOf('haTargetChangeDuration', s.haTargetChangeDuration, ROOM_TARGET_DURATIONS);
   v.bool('adminOnlyConfig', s.adminOnlyConfig);
   v.bool('mqttConfigEntities', s.mqttConfigEntities);
   v.num('glassCoefficient', s.glassCoefficient, 0, 1);

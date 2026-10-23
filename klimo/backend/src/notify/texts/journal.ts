@@ -119,6 +119,10 @@ export const JOURNAL: Record<JournalCode, Row> = {
   'pump.exercise': ['{pump}: anti-seize run[ for {durationSec}]', '{pump}: прокручування[ {durationSec}]'],
   'pump.flow_safety': ['{pump} forced on — {sourceId} needs circulation', '{pump} увімкнено примусово — {sourceId} потрібна циркуляція'],
   'pump.duty_switch': ['Duty pump: {from:pump} → {to:pump}', 'Робочий насос: {from:pump} → {to:pump}'],
+  'circuit.merged': [
+    '«{from}» merged into «{to}»: {n|room|rooms} moved[ · {by}]',
+    '«{from}» об’єднано з «{to}»: перенесено {n|кімнату|кімнати|кімнат}[ · {by}]',
+  ],
   'frost.fallback': ['Frost protection: {sourceId} heats {roomId}', 'Захист від морозу: {sourceId} гріє кімнату «{roomId}»'],
   'dew.guard': [
     '{circuitId}: supply {supplyC} near the dew point {dewC} — cooling limited',
@@ -161,6 +165,14 @@ export const JOURNAL: Record<JournalCode, Row> = {
   ],
   'room.created': ['{room}: room added[ · {by}]', '{room}: кімнату додано[ · {by}]'],
   'room.deleted': ['Room deleted: {room}[ · {by}]', 'Кімнату видалено: {room}[ · {by}]'],
+  'room.device_added': ['{room}: {role:drole} added — {name}[ · {by}]', '{room}: додано {role:drole} — {name}[ · {by}]'],
+  'room.device_removed': ['{room}: {role:drole} removed — {name}[, {release:release}][ · {by}]', '{room}: прибрано {role:drole} — {name}[, {release:release}][ · {by}]'],
+  'room.device_replaced': ['{room}: {role:drole} {from} replaced by {to}[ · {by}]', '{room}: {role:drole} {from} замінено на {to}[ · {by}]'],
+  'room.heating_changed': ['{room}: heated by {to:hkinds}[ · {by}]', '{room}: тепер гріє {to:hkinds}[ · {by}]'],
+  'room.circuit_joined': ['{room}: joined «{circuitName}»[ · {by}]', '{room}: приєднано до «{circuitName}»[ · {by}]'],
+  'room.circuit_left': ['{room}: left «{circuitName}» — its pump no longer runs for this room[ · {by}]', '{room}: від’єднано від «{circuitName}» — його насос більше не працює для цієї кімнати[ · {by}]'],
+  'room.renamed': ['Room «{from}» renamed to «{to}»[ · {by}]', 'Кімнату «{from}» перейменовано на «{to}»[ · {by}]'],
+  'room.area_changed': ['{room}: Home Assistant area — {area}[ · {by}]', '{room}: зона Home Assistant — {area}[ · {by}]'],
 
   // devices
   'trv.retry': ['{device}: retry {attempt}/{of}', '{device}: повтор {attempt}/{of}'],

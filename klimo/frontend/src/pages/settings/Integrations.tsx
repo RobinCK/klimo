@@ -8,6 +8,7 @@ import { api } from '@api/endpoints';
 import { useMutation } from '@data';
 import { Button, CodeBlock, KeyValueList, Row, Section, Select, Skeleton, Stack, StatusBanner } from '@ui';
 import { t } from '@i18n';
+import { HaControlHelp } from './HaControl';
 
 type CardKind = 'room' | 'rooms' | 'thermostat' | 'house' | 'system';
 
@@ -19,7 +20,7 @@ function cardYaml(kind: CardKind, room: RoomSummary | undefined): string {
     case 'rooms':
       return ['type: custom:klimo-rooms-card', 'rooms: all', 'variant: compact', 'sort: attention_first'].join('\n');
     case 'thermostat':
-      return ['type: custom:klimo-thermostat-card', 'rooms: all', 'controls: direct', 'durations: [slot, 1h, 3h, forever]', 'quick_actions: [boost, airing]'].join('\n');
+      return ['type: custom:klimo-thermostat-card', 'rooms: all', 'controls: direct', 'durations: [slot, 1h, 3h, manual, forever]', 'quick_actions: [boost, airing]'].join('\n');
     case 'house':
       return ['type: custom:klimo-house-card', 'show_profile: true', 'profile_change: confirm', 'show_system: [source, pumps, outdoor]'].join('\n');
     case 'system':
@@ -121,6 +122,8 @@ export function IntegrationsSection({
             <Skeleton height={160} radius={12} />
           )}
         </Section>
+
+        <HaControlHelp rooms={rooms} />
 
         <Section
           title={t('Dashboard cards')}

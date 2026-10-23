@@ -179,7 +179,7 @@ function houseConfig({ rooms: n = 12, lang = 'uk', configEntities = false } = {}
   ];
   const circuits = [
     { ...D.DEFAULT_CIRCUIT(), id: 'c_rad', name: 'Контур радіаторів', shortName: 'Радіатори', kind: 'radiators', sourceIds: ['s_hp', 's_boiler'], capabilities: { heat: true, cool: false }, order: 0 },
-    { ...D.DEFAULT_CIRCUIT(), id: 'c_floor', name: 'Тепла підлога', shortName: 'Підлога', kind: 'floor', sourceIds: ['s_hp'], capabilities: { heat: true, cool: true }, order: 1 },
+    { ...D.DEFAULT_CIRCUIT(), id: 'c_floor', name: 'Тепла підлога', shortName: 'Підлога', kind: 'floor', sourceIds: ['s_hp'], capabilities: { heat: true, cool: true }, mode: 'follow_source', order: 1 },
     { ...D.DEFAULT_CIRCUIT(), id: 'c_spare', name: 'Резервний контур', shortName: 'Резерв', kind: 'other', sourceIds: [], capabilities: { heat: true, cool: false }, order: 2 },
   ];
   const pumps = [
@@ -997,7 +997,7 @@ class FakeHouseActions {
     return { control: { mode: req.mode, since: null }, profile: houseProfileState(), resumedRoomIds: [], offRoomIds: [], reqId: req.reqId ?? null };
   }
   control() {
-    return { mode: 'schedule', since: null };
+    return { mode: this.controlMode ?? 'schedule', since: null };
   }
 }
 

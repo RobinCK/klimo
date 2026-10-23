@@ -69,10 +69,17 @@ function EditDialog({ p, row }: { p: SectionProps; row: Row | null }) {
       },
     },
   );
+  const profileId = row?.profile.id;
+  const { reset } = save;
+  // a refusal belongs to the opening it happened in, not to the next profile
+  useEffect(() => {
+    reset();
+  }, [profileId, reset]);
   return (
     <Dialog
       open={row != null}
       onClose={closeDialog}
+      error={save.message}
       title={row ? t('«{profile}» in {room}', { profile: row.profile.name, room: p.room.config.name }) : ''}
       actions={[
         { label: t('Cancel'), onClick: closeDialog },

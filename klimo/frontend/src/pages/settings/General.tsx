@@ -308,7 +308,13 @@ export function BehaviourSection({ bundle, onSaved, canEdit }: { bundle: Setting
           options={ROOM_TARGET_DURATIONS.filter((x) => x !== 'until').map((x) => ({ value: x, label: roomDurationLabel(x) }))}
           disabled={!canEdit}
           fullWidth
-          hint={t('A target changed from Home Assistant — the climate card, HomeKit, a voice assistant, an automation — is a manual change of the room. It lasts this long, then the schedule takes over again.')}
+          hint={
+            v.haTargetChangeDuration === 'manual'
+              ? t('A target changed from Home Assistant — the climate card, HomeKit, a voice assistant, an automation — puts the room under manual control: it holds until the schedule is resumed.')
+              : v.haTargetChangeDuration === 'forever'
+                ? t('A target changed from Home Assistant — the climate card, HomeKit, a voice assistant, an automation — is written into the active profile; a room under manual control stays manual with the new target.')
+                : t('A target changed from Home Assistant — the climate card, HomeKit, a voice assistant, an automation — is a temporary change of the room. It lasts this long, then the schedule takes over again; a room under manual control stays manual with the new target.')
+          }
           onChange={(haTargetChangeDuration) => auto.set((prev) => ({ ...prev, haTargetChangeDuration }))}
         />
         <Stack gap="xs">

@@ -281,6 +281,7 @@ function Body(p: SectionProps) {
           placeholder={t('Search a radiator valve')}
           onClose={closeDialog}
           onSubmit={(entityId, name) => add.run(entityId, name)}
+          errors={add}
         />
       ) : null}
     </Stack>

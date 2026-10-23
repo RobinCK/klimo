@@ -54,8 +54,11 @@ const convector = (id, roomId, entity, over = {}) => source('electric_radiator',
 const eBoiler = (id = 's_eboiler', over = {}) =>
   source('electric_boiler', id, { name: 'Електрокотел', ...over, adapter: { command: 'switch.eboiler', confirm: { kind: 'readback' }, ...(over.adapter ?? {}) } });
 
+/** Without an explicit `mode` the circuit reads it from its pumps' rule, as a circuit stored by 0.1.x does. */
 function circuit(id, sourceIds, over = {}) {
-  return { ...d.DEFAULT_CIRCUIT(), id, name: id, shortName: id, sourceIds, ...over };
+  const c = { ...d.DEFAULT_CIRCUIT(), id, name: id, shortName: id, sourceIds, ...over };
+  if (over.mode === undefined) delete c.mode;
+  return c;
 }
 
 function pump(id, circuitId, entityId, over = {}) {
@@ -94,7 +97,7 @@ function makeCfg(o = {}) {
     scheduleExceptions: [],
     sources: o.sources ?? [],
     manifolds: o.manifolds ?? [],
-    circuits: o.circuits ?? [],
+    circuits: (o.circuits ?? []).map((c) => (c.mode ? c : { ...c, mode: (o.pumps ?? []).some((p) => p.circuitId === c.id && p.rule === 'source') ? 'follow_source' : 'zoned' })),
     pumps: o.pumps ?? [],
     heat: { ...d.defaultHeatStrategy(), ...(o.heat ?? {}) },
     cool: { ...d.defaultCoolStrategy(), ...(o.cool ?? {}) },

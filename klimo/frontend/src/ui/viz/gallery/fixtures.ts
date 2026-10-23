@@ -119,3 +119,14 @@ export const TREE: ConditionEval = {
     { id: 'delay', met: false, status: 'ok', pendingSec: 42 },
   ],
 };
+
+/** A month of a gas boiler, day by day: the colder the day, the more gas; the 21st is today. */
+export const GAS_MONTH: { day: number; outdoorC: number | null; gas: number | null; runtimeMin: number }[] = Array.from({ length: 31 }, (_, i) => {
+  const day = i + 1;
+  if (day > 21) return { day, outdoorC: null, gas: null, runtimeMin: 0 };
+  // a cold front around the 9th and the 17th
+  const outdoorC = Math.round((10 - 5 * Math.cos(day / 2.6) - (day > 14 ? 4 : 0)) * 10) / 10;
+  const heating = Math.max(0, (16 - outdoorC) * 0.42);
+  const gas = day === 6 ? null : Math.round((0.26 + heating) * (day === 21 ? 0.55 : 1) * 100) / 100;
+  return { day, outdoorC, gas, runtimeMin: Math.round(heating * 52 * (day === 21 ? 0.55 : 1)) };
+});

@@ -237,6 +237,24 @@ async function tablet(browser, base) {
   await th.locator('.undo').click();
   check(await waitText(th.locator('.src'), 'Ціль 20.0° · Дома до 23:00', 5000), 'undo restores the schedule');
 
+  // manual control: the schedule stops changing the target, −/+ ask no duration, «Повернути розклад» ends it
+  await th.locator('[data-ctl="manual"]').click();
+  check(await waitText(th.locator('.info'), 'Вручну · розклад не змінює ціль', 5000), 'manual control replaces the next schedule change');
+  check((await th.locator('[data-ctl="manual"][aria-checked="true"]').count()) === 1, 'the control shows manual');
+  check(await waitText(th.locator('.qa'), 'Повернути розклад'), 'manual control offers the schedule back');
+  await th.locator('.dial .stp.plus').click();
+  check(await waitText(th.locator('.mnote'), 'Вручну, поки не повернете розклад'), 'a manual edit asks no duration');
+  check(await th.locator('.selw').isHidden(), 'the duration list is hidden under manual control');
+  check(await waitText(th.locator('.appl'), 'Ціль 20.5° · вручну', 5000), 'the new value holds as manual');
+  await th.screenshot({ path: join(outDir, 'klimo-card-thermostat-manual.png') });
+  await th.locator('.appl').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
+  await th.locator('[data-ctl="schedule"]').click();
+  check(await waitText(th.locator('.info'), 'Далі: 23:00 → Ніч 18.0°', 5000), 'back to the schedule');
+  await th.locator('[data-ctl="off"]').click();
+  check(await waitText(th.locator('.info'), 'захист від морозу лишається', 5000), 'off keeps frost protection');
+  await th.locator('[data-ctl="schedule"]').click();
+  check(await waitText(th.locator('.info'), 'Далі: 23:00 → Ніч 18.0°', 5000), 'switched on by the schedule again');
+
   // drag the knob along the arc; cancel brings everything back
   const knob = th.locator('.hit.a');
   const kb = await knob.boundingBox();

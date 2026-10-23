@@ -31,6 +31,8 @@ function faultLabel(k: Fault): string {
       return t('Turned by hand');
     case 'error_code':
       return t('Reports a fault');
+    case 'meter_reset':
+      return t('Meter replaced, counts from zero');
     case 'clear':
       return t('Back to normal');
   }

@@ -264,12 +264,16 @@ export interface NumberFieldProps {
   disabled?: boolean;
   /** What the value does, behind an «i» after the label. */
   hint?: InfoHintContent;
+  /** An optional value: emptying the field calls this (instead of restoring the last number). */
+  onClear?: () => void;
+  /** Shown while the field is empty («не задано»). */
+  placeholder?: string;
 }
 
 const fmt = (v: number | null) => (v == null ? '' : String(v));
 
 /** Free numeric entry that never leaves an out-of-range value behind. */
-export function NumberField({ value, onChange, min, max, step, unit, label, ariaLabel, error, disabled, hint }: NumberFieldProps) {
+export function NumberField({ value, onChange, min, max, step, unit, label, ariaLabel, error, disabled, hint, onClear, placeholder }: NumberFieldProps) {
   const ut = useUiText();
   const id = useId();
   const [text, setText] = useState(fmt(value));
@@ -282,6 +286,11 @@ export function NumberField({ value, onChange, min, max, step, unit, label, aria
 
   const commit = (raw: string) => {
     const n = Number(raw.replace(',', '.').replace('−', '-').trim());
+    if (raw.trim() === '' && onClear) {
+      setInvalid(false);
+      if (value != null) onClear();
+      return;
+    }
     if (raw.trim() === '' || !Number.isFinite(n)) {
       setInvalid(raw.trim() !== '');
       setText(fmt(value));
@@ -323,6 +332,7 @@ export function NumberField({ value, onChange, min, max, step, unit, label, aria
           aria-invalid={message ? true : undefined}
           aria-describedby={message ? `${id}-err` : undefined}
           value={text}
+          placeholder={placeholder}
           disabled={disabled}
           onFocus={() => {
             editing.current = true;

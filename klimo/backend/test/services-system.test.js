@@ -82,7 +82,7 @@ test('the live diagram: sources → manifold → circuits → room groups, room 
     assert.equal(node(`source:${p.boiler.id}`).dashed, true);
     assert.equal(node(`source:${p.boiler.id}`).row, 1);
     assert.equal(node(`manifold:${p.manifold.id}`).state.code, 'circuit.heating');
-    assert.deepEqual(node(`rooms:circuit:${p.rad.id}`).state, { code: 'why.trvs_open', params: { n: 1, total: 1 } });
+    assert.deepEqual(node(`rooms:circuit:${p.rad.id}`).state, { code: 'why.rooms_asking', params: { n: 1, total: 1 } });
     assert.equal(node(`rooms:circuit:${p.rad.id}`).title, 'Вітальня');
     assert.equal(node(`room:${p.study.id}`).band, 'local');
     assert.equal(node(`room:${p.study.id}`).icon, 'desk');

@@ -2,7 +2,7 @@
  * Sentences of the room page: where the target comes from, why the room heats or not, what
  * the devices confirmed. Every target is shown with its origin; every number with its unit.
  */
-import type { EffectiveTarget, EpochMs, RoomDetailDto, RoomState, RoomSyncState } from '@api/model';
+import type { EffectiveTarget, EpochMs, RoomControl, RoomDetailDto, RoomState, RoomSyncState } from '@api/model';
 import type { IconName, Tone } from '@ui';
 import { aggregationLabel, fmtDelta, fmtDur, fmtSince, fmtTemp, fmtTime, fmtUntil, renderReason, t, type CodeContext } from '@i18n';
 
@@ -23,8 +23,11 @@ function nextText(tg: EffectiveTarget, ctx: CodeContext): string {
   return value != null ? ` → ${name} ${fmtTemp(value)}` : ` → ${name}`;
 }
 
-/** The line under the target: «Дома за розкладом · до 23:00 → Ніч 18.0°», «Вручну · до 20:10, потім розклад». */
-export function sourceText(state: RoomState, ctx: CodeContext, now: EpochMs): string {
+/**
+ * The line under the target: «Дома за розкладом · до 23:00 → Ніч 18.0°», «Вручну · до 20:10, потім
+ * розклад». `back`: the held mode a temporary change returns to («…, потім знову вручну»).
+ */
+export function sourceText(state: RoomState, ctx: CodeContext, now: EpochMs, back: 'manual' | 'off' | null = null): string {
   const tg = state.target;
   const profile = tg.profileId ? (ctx.profile?.(tg.profileId) ?? tg.profileId) : '';
   const until = tg.until != null ? fmtUntil(tg.until, now) : '';
@@ -35,7 +38,10 @@ export function sourceText(state: RoomState, ctx: CodeContext, now: EpochMs): st
     case 'profile_updated':
       return until ? t('{profile} (updated) · {until}{next}', { profile, until, next }) : t('{profile} (updated)', { profile });
     case 'manual':
-      return tg.until != null ? t('Manually · {until}, then the schedule', { until }) : t('Manually · until changed back');
+      if (tg.until == null) return t('Manually · until changed back');
+      if (back === 'manual') return t('Manually · {until}, then manual control again', { until });
+      if (back === 'off') return t('Manually · {until}, then off again', { until });
+      return t('Manually · {until}, then the schedule', { until });
     case 'range':
       return tg.until != null
         ? t('Manual range {range} · {until}', { range: targetValueText(tg), until })
@@ -70,10 +76,13 @@ export function sourceText(state: RoomState, ctx: CodeContext, now: EpochMs): st
   }
 }
 
-/** Phone header status («Дома за розкладом», «вручну 20.5° · до 23:00»). */
-export function phoneSubtitle(state: RoomState, ctx: CodeContext, now: EpochMs): { icon: IconName; text: string; strong?: boolean } {
+/** Phone header status («Дома за розкладом», «вручну 20.5° · до 23:00», «ручне керування · 21.0°»). */
+export function phoneSubtitle(state: RoomState, ctx: CodeContext, now: EpochMs, control?: RoomControl): { icon: IconName; text: string; strong?: boolean } {
   const tg = state.target;
   const profile = tg.profileId ? (ctx.profile?.(tg.profileId) ?? tg.profileId) : '';
+  if (control?.mode === 'manual' && (tg.display === 'manual' || tg.display === 'range'))
+    return { icon: 'hand', text: t('manual control · {t}', { t: targetValueText(tg) }), strong: true };
+  if (control?.mode === 'off' && tg.display === 'off') return { icon: 'power', text: t('off · frost protection stays') };
   switch (tg.display) {
     case 'schedule':
       return { icon: 'clock', text: t('{profile} by schedule', { profile }) };

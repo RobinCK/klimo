@@ -15,6 +15,7 @@ import { BehaviourSection, DisplaySection, HouseSection } from './General';
 import { IntegrationsSection } from './Integrations';
 import { openTab } from './links';
 import { SimulatorSection } from './Simulator';
+import { TariffsSection } from './Tariffs';
 
 const RELOAD_ON = ['settings', 'safety', 'house', 'device_health'] as const;
 
@@ -77,6 +78,7 @@ export default function SettingsPage(): JSX.Element {
         <HouseSection bundle={bundle} onSaved={onSaved} canEdit={canEdit} />
         <DisplaySection bundle={bundle} onSaved={onSaved} canEdit={canEdit} haUnits={meta.data?.haUnits ?? null} />
         <BehaviourSection bundle={bundle} onSaved={onSaved} canEdit={canEdit} />
+        <TariffsSection bundle={bundle} onSaved={onSaved} canEdit={canEdit} />
         <IntegrationsSection bundle={bundle} ha={ha.data} rooms={rooms} canEdit={canEdit} onLovelace={(lovelace) => res.setData({ ...bundle, lovelace })} />
         <BackupSection canEdit={canEdit} />
         <About version={meta.data?.version ?? '—'} haVersion={meta.data?.haVersion ?? null} tz={meta.data?.tz ?? '—'} simulated={simulated} />

@@ -174,6 +174,23 @@
   white-space: nowrap;
 }
 
+.codeWrap {
+  position: relative;
+  min-width: 0;
+}
+
+.codeWrap > .code {
+  padding-right: 44px;
+}
+
+.codeCopy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  margin: 0;
+  background: var(--kit-code-bg);
+}
+
 .code {
   margin: 0;
   padding: var(--ui-space-10) var(--ui-space-12);

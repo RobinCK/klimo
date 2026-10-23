@@ -1,0 +1,43 @@
+.nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.label {
+  min-width: 0;
+  padding: 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-text-1);
+  font-size: var(--ui-fs-body);
+  font-weight: 600;
+  text-align: center;
+}
+
+.current {
+  appearance: none;
+  margin-left: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-radius-pill);
+  background: none;
+  color: var(--ui-text-2);
+  font: inherit;
+  font-size: var(--ui-fs-caption);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.current:hover {
+  color: var(--ui-text-1);
+  border-color: var(--ui-ring);
+}
+
+.current:focus-visible {
+  outline: 2px solid var(--ui-ring);
+  outline-offset: 2px;
+}

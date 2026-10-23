@@ -75,6 +75,7 @@ function scheme(base: SchemeBase, brand: BrandTheme, key: ColorScheme): SchemeTo
     neutrals: { ...base.neutrals, ...(brand.neutrals?.[key] ?? {}) },
     action: { ...brand.action[key] },
     tones: base.tones,
+    series: base.series,
     mark: brand.mark[key],
   };
 }
@@ -130,6 +131,9 @@ function schemeVars(t: SchemeTokens): Record<string, string> {
   for (const [alias, tone] of Object.entries(TONE_ALIASES)) {
     for (const part of ['bg', 'fg', 'line', 'solid', 'ink', 'halo']) v[`--ui-tone-${alias}-${part}`] = `var(--ui-tone-${tone}-${part})`;
   }
+  v['--ui-series-gas'] = t.series.gas;
+  v['--ui-series-electricity'] = t.series.electricity;
+  v['--ui-series-heat'] = t.tones.heat.line;
   v['--brand-cold'] = t.mark.cold;
   v['--brand-warm'] = t.mark.warm;
   v['--brand-dot'] = t.mark.dot;

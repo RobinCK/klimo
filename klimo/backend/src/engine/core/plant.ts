@@ -580,12 +580,19 @@ function circuitPhase(t: Tick, sel: Selection): CircuitFacts {
     facts.mode.set(c.id, mode);
     facts.heatOnlyBlocked.set(c.id, blocked);
     const plan = sel.plans.get(c.id);
+    const coolOk = (room: RoomView) => !!plan && !plan.dew.blocked && !plan.dew.tripped && !plan.dew.hold && !plan.humidRooms.includes(room) && !plan.humidityUnknownRooms.includes(room);
     for (const { room, emitter } of t.idx.members.get(c.id) ?? []) {
-      const rm = room.requests.get(emitter.id)?.mode ?? null;
+      const req = room.requests.get(emitter.id);
+      const rm = req?.mode ?? null;
       let open = false;
       // open whenever the room asks and the loop may carry that mode — even while the source waits to start
       if (rm !== null && c.capabilities[rm] && (mode === 'none' || mode === rm)) {
-        open = rm === 'heat' ? !blocked : !!plan && !plan.dew.blocked && !plan.dew.tripped && !plan.dew.hold && !plan.humidRooms.includes(room) && !plan.humidityUnknownRooms.includes(room);
+        open = rm === 'heat' ? !blocked : coolOk(room);
+      }
+      // the whole loop at once: water reaches every loop without a head of its own while a source runs
+      if (!open && c.mode === 'follow_source' && mode !== 'none' && emitter.roles[mode] !== null && req?.excluded !== 'disabled' && req?.excluded !== 'floor_limit') {
+        const heads = (t.cfg.devicesByEmitter[emitter.id] ?? []).some((d) => d.kind === 'trv');
+        open = !heads && (mode === 'heat' ? !blocked : coolOk(room));
       }
       facts.emitterOpen[emitter.id] = open;
       facts.emitterFeeding[emitter.id] = mode === 'none' ? [] : c.sourceIds.filter((id) => runningIn(t, id, mode));
@@ -686,6 +693,32 @@ function pumpPhase(t: Tick, en: EnergyCtx, facts: CircuitFacts, sel: Selection, 
     }
   }
   return pumps;
+}
+
+/**
+ * A zoned loop without a bypass never has its pump push a running source's water against closed zones:
+ * while a feeding source runs and the loop's pump runs for it with every zone shut (the source held by
+ * its minimum run, flow safety, the pre-run, a check run), all its zones open as the flow path.
+ */
+function flowPathPhase(t: Tick, facts: CircuitFacts, pumps: ReturnType<typeof stepPumps>): void {
+  for (const c of t.idx.circuits) {
+    if (c.mode !== 'zoned' || c.bypass) continue;
+    const members = t.idx.members.get(c.id) ?? [];
+    if (!members.length || members.some(({ emitter }) => facts.emitterOpen[emitter.id])) continue;
+    if (!c.sourceIds.some((id) => t.mem[id]?.on)) continue;
+    const forced = (t.idx.circuitPumps.get(c.id) ?? []).some((p) => {
+      const o = pumps.outcomes.get(p.id);
+      return !!o?.on && o.reason !== 'run_on' && o.reason !== 'exercise';
+    });
+    if (!forced) continue;
+    const mode = facts.mode.get(c.id) ?? 'none';
+    for (const { room, emitter } of members) {
+      // chilled water still never reaches a humid room's floor
+      if (mode === 'cool' && (room.humidityUnknown || emitter.excludeFromCooling)) continue;
+      if (emitter.roles.heat === null && emitter.roles.cool === null) continue;
+      facts.emitterOpen[emitter.id] = true;
+    }
+  }
 }
 
 /** Who serves each room now, or why it waits. */
@@ -1018,6 +1051,7 @@ export const plantStep: PlantStepFn = (cfg, evals, ctx, inputs, memory, ledger) 
   stagePhase(t, en, plan);
   const facts = circuitPhase(t, sel);
   const pumps = pumpPhase(t, en, facts, sel, guards, plan);
+  flowPathPhase(t, facts, pumps);
   const verdicts = verdictPhase(t, evals, facts, sel, guards);
   const { roomMem, setpoints } = actuationPhase(t, sel, plan, facts, pumps, lagSince, evals);
   supplyFrostPhase(t, facts);

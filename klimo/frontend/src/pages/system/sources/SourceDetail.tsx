@@ -36,6 +36,7 @@ import { isRunning, SOURCE_ICON, sourceChip, type SystemData } from '../shared';
 import { applySiblings, mainEntity, modeMapText, rolePreset, roleLabel, setpointText, setRole, withOptionalRows, emptyAdapter } from './bindings';
 import { ConditionDrawer, DeleteDialog, DuplicateDialog, EditDialog, EnergyDialog, GuardsDialog, LockDialog, PickEntityDialog } from './SourceDialogs';
 import { bindingHint, controlHint, hvacProofHint, modesHint, setpointHint, type HintSource } from './hints';
+import { ConsumptionSection } from './Consumption';
 
 type DialogKind = 'lock' | 'edit' | 'duplicate' | 'delete' | 'energy' | 'guards';
 
@@ -358,6 +359,8 @@ export function SourceDetail({ d, dto, phone }: { d: SystemData; dto: SourceDto;
             <KeyValueList rows={[{ key: energyText, value: energyHint }]} />
           </Section>
         </AutoGrid>
+
+        <ConsumptionSection d={d} dto={dto} />
 
         <Section
           variant="plain"

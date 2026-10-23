@@ -1,4 +1,5 @@
 import { Global, Module } from '@nestjs/common';
+import { ConsumptionController } from './consumption.controller';
 import { DevicesController } from './devices.controller';
 import { HaController } from './ha.controller';
 import { HistoryController } from './history.controller';
@@ -35,6 +36,7 @@ export const API_CONTROLLERS = [
   PlantController,
   SystemController,
   StrategyController,
+  ConsumptionController,
   TriggersController,
   IncidentsController,
   NotificationsController,

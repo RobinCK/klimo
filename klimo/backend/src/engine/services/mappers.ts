@@ -4,6 +4,7 @@ import type {
   AggregationMethod,
   Celsius,
   Circuit,
+  CircuitDto,
   CircuitState,
   DayPlan,
   EffectiveTarget,
@@ -27,8 +28,12 @@ import type {
   Profile,
   Pump,
   PumpState,
+  RoomBinding,
+  RoomCircuitLink,
   RoomConfig,
   RoomDetailDto,
+  RoomHeating,
+  RoomHeatingKind,
   RoomMemory,
   RoomState,
   RoomSummary,
@@ -252,6 +257,8 @@ export function roomDeviceCounts(cfg: EngineConfig, room: RoomConfig): Thermosta
 export function deviceKindOf(cfg: EngineConfig, room: RoomConfig, cooling: boolean): RoomSummary['device']['kind'] {
   const emitters = enabledEmitters(cfg, room.id);
   const hasTrv = emitters.some((e) => (cfg.devicesByEmitter[e.id] ?? []).some((d) => d.kind === 'trv'));
+  // radiators with ordinary valves: the room thermostat switches their pump and source
+  const hasPlain = emitters.some((e) => e.kind === 'radiator' && !(cfg.devicesByEmitter[e.id] ?? []).some((d) => d.kind === 'trv'));
   const hasFloor = emitters.some((e) => e.kind === 'floor');
   const direct = emitters.filter((e) => e.kind === 'direct').map((e) => sourceById(cfg, e.sourceId)).filter((s): s is SourceConfig => !!s);
   const hasAc = direct.some(isAcSource);
@@ -260,9 +267,10 @@ export function deviceKindOf(cfg: EngineConfig, room: RoomConfig, cooling: boole
     if (hasAc) return 'ac';
     if (hasFloor) return 'floor';
   }
-  if (hasTrv && hasFloor) return 'trvfloor';
+  if ((hasTrv || hasPlain) && hasFloor) return 'trvfloor';
   if (hasTrv) return 'trv';
   if (hasFloor) return 'floor';
+  if (hasPlain) return 'radiator';
   if (hasHeater) return 'heater';
   if (hasAc) return 'ac';
   return 'none';
@@ -567,6 +575,122 @@ export function sourceFeeds(cfg: EngineConfig, s: SourceConfig): { heat: { type:
 }
 
 /** Rooms with an emitter on a circuit. */
+/* ── how a room is heated (room editing) ─────────────────────────────────────────────────────── */
+
+/** The wizard's word for an emitter: radiators with or without heads, the floor, an AC or a heater. */
+export function emitterHeatingKind(cfg: EngineConfig, e: Emitter): RoomHeatingKind | null {
+  switch (e.kind) {
+    case 'floor':
+      return 'floor';
+    case 'direct': {
+      const s = sourceById(cfg, e.sourceId);
+      return s ? (isAcSource(s) ? 'ac' : 'local') : null;
+    }
+    default:
+      return (cfg.devicesByEmitter[e.id] ?? []).some((d) => d.kind === 'trv') ? 'trv' : 'radiator_plain';
+  }
+}
+
+/** The room's radiators, towel rails and fan coils (plain radiators first): «радіатори» in room settings. */
+export function radiatorEmitters(cfg: EngineConfig, roomId: Id): Emitter[] {
+  const rank = (e: Emitter) => (e.kind === 'radiator' ? 0 : 1);
+  return (cfg.emittersByRoom[roomId] ?? []).filter((e) => e.kind === 'radiator' || e.kind === 'towel_rail' || e.kind === 'fancoil').sort((a, b) => rank(a) - rank(b) || a.order - b.order);
+}
+
+export function roomHeatingKinds(cfg: EngineConfig, roomId: Id): RoomHeatingKind[] {
+  const kinds = new Set<RoomHeatingKind>();
+  for (const e of cfg.emittersByRoom[roomId] ?? []) {
+    const k = emitterHeatingKind(cfg, e);
+    if (k) kinds.add(k);
+  }
+  return (['trv', 'radiator_plain', 'floor', 'ac', 'local'] as const).filter((k) => kinds.has(k));
+}
+
+function circuitLink(cfg: EngineConfig, room: RoomConfig, e: Emitter): RoomCircuitLink {
+  const c = e.circuitId ? cfg.circuits.find((x) => x.id === e.circuitId) : undefined;
+  return {
+    emitterId: e.id,
+    enabled: e.enabled,
+    circuit: c
+      ? {
+          id: c.id,
+          name: c.name,
+          kind: c.kind,
+          mode: c.mode,
+          pumpEntityIds: cfg.pumps.filter((p) => p.circuitId === c.id && p.enabled).map((p) => p.entityId),
+          sourceIds: [...c.sourceIds],
+        }
+      : null,
+    zoneDeviceIds: (cfg.devicesByEmitter[e.id] ?? []).filter((d) => d.kind !== 'trv').map((d) => d.id),
+    otherRoomIds: c ? circuitMembers(cfg, c.id).filter((id) => id !== room.id) : [],
+  };
+}
+
+/** What heats the room, the house circuits it is on and every bound device, as room settings edit them. */
+export function roomHeatingOf(cfg: EngineConfig, room: RoomConfig): RoomHeating {
+  const emitters = cfg.emittersByRoom[room.id] ?? [];
+  const sensors = cfg.sensorsByRoom[room.id] ?? [];
+  const devices = emitters.flatMap((e) => cfg.devicesByEmitter[e.id] ?? []);
+  const trvs = devices.filter((d) => d.kind === 'trv');
+  const temps = sensors.filter((s) => s.role === 'temperature');
+  const radiator = radiatorEmitters(cfg, room.id)[0];
+  const floor = emitters.find((e) => e.kind === 'floor');
+  const bindings: RoomBinding[] = [];
+  for (const s of sensors) {
+    const role = s.role === 'contact' ? (s.contactKind === 'door' ? 'door' : 'window') : s.role === 'floor_probe' ? 'floor_probe' : s.role === 'humidity' ? 'humidity' : s.role === 'temperature' ? 'temperature' : null;
+    if (!role) continue;
+    bindings.push({ key: `sensor:${s.id}`, role, entityId: s.entityId, name: s.name, release: 'none', lastTemperature: role === 'temperature' && temps.length === 1 && !trvs.length });
+  }
+  for (const d of devices) {
+    const e = emitters.find((x) => x.id === d.emitterId);
+    const cools = !!(e?.circuitId && cfg.circuits.find((c) => c.id === e.circuitId)?.capabilities.cool);
+    bindings.push({
+      key: `device:${d.id}`,
+      role: d.kind === 'trv' ? 'trv' : 'floor_zone',
+      entityId: d.entityId,
+      name: d.name,
+      release: d.kind === 'trv' ? 'trv_handback' : cools ? 'zone_close' : 'zone_open',
+      lastTemperature: d.kind === 'trv' && !temps.length && trvs.length === 1,
+    });
+  }
+  for (const s of cfg.sources) {
+    if (s.scope !== 'room' || s.roomId !== room.id) continue;
+    const entityId = s.adapter.type === 'climate' ? s.adapter.climate : s.adapter.type === 'relay' ? s.adapter.command : null;
+    if (!entityId) continue;
+    bindings.push({ key: `source:${s.id}`, role: isAcSource(s) ? 'ac' : 'heater', entityId, name: s.name, release: 'switch_off', lastTemperature: false });
+  }
+  const dehum = room.humidity.dehumidifier;
+  if (dehum) bindings.push({ key: 'dehumidifier', role: 'dehumidifier', entityId: dehum.entityId, name: dehum.entityId, release: 'switch_off', lastTemperature: false });
+  return {
+    kinds: roomHeatingKinds(cfg, room.id),
+    radiators: radiator ? { ...circuitLink(cfg, room, radiator), heads: trvs.length } : null,
+    floor: floor ? circuitLink(cfg, room, floor) : null,
+    bindings,
+    temperature: temps.some((s) => s.included) ? 'sensors' : trvs.length ? 'trvs' : 'none',
+  };
+}
+
+/** Member rooms of a circuit and how each takes part. */
+export function circuitMemberRows(cfg: EngineConfig, circuitId: Id): CircuitDto['members'] {
+  const out: CircuitDto['members'] = [];
+  for (const room of cfg.rooms) {
+    for (const e of cfg.emittersByRoom[room.id] ?? []) {
+      if (e.circuitId !== circuitId) continue;
+      const devices = cfg.devicesByEmitter[e.id] ?? [];
+      const zones = devices.filter((d) => d.kind !== 'trv');
+      out.push({
+        roomId: room.id,
+        emitterId: e.id,
+        kind: emitterHeatingKind(cfg, e) ?? 'radiator_plain',
+        zoneDeviceIds: zones.map((d) => d.id),
+        zones: zones.map((d) => ({ deviceId: d.id, entityId: d.entityId, name: d.name })),
+        heads: devices.length - zones.length,
+      });
+    }
+  }
+  return out;
+}
+
 export function circuitMembers(cfg: EngineConfig, circuitId: Id): Id[] {
   const out: Id[] = [];
   for (const room of cfg.rooms) if ((cfg.emittersByRoom[room.id] ?? []).some((e) => e.circuitId === circuitId)) out.push(room.id);

@@ -23,6 +23,7 @@ import {
   newSourceConfig,
   normalizeOutdoor,
   nextProfileLook,
+  pumpRuleFor,
   seedName,
   SOURCE_TEMPLATES,
 } from '../shared/defaults';
@@ -33,6 +34,7 @@ import type {
   ApiErrorIssue,
   BusEvents,
   ChainEntry,
+  Circuit,
   ClockPort,
   ConfigCollectionName,
   ConfigCollections,
@@ -59,6 +61,7 @@ import type {
   PersonalPrefs,
   ProfileRoomSetting,
   ProfileTargetRequest,
+  Pump,
   RoutingCell,
   RuleEffect,
   SourceConfig,
@@ -823,6 +826,26 @@ export class ConfigStore implements IConfigStore {
       }
     }
     if (c === 'targets') this.normalizeTargets(g, id);
+    if (c === 'circuits' || c === 'pumps') this.syncPumpRules(g, c, id, before);
+  }
+
+  /**
+   * A circuit's mode decides when its pumps run; `Pump.rule` says the same for older readers. A pump
+   * whose rule was changed on its own (an older panel) changes its circuit's mode instead.
+   */
+  private syncPumpRules(g: ConfigGraph, c: 'circuits' | 'pumps', id: Id, before: Record<string, unknown> | null): void {
+    let circuit: Circuit | undefined;
+    if (c === 'circuits') circuit = g.circuits.get(id);
+    else {
+      const p = g.pumps.get(id);
+      circuit = p?.circuitId ? g.circuits.get(p.circuitId) : undefined;
+      if (!p || !circuit) return;
+      const prev = before as unknown as Pump | null;
+      if (prev && prev.rule !== p.rule && prev.circuitId === p.circuitId) circuit.mode = p.rule === 'source' ? 'follow_source' : 'zoned';
+    }
+    if (!circuit) return;
+    const rule = pumpRuleFor(circuit.mode);
+    for (const p of g.pumps.values()) if (p.circuitId === circuit.id && p.rule !== rule) p.rule = rule;
   }
 
   /** New sources join the chains: heat pumps first, then boilers, then others; room ACs as one group. */

@@ -12,7 +12,9 @@ import type {
   ChainRequest,
   CircuitCreateRequest,
   CircuitDto,
+  CircuitMergeRequest,
   CircuitPatch,
+  CircuitRoomRequest,
   ConditionPreviewRequest,
   ConditionPreviewResult,
   CoolStrategyPatch,
@@ -38,6 +40,9 @@ import type {
   EnergyPatch,
   EnergySetupRequest,
   EntityId,
+  HouseConsumptionDto,
+  ConsumptionQuery,
+  SourceConsumptionDto,
   EpochMs,
   EventKind,
   EventParams,
@@ -55,6 +60,9 @@ import type {
   HeatStrategyPatch,
   HistoryQuery,
   HistorySeriesDto,
+  HouseControl,
+  HouseControlRequest,
+  HouseControlResult,
   HouseModePreview,
   HouseModeRequest,
   HouseProfileDto,
@@ -100,9 +108,15 @@ import type {
   PumpPatch,
   Reason,
   ResolvedDayDto,
+  RoomControl,
+  RoomControlRequest,
+  RoomControlResult,
   RoomDayDto,
   RoomDetailDto,
   RoomOffRequest,
+  RoomBindingReplaceRequest,
+  RoomDeviceRequest,
+  RoomHeatingRequest,
   RoomPatch,
   RoomProfileRequest,
   RoomState,
@@ -249,6 +263,16 @@ export const api = {
       http.del<void>(`${r(id)}${qs({ releaseTrvs: opts.releaseTrvs === undefined ? undefined : String(opts.releaseTrvs) })}`),
     day: (id: Id, date?: LocalDate) => http.get<RoomDayDto>(`${r(id)}/day${qs({ date })}`),
     durations: (id: Id) => http.get<DurationOption[]>(`${r(id)}/durations`),
+    /** Room editing in the wizard's terms: a device by role, replaced or removed by its binding key. */
+    bindings: {
+      add: (id: Id, body: RoomDeviceRequest) => http.post<RoomDetailDto>(`${r(id)}/bindings`, body),
+      replace: (id: Id, key: string, body: RoomBindingReplaceRequest) => http.put<RoomDetailDto>(`${r(id)}/bindings/${seg(key)}`, body),
+      /** `force`: also the room's last temperature source. */
+      remove: (id: Id, key: string, opts: { force?: boolean } = {}) =>
+        http.del<RoomDetailDto>(`${r(id)}/bindings/${seg(key)}${qs({ force: opts.force ? 1 : undefined })}`),
+    },
+    /** «Чим гріти»: smart heads ↔ ordinary radiators, joining or leaving a house circuit, an AC or a heater. */
+    setHeating: (id: Id, body: RoomHeatingRequest) => http.put<RoomDetailDto>(`${r(id)}/heating`, body),
     sensors: {
       add: (id: Id, body: SensorCreateRequest) => http.post<RoomDetailDto>(`${r(id)}/sensors`, body),
       patch: (id: Id, sensorId: Id, p: SensorPatch) => http.patch<RoomDetailDto>(`${r(id)}/sensors/${seg(sensorId)}`, p),
@@ -277,6 +301,9 @@ export const api = {
     undo: (id: Id, body: UndoRequest) => http.post<TargetCommandResult>(`${r(id)}/target/undo`, body),
     /** «Повернути розклад»: clears the room's target override. */
     resume: (id: Id) => http.del<RoomState>(`${r(id)}/override`),
+    control: (id: Id) => http.get<RoomControl>(`${r(id)}/control`),
+    /** За розкладом / Вручну / Вимкнено; 'schedule' also ends a temporary change, a boost and an off. */
+    setControl: (id: Id, body: RoomControlRequest) => http.put<RoomControlResult>(`${r(id)}/control`, body),
     boost: (id: Id, body: BoostRequest = {}) => http.post<RoomState>(`${r(id)}/boost`, body),
     cancelBoost: (id: Id) => http.del<RoomState>(`${r(id)}/boost`),
     airing: (id: Id, body: MinutesRequest = {}) => http.post<RoomState>(`${r(id)}/airing`, body),
@@ -351,6 +378,9 @@ export const api = {
     setProfile: (body: HouseProfileRequest) => http.put<HouseProfileDto>('/house/profile', body),
     clearProfile: () => http.del<HouseProfileDto>('/house/profile'),
     undo: (body: UndoRequest) => http.post<HouseProfileDto>('/house/profile/undo', body),
+    control: () => http.get<HouseControl>('/house/control'),
+    /** 'manual' pauses the house schedule; 'schedule' resumes it and every room's own change (rooms switched off stay off). */
+    setControl: (body: HouseControlRequest) => http.put<HouseControlResult>('/house/control', body),
     mode: () => http.get<SeasonState>('/house/mode'),
     previewMode: (body: HouseModeRequest) => http.post<HouseModePreview>('/house/mode/preview', body),
     setMode: (body: HouseModeRequest) => http.put<SeasonState>('/house/mode', body),
@@ -390,12 +420,19 @@ export const api = {
     stopTest: (id: Id) => http.del<SourceTestResult>(`/sources/${seg(id)}/test`),
     lock: (id: Id, body: SourceLockRequest) => http.put<SourceDto>(`/sources/${seg(id)}/lock`, body),
     unlock: (id: Id) => http.del<SourceDto>(`/sources/${seg(id)}/lock`),
+    /** What the source used per hour, day or month (its meters' HA statistics and its runs). */
+    consumption: (id: Id, q: ConsumptionQuery) => http.get<SourceConsumptionDto>(`/sources/${seg(id)}/consumption${qs({ range: q.range, date: q.date })}`),
   },
   circuits: {
     list: () => http.get<CircuitDto[]>('/circuits'),
     create: (body: CircuitCreateRequest) => http.post<CircuitDto>('/circuits', body),
     patch: (id: Id, p: CircuitPatch) => http.patch<CircuitDto>(`/circuits/${seg(id)}`, p),
-    remove: (id: Id) => http.del<void>(`/circuits/${seg(id)}`),
+    /** `force`: also with rooms or pumps on it (its rooms wait for another circuit, its pumps go). */
+    remove: (id: Id, opts: { force?: boolean } = {}) => http.del<void>(`/circuits/${seg(id)}${qs({ force: opts.force ? 1 : undefined })}`),
+    /** «Об’єднати»: its rooms (and pumps) move to `intoId`, the empty circuit goes. */
+    merge: (id: Id, body: CircuitMergeRequest) => http.post<CircuitDto>(`/circuits/${seg(id)}/merge`, body),
+    addRoom: (id: Id, body: CircuitRoomRequest) => http.post<CircuitDto>(`/circuits/${seg(id)}/rooms`, body),
+    removeRoom: (id: Id, roomId: Id) => http.del<CircuitDto>(`/circuits/${seg(id)}/rooms/${seg(roomId)}`),
   },
   pumps: {
     list: () => http.get<Pump[]>('/pumps'),
@@ -434,6 +471,8 @@ export const api = {
     get: () => http.get<EnergyDto>('/energy'),
     patch: (p: EnergyPatch) => http.patch<EnergyDto>('/energy', p),
     setup: (body: EnergySetupRequest) => http.post<EnergyDto>('/energy/setup', body),
+    /** Today across the sources with meters (the overview energy tile). */
+    consumption: () => http.get<HouseConsumptionDto>('/energy/consumption'),
   },
   triggers: {
     list: () => http.get<TriggerDto[]>('/triggers'),
