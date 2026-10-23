@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.3
+
+- **"What heats or cools the room?" reads at a glance.** The choices sit in two columns with a short
+  line each, instead of five narrow cards of wrapped text, in the add-room wizard and in the room's
+  settings.
+- **The schema without a manifold is cleaner.** No empty manifold column and no dashed box under the
+  arrows: sources lead straight into their circuits, and **Add a manifold** is a plain button under the
+  schema.
+- **No more "Energy · Energy"** when energy is not set up, and no white frame around the whole schema
+  after a click — the frame shows only when the schema really scrolls and is reached with the keyboard.
+
 ## 0.2.2
 
 - **An air conditioner or heater added from New source now works.** If you added an air conditioner or

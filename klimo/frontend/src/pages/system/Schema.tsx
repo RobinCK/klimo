@@ -60,7 +60,7 @@ export function EnergyLine({ energy, ctx, compact }: { energy: EnergyState; ctx:
     return (
       <EnergyStrip
         variant={compact ? 'compact' : 'strip'}
-        grid={{ present: true, label: t('Energy') }}
+        grid={{ present: false, label: '' }}
         items={[]}
         note={{ text: renderReason({ code: 'energy.not_configured' }, ctx), tone: 'off' }}
       />
@@ -119,30 +119,9 @@ interface Props {
   onManifold?: (id: Id | null) => void;
 }
 
-/** The dashed «+ Add a manifold» box a house without one gets in the manifold column. */
-const ADD_MANIFOLD_KEY = 'add:manifold';
-const ADD_MANIFOLD_STATE: Reason = { code: 'circuit.idle' };
-
-/** Without a manifold the column goes, or (for an editor) holds the box that adds one. */
-function withManifoldColumn(nodes: SchemaNode[], canAdd: boolean): { nodes: SchemaNode[]; column: boolean } {
-  if (nodes.some((n) => n.column === 'manifolds')) return { nodes, column: true };
-  const hydronic = nodes.filter((n) => n.band === 'hydronic');
-  if (!canAdd || !hydronic.length) return { nodes, column: false };
-  // below the loops, where no arrow from a source to a circuit runs through it
-  const add: SchemaNode = {
-    key: ADD_MANIFOLD_KEY,
-    column: 'manifolds',
-    band: 'hydronic',
-    row: Math.max(...hydronic.map((n) => n.row)) + 1,
-    tone: 'off',
-    icon: 'plus',
-    title: t('Add a manifold'),
-    state: ADD_MANIFOLD_STATE,
-    meta: null,
-    roomIds: [],
-    dashed: true,
-  };
-  return { nodes: [...nodes, add], column: true };
+/** Without a manifold the column goes: sources lead straight into their circuits. */
+function hasManifold(nodes: SchemaNode[]): boolean {
+  return nodes.some((n) => n.column === 'manifolds');
 }
 
 export function SchemaSection({ d, sim, onSim, onView, onManifold }: Props) {
@@ -174,13 +153,13 @@ export function SchemaSection({ d, sim, onSim, onView, onManifold }: Props) {
   const sources = d.sources.data;
   const ctx = d.ctx;
   const canAdd = d.canEdit && sim === 'now' && !!onManifold;
-  const { nodes, column: manifoldColumn } = useMemo(() => withManifoldColumn(view ? distinctTitles(view.nodes, sources, ctx) : [], canAdd), [view, sources, ctx, canAdd]);
+  const nodes = useMemo(() => (view ? distinctTitles(view.nodes, sources, ctx) : []), [view, sources, ctx]);
+  const manifoldColumn = hasManifold(nodes);
 
   const nodeClick = (n: SchemaNode) => {
     const [kind, ...rest] = n.key.split(':');
     const id = rest.join(':');
-    if (n.key === ADD_MANIFOLD_KEY) onManifold?.(null);
-    else if (kind === 'manifold') onManifold?.(id);
+    if (kind === 'manifold') onManifold?.(id);
     else if (kind === 'source' || kind === 'local') navigate(paths.source(id));
     else if ((kind === 'room' || kind === 'rooms') && n.roomIds.length === 1) navigate(paths.room(n.roomIds[0]));
     // a loop's card (mode, pump, rooms) sits under the schema
@@ -241,7 +220,7 @@ export function SchemaSection({ d, sim, onSim, onView, onManifold }: Props) {
                 { key: 'circuits', label: t('Circuits & pumps') },
                 { key: 'rooms', label: t('Rooms') },
               ]}
-              renderState={(r) => (r === ADD_MANIFOLD_STATE ? t('Where sources meet circuits — optional') : renderReason(r, d.ctx))}
+              renderState={(r) => renderReason(r, d.ctx)}
               bandLabel={t('In the rooms — directly, without circuits')}
               energy={<EnergyLine energy={view.energy} ctx={d.ctx} />}
               onNodeClick={nodeClick}
@@ -257,6 +236,13 @@ export function SchemaSection({ d, sim, onSim, onView, onManifold }: Props) {
         ) : (
           <Skeleton height={420} radius={16} />
         )}
+        {view && canAdd && !manifoldColumn ? (
+          <div>
+            <Button variant="ghost" size="sm" icon="plus" onClick={() => onManifold?.(null)}>
+              {t('Add a manifold')}
+            </Button>
+          </div>
+        ) : null}
       </Stack>
       {customOpen ? (
         <CustomConditions

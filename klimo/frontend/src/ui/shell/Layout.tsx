@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Space } from '../types';
 import s from './shell.module.css';
 
@@ -102,12 +102,26 @@ export interface ScrollXProps {
 
 /** The only sanctioned horizontal scroller (timelines, matrices, wide tables). */
 export function ScrollX({ minWidth, ariaLabel, children }: ScrollXProps) {
+  // keyboard users need a tab stop to scroll it — but only while it really scrolls; a region that fits
+  // would just take focus on a click and draw a ring around the whole content
+  const ref = useRef<HTMLDivElement>(null);
+  const [overflows, setOverflows] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const check = () => setOverflows(el.scrollWidth > el.clientWidth + 1);
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    check();
+    return () => ro.disconnect();
+  }, [minWidth]);
   return (
     <div
+      ref={ref}
       className={s.scrollX}
       role={ariaLabel ? 'region' : undefined}
       aria-label={ariaLabel}
-      tabIndex={ariaLabel ? 0 : undefined}
+      tabIndex={ariaLabel && overflows ? 0 : undefined}
     >
       <div className={s.scrollInner} style={{ '--min-width': `${minWidth}px` } as CSSProperties}>
         {children}

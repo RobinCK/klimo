@@ -91,7 +91,7 @@ export function StepName({ w }: { w: Wizard }) {
         subtitle={t('Tick everything there is. A device picked on the next step ticks its kind too.')}
       >
         <Stack gap="sm">
-          <AutoGrid min={260} gap="sm">
+          <AutoGrid min={420} gap="sm">
             {HEATING_KIND_ORDER.map((k) => {
               const words = heatingKindWords(k, brand.productName);
               return <ToggleCard key={k} pressed={w.kinds.includes(k)} icon={HEATING_KIND_ICON[k]} title={words.title} hint={words.hint} onToggle={() => w.toggleKind(k)} />;

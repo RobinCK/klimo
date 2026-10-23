@@ -283,7 +283,7 @@ export function HeatingKinds({ p, edit, circuits, write }: { p: SectionProps; ed
   return (
     <Stack gap="md">
       <Section variant="plain" level={3} title={t('What heats or cools the room?')}>
-        <AutoGrid min={240} gap="sm">
+        <AutoGrid min={420} gap="sm">
           {HEATING_KIND_ORDER.map((k) => {
             const words = heatingKindWords(k, product);
             return <ToggleCard key={k} pressed={pressed(k)} icon={HEATING_KIND_ICON[k]} title={words.title} hint={words.hint} onToggle={() => toggle(k)} />;

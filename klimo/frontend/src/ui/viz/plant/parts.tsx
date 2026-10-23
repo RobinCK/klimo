@@ -126,10 +126,12 @@ export function EnergyStrip({ grid, items, note, variant = 'strip' }: EnergyStri
           <span className={s.energyTitle}>{ut('Energy')}</span>
         </>
       ) : null}
-      <span className={s.energyGrid} data-present={grid.present ? '' : undefined}>
-        {variant === 'compact' ? <span className={s.energyDot} aria-hidden="true" /> : null}
-        {grid.label}
-      </span>
+      {grid.label ? (
+        <span className={s.energyGrid} data-present={grid.present ? '' : undefined}>
+          {variant === 'compact' ? <span className={s.energyDot} aria-hidden="true" /> : null}
+          {grid.label}
+        </span>
+      ) : null}
       {items.map((t, i) => (
         <span key={`${t}-${i}`} className={s.energyItem}>
           {t}

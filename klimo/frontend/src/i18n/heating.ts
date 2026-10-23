@@ -29,21 +29,21 @@ export const HEATING_KIND_ICON: Record<RoomHeatingKind, IconName> = {
 };
 
 /** A heating kind as a choice: its name and one line on what it means for the room. */
-export function heatingKindWords(k: RoomHeatingKind, product: string): { title: string; hint: string } {
+export function heatingKindWords(k: RoomHeatingKind, _product: string): { title: string; hint: string } {
   switch (k) {
     case 'trv':
-      return { title: t('Radiators with smart heads'), hint: t('Zigbee or Wi-Fi heads and thermostats: {product} turns each one to the room’s target.', { product }) };
+      return { title: t('Radiators with smart heads'), hint: t('Zigbee or Wi-Fi heads and thermostats.') };
     case 'radiator_plain':
       return {
         title: t('Radiators with ordinary valves'),
-        hint: t('Hand valves or mechanical thermostatic heads, no device needed: {product} switches the boiler or heat pump and the radiator pump by the room temperature.', { product }),
+        hint: t('Hand valves or mechanical heads — no device needed.'),
       };
     case 'floor':
-      return { title: t('Underfloor heating'), hint: t('The room joins the house floor circuit; a zone valve of its own only if the floor is split into zones.') };
+      return { title: t('Underfloor heating'), hint: t('The house floor circuit.') };
     case 'ac':
       return { title: t('Air conditioner'), hint: t('Cools, and can top up the heat.') };
     case 'local':
-      return { title: t('Own heater'), hint: t('An electric heater on a relay, a plug or its own thermostat.') };
+      return { title: t('Own heater'), hint: t('A convector or IR panel on a relay or plug.') };
   }
 }
 
