@@ -32,13 +32,14 @@ and the watchdog) and its own container; other add-ons on the internal network a
 
 1. **System → Sources → Add a source** for every heat pump, boiler, air conditioner or electric heater.
    Pick the type, then how Klimo switches it and how it knows the source really runs; **Test for 2 min**
-   checks the wiring.
-2. **Rooms → Add a room**: a name and a Home Assistant area. Klimo searches the area for radiator
-   valves, thermometers, humidity sensors and window contacts and offers them; anything else can be
-   found by name. Then choose how the temperature is combined, the tolerance, the window reaction and how
+   checks the wiring. Bind its gas, electricity or heat meter under *Consumption meters* if it has one.
+2. **Rooms → Add a room**: a name, a Home Assistant area and what heats or cools the room. Klimo offers
+   the radiator valves, thermometers, humidity sensors and window contacts of the area; one search box
+   finds anything else. The first room with radiators or a floor sets up the house circuit; the next
+   ones join it. Then choose how the temperature is combined, the tolerance, the window reaction and how
    the valves are driven.
-3. **System → Schema → Circuits & pumps** for hydronic systems: which sources feed which circuit, the
-   pumps and their run-on.
+3. **System → Schema → Circuits & pumps** for hydronic systems: which sources feed which circuit, how
+   it runs, the pumps and their run-on, the rooms on it.
 4. **Schedule**: the house schedule ships with weekday and weekend plans over the six seeded profiles
    (Home, Away, Eco, Night, Guests, Vacation); adjust the targets and the blocks.
 
@@ -58,7 +59,9 @@ device with what it expects before it sends a command.
 
 - **Room** — a controlled space with its own targets, tolerance, sensors, windows and emitters. Its id
   never changes; its slug gives the entity id `climate.klimo_<slug>`. Switch **Klimo controls this room**
-  off to only watch it.
+  off to only watch it. A room is under the schedule, under manual control or off.
+- **Radiators** — with smart heads (Klimo sets each head) or with ordinary valves (mechanical or manual;
+  the room then works as a room thermostat that switches the source and the radiator pump).
 - **Emitter** — how a room receives heat or cold: radiators, underfloor heating, a fan coil or a towel
   rail on a circuit, or a room-level source (an air conditioner, a convector). Each emitter has a role per
   mode: *primary*; *top-up* (joins when the room lacks more than 1.5°); *trigger* (runs only while its
@@ -75,7 +78,10 @@ device with what it expects before it sends a command.
 - **Schedule** — a weekly plan of profile blocks (30-minute steps) for the house, optional room schedules
   and dated exceptions.
 - **Override** — a time-boxed manual change: a room target, boost, airing, room off, a room or house
-  profile, a source locked off. Each one has an end ("until the next slot", 1 h, 3 h…) and can be undone.
+  profile, a source locked off. Each one has an end ("until the next slot", 1 h, 3 h…, or none under
+  manual control) and can be undone.
+- **Meter** — a gas, electricity or heat counter of a source; Klimo reads its long-term statistics in
+  Home Assistant for the consumption charts and costs.
 - **Season** — heating, between seasons, cooling. **House mode** — Auto, heating only, cooling only or
   off (off still keeps frost protection, exercise runs and notifications).
 - **Trigger** — a named live condition over Home Assistant; **action** — what changes while a trigger
@@ -85,6 +91,33 @@ device with what it expects before it sends a command.
 - **Journal** — every decision with its reason.
 
 ## Rooms
+
+### Adding and editing a room
+
+The add-room wizard has four steps: the name, the area and what heats or cools the room; the devices;
+how to control it; a final check.
+
+- **Devices**: the area's radiator valves, thermometers and window contacts are offered ticked. The
+  search box at the top looks through all of Home Assistant — the room's area first — and a click adds
+  the device in the role it fits; when it could be two things (a plug: a heater or a floor zone valve)
+  the result shows both. Every picked device has a **Use as…** menu to change its role. A relay or
+  `climate` entity that a source already switches is shown but cannot be added, and a device of another
+  room is marked and moved here when ticked.
+- **What heats the room** follows the devices too: picking a valve ticks the radiators. A room with
+  ordinary valves needs a thermometer and a source it may start; a thermostat on the radiator can measure
+  the room by itself (it reads warmer than the room).
+- **Circuits**: a room with radiators joins the house's radiator circuit, a floor room the floor
+  circuit (and its zone valve, when the floor runs by zones). With none set up yet, the wizard sets it up
+  once, for every room after.
+- A problem the server finds is shown on the device it is about, and the wizard scrolls to it.
+
+**Room and devices** on the room page (the **Edit room** button leads there) changes the room later: the
+name and the area, what heats or cools it, and each device — **Replace** keeps its place and weight,
+**Remove** takes it out (the last thermometer only after a warning that the room can then neither heat
+nor protect itself from frost); removing the last head leaves the room with ordinary radiators. A removed head gets its own sensor, a 20° target
+and an unlocked keypad back; a room that leaves the floor is taken off the floor pump and its zone valve
+is released. Switching between smart heads and ordinary radiators hands every head back and keeps the
+circuit. **Delete the room** hands the valves back the same way. Each change is journaled.
 
 ### Sensors and aggregation
 
@@ -158,8 +191,9 @@ control method is chosen per room:
   save it into the profile. With the child lock on, only changes from the HA UI count.
 - **Resend the targets after Zigbee2MQTT restarts** — Klimo notices the bridge coming back and re-sends
   every target and setting.
-- When a room or a valve is removed, the valve gets its own sensor back and a target of 20°. When the
-  add-on stops, valves are handed back to their internal sensor with the current target.
+- When a room or a valve is removed, the valve gets its own sensor back, a target of 20° and its child
+  lock released. When the add-on stops, valves are handed back to their internal sensor with the current
+  target.
 
 ### Air conditioners and room heaters
 
@@ -209,7 +243,7 @@ card or from Home Assistant:
 
 | Mode | What it means |
 |---|---|
-| **Schedule** | The room follows its profiles and schedules. A change for 1 hour or until the next slot is temporary: the room page shows its end, and the room goes back by itself. |
+| **By schedule** | The room follows its profiles and schedules. A change for 1 hour or until the next slot is temporary: the room page shows its end, and the room goes back by itself. |
 | **Manual** | The room holds its own target with no end. The schedule, a house profile change and presence do not touch it. −/+ change the value without asking how long. |
 | **Off** | The room is off with no end. Frost protection stays: below the frost limit (7° by default) it is heated anyway. |
 
@@ -439,8 +473,8 @@ the rooms on it.
   floor by default, separately for heating and cooling. A new request during the run-on restarts it, it
   never stacks.
 - A pump is also forced on for frost protection, while its source is held on by its minimum run, before
-  a source that needs flow starts (20 s pre-run), during a source test, and for 2 min after a dew-guard
-  stop.
+  a source that needs flow starts (a 20 s pre-run of the pump of the circuit that asks — a floor zone does
+  not start the radiator pump), during a source test, and for 2 min after a dew-guard stop.
 - A heating-only circuit never gets chilled water: while a source cools, its pumps stay off and its zone
   valves closed.
 - **Several pumps per circuit**: all together, or duty and standby — the standby pump takes over when
@@ -511,6 +545,10 @@ expired.
   someone presses **Got it**, and escalates after 10 min. Warnings and events wait for quiet hours and are
   grouped (similar messages within 2 min become one).
 - **Quiet hours** 23:00–07:00 with a morning digest of what is still open.
+- **Every message names the device** and where it is — the room, or *Outdoors* — with the name from the
+  Devices page ("Bedroom · Dresser: offline 20 min"). Two devices with the same name in one place, or a
+  name that only says what the device is ("Temperature"), get their entity id; a grouped message and the
+  digest give each device its own line.
 - **When it is over**, a short silent message goes to the same targets; the phone notification is
   replaced, the sidebar one dismissed.
 - **Daily summary** at 21:00 and a **weekly report** on Sunday: runtime and cycles per source, energy,
@@ -697,8 +735,8 @@ such a line: it means Klimo needs a path the profile does not know yet.
 Klimo writes every entity it controls; an automation writing the same entity fights it. Disable before
 you switch a room over:
 
-- "Floor pump on with the boiler, off 10 min later" → a circuit pump with the rule *a source runs* and a
-  10-min run-on.
+- "Floor pump on with the boiler, off 10 min later" → a floor circuit that runs as a whole with its
+  source, with a 10-min run-on.
 - `generic_thermostat`, Better Thermostat or a scheduler on the same valves, relays or air conditioners.
 - "Valve down when the window opens" → the room's window reaction.
 - "Boiler on when any valve asks for heat" → room requests and the heat chain.
@@ -729,3 +767,9 @@ the `klimo_event` event) are welcome.
   `telegram_bot` integration); use one or the other.
 - **"permission denied" in Klimo's log** — the host's AppArmor refused a file access; the host log names
   the path (see [Security](#security)).
+- **The consumption chart is empty** — the meter has no state class, so Home Assistant keeps no
+  statistics for it: set `state_class: total_increasing` (a power sensor: `measurement`) in its
+  integration or with `homeassistant: customize:` (see [Consumption and cost](#consumption-and-cost)).
+- **The signal shows «—»** — nobody reports the link quality: Zigbee2MQTT adds its link-quality entity
+  disabled, and without MQTT Klimo cannot hear it directly. Enable the entity or connect MQTT; «—» means
+  unknown, not weak.

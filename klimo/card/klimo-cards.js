@@ -63,7 +63,7 @@
  * `klimo-room-sheet` and `klimo-open`).
  */
 
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 
 /* ─────────────────────────────── 1 Tokens ──────────────────────────────────────────────────────
  * The same values as the panel's design tokens. `npm run tokens:card` in klimo/frontend copies
@@ -4111,7 +4111,7 @@ class KlimoSheet extends KlimoBase {
   }
 
   _head(title, extra = '') {
-    return `<div class="sh-hd"><span class="sh-title ell" id="ttl">${esc(title)}</span>${extra}<button type="button" class="x" data-act="close" aria-label="${esc(tr(this._c ? this._c.lang : 'uk', 'close'))}">${ic('close', 18)}</button></div>`;
+    return `<div class="sh-hd"><span class="sh-title ell" id="ttl">${esc(title)}</span>${extra}<button type="button" class="x" data-act="close" aria-label="${esc(tr(this._c ? this._c.lang : 'en', 'close'))}">${ic('close', 18)}</button></div>`;
   }
 }
 
@@ -4450,7 +4450,7 @@ class KlimoEditor extends HTMLElement {
     if (c.language === 'uk' || c.language === 'en') return c.language;
     const hub = this._hass ? readHub(this._hass, c) : null;
     if (hub && hub.attrs && (hub.attrs.lang === 'uk' || hub.attrs.lang === 'en')) return hub.attrs.lang;
-    const ha = String((this._hass && ((this._hass.locale && this._hass.locale.language) || this._hass.language)) || 'uk');
+    const ha = String((this._hass && ((this._hass.locale && this._hass.locale.language) || this._hass.language)) || 'en');
     return ha.startsWith('uk') ? 'uk' : 'en';
   }
 

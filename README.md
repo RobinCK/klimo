@@ -4,10 +4,10 @@
 the sidebar. Every room gets its own target, tolerance, sensors and windows; Klimo decides which
 climate source runs — heat pump, gas boiler, air conditioners, electric heaters — switches the
 circulation pumps with a proper run-on, keeps cooled floors above the dew point, holds a power
-budget during a blackout and explains every decision it takes. Each room becomes a native
-`climate` entity, there are Lovelace cards for the dashboard, and alerts reach the Home Assistant
-app and Telegram. The interface follows your Home Assistant language — English, Українська
-(English fallback).
+budget during a blackout, counts the gas and electricity every source used and explains every
+decision it takes. Each room follows its schedule or your hand, becomes a native `climate` entity,
+there are Lovelace cards for the dashboard, and alerts reach the Home Assistant app and Telegram.
+The interface follows your Home Assistant language — English, Українська (English fallback).
 
 ![Home Assistant Add-on](https://img.shields.io/badge/Home%20Assistant-Add--on-41BDF5)
 ![Arch](https://img.shields.io/badge/arch-aarch64%20%7C%20amd64-blue)
@@ -24,6 +24,8 @@ app and Telegram. The interface follows your Home Assistant language — English
   Home Assistant restarts, and it resumes minimum run times, pump run-ons and retries after its own
   restart.
 - **Own database** for the configuration, the decision journal, alerts and run history.
+- **Locked down**: reached only through ingress, no extra privileges, and its own AppArmor profile
+  that lets it write nothing but its database and the card bundle — security rating 8.
 - **Controls any hardware through Home Assistant entities**: Zigbee2MQTT radiator valves, Shelly or
   Zigbee relays, the `climate` entity of a heat pump or an air conditioner, a flow-temperature
   `number`, scripts — anything Home Assistant can switch.
@@ -54,9 +56,11 @@ house schedule and five triggers (Blackout, Sun during blackout, Night tariff, F
 They and the notifications start in English — rename anything, and pick the notification language in
 **Settings → Units, languages and look**. Then:
 
-1. **System → Sources → Add a source** for every heat pump, boiler, air conditioner or heater.
-2. **Rooms → Add a room**: give it a name and a Home Assistant area — Klimo finds the radiator
-   valves, thermometers and window contacts in that area and offers them.
+1. **System → Sources → Add a source** for every heat pump, boiler, air conditioner or heater, with
+   its gas or electricity meter if you have one.
+2. **Rooms → Add a room**: give it a name and a Home Assistant area — Klimo offers the radiator
+   valves, thermometers and window contacts of that area, and one search box finds anything else.
+   The radiator and floor circuits are set up once, with the first room that needs them.
 3. Check **Schedule** — which profile is in force when.
 
 Klimo needs Home Assistant 2025.10 or newer. After every start it watches for 20 seconds before it
@@ -95,7 +99,7 @@ telegram_bot_token: ""   # optional, from @BotFather
 
 | Concept | What it means |
 |---|---|
-| **Room** | A space with its own target, tolerance, sensors, windows and the things that heat or cool it. A room can also be monitor-only. |
+| **Room** | A space with its own target, tolerance, sensors, windows and the things that heat or cool it: radiators with smart heads, radiators with ordinary valves (the room then works as a room thermostat), a floor, an air conditioner, a heater. A room can also be monitor-only. |
 | **Sensors & aggregation** | Several thermometers per room become one value: median (default), average, weighted, coldest, warmest or the main sensor, with smoothing and outlier rejection. A sensor that stops reporting is left out; with no sensor at all Klimo falls back to the valves' own readings. |
 | **Tolerance** | How far below the target heating starts and how far above it stops. Target 20° with tolerance −0.2 / +0.2 starts heating at **19.8°** and stops at **20.2°**; a request lasts at least 5 min, so nothing switches for every tenth of a degree. |
 | **Windows** | A window open for 60 s pauses the room (or switches it to Eco, lowers the target, or only notifies); 2 min after closing it resumes. Without a contact sensor a fast temperature drop counts as an open window. |
@@ -107,6 +111,7 @@ telegram_bot_token: ""   # optional, from @BotFather
 | **Season** | Heating, between seasons or cooling, from the 3-day average outdoor temperature (below 15° heating, above 22° cooling), with hysteresis, a minimum dwell and month limits. Or set the house mode by hand. |
 | **Triggers & actions** | A trigger is a live condition over Home Assistant (grid offline, solar power, night tariff, frost, battery low…). An action changes the rules while a trigger holds: allow or forbid sources, shift targets, pre-heat to the next schedule slot, run pumps only on demand. |
 | **Energy budget** | During a blackout the electric sources share a power budget (4 kW by default): they start one by one, the least important is shed first, and below 20 % battery only frost protection runs. |
+| **Meters & consumption** | A source can have a gas, an electricity and a heat meter. Klimo reads their long-term statistics from Home Assistant and shows what the source used per hour, day or month, what it cost, the gas per degree-day and the COP — it stores no readings of its own. |
 
 ## Tour
 
@@ -114,26 +119,35 @@ telegram_bot_token: ""   # optional, from @BotFather
 
 ![Overview](docs/screenshots/overview.png)
 
-The house at a glance: how many rooms heat or cool, which source leads and since when, the pumps,
-outdoor and energy tiles, and the house profile with a **Change profile** button that previews what
-will happen before you apply it — which rooms stop heating, where the target drops. **Needs
-attention** lists what is wrong with one-tap fixes — open the room, ignore for 30 min, exclude a
-sensor from the calculation, go to the device. Room cards show the temperature, trend, target with
-its source ("Home until 23:00"), humidity, windows and a sparkline; a card only shows the state, so
-a stray tap changes nothing. **Today** draws the house profile, every source, pump and trigger on one
-24-hour strip.
+The house at a glance: how many rooms heat or cool, which source leads and since when, the pumps, the
+outdoor temperature, the energy tile with today's gas, electricity and cost, and the house profile —
+**By schedule** or **Manual** (the schedule paused), with a **Change profile** button that previews
+what will happen before you apply it: which rooms stop heating, where the target drops. **Needs
+attention** lists what is wrong with one-tap fixes, naming the device — open the room, ignore for
+30 min, exclude a sensor from the calculation, go to the device. Room cards show the temperature,
+trend, target with its source ("Home until 23:00", "Manually 20.5° · until 20:30"), humidity, windows
+and a sparkline, and filter by what heats, needs attention or is under manual control; a card only
+shows the state, so a stray tap changes nothing. **Today** draws the house profile, every source, pump
+and trigger on one 24-hour strip.
 
 ### A room
 
 ![Room](docs/screenshots/room.png)
 
 The room page answers "why": **Why it heats** spells out the comparison with the tolerance band, which
-source works and an estimate of when the target is reached. Next to the target, **Schedule | Manual |
-Off** says how the room is controlled; under manual control the line reads "Manual since 19:40 · not
-changed by the schedule" with **Resume schedule** beside it. The target editor sends three seconds
-after the last tap and offers an undo for eight more; +1° for 30 min and **Air for 10 min** are one tap
-away. The **Today** chart overlays the temperature with the target band, the heating periods and the
-scheduled targets ahead.
+source works and an estimate of when the target is reached. Under the target,
+**By schedule | Manual | Off** says how the room is controlled (see [Manual control](#manual-control)).
+The target editor sends three seconds after the last tap and offers an undo for eight more; +1° for
+30 min and **Air for 10 min** are one tap away. The **Today** chart overlays the temperature with the
+target band, the heating periods and the scheduled targets ahead.
+
+![Room and devices](docs/screenshots/room-edit.png)
+
+**Room and devices** (the **Edit room** button) changes the room after it is created: its name and
+area, what heats or cools it, and every device — add one from a search over all of Home Assistant,
+replace it or remove it. A removed radiator head gets its own sensor, a 20° target and an unlocked
+keypad back; a room that leaves the floor gives up its place on the floor pump. Every change is in the
+journal.
 
 The rest of the page is the room's configuration — what heats and cools it and how (an air
 conditioner can top up the radiators when the room lacks more than 1.5°), the radiator valves with
@@ -152,10 +166,13 @@ reverted, or saves into the profile — your choice.
 
 ![Add-room wizard](docs/screenshots/add-room.png)
 
-Four steps: the name, the Home Assistant area and what heats or cools the room; the devices found in
-the area (radiator valves with their capabilities, thermometers, windows), with **Find another device**
-for the rest; how to control it (how the sensors are combined, the tolerance, the window reaction, how
-the valves are driven); and a final check. Targets come from the profiles. A device that already
+Four steps: the name, the Home Assistant area and what heats or cools the room; the devices; how to
+control it (how the sensors are combined, the tolerance, the window reaction, how the valves are
+driven); and a final check. On the devices step the area's radiator valves, thermometers and windows
+are already there, and one search box finds any other device — the area first — and adds it in the
+role it fits. When a device could be two things (a plug: a heater or a floor zone valve) it asks; a
+relay a source already switches is shown but cannot be added. A room with radiators or a floor joins
+the house circuit, which the first such room sets up. Targets come from the profiles; a device that
 belongs to another room is marked and can be moved here.
 
 ### Schedule & profiles
@@ -186,7 +203,12 @@ conditions** replay the same plant under other conditions as a what-if, without 
 ![Circuits and pumps](docs/screenshots/circuits.png)
 
 **Why it is so** lists the reasons behind the current choice (season, which source leads, the weather
-curve, bivalence). Each circuit shows what feeds it, how it runs, its pumps and run-on, and the rooms on it.
+curve, bivalence). **Circuits & pumps** are the house's heating loops: each card shows what feeds the
+circuit, when its pump runs, the run-on and the rooms on it. A floor runs as a whole with its source —
+the familiar "floor pump with the boiler, 10 more minutes after" — or by zones with a valve in each
+room; the radiator pump runs while a room asks or with the source. A room with ordinary valves starts
+the source and the pump by its own temperature. Rooms are added and taken off right on the card, and a
+house that 0.1.0 set up with a circuit per room merges them into one.
 
 ### Sources
 
@@ -195,9 +217,22 @@ curve, bivalence). Each circuit shows what feeds it, how it runs, its pumps and 
 Every source with its live state: what it can do (heat, cool, dry, fan), how Klimo controls it and
 how it knows the source really runs, the weather curve of the flow temperature, the circuits it
 delivers to, guards (minimum run and pause, defrosting is not a fault, failover after 5 min without
-confirmation), when it may run, its energy and its notifications. **Test for 2 min** starts it on the
-spot and reports whether it confirmed; **Off for a while…** locks it out. Three identical air
-conditioners can be linked to one template and keep only the differences.
+confirmation), when it may run, its energy and its notifications. Every Home Assistant entity it uses
+has an «i» that says what it is for, what to pick and what happens if it stays empty. **Test for
+2 min** starts it on the spot and reports whether it confirmed; **Off for a while…** locks it out.
+Three identical air conditioners can be linked to one template and keep only the differences.
+
+### Consumption
+
+![Consumption of the heat pump](docs/screenshots/consumption.png)
+
+Bind a gas, an electricity or a heat meter to a source and its page shows what it used: the hours of a
+day, the days of a week or a month, the months of a year, with the outdoor temperature and the running
+time under the bars, and for a day or a week every run with what it used. The tiles add the change
+against the period before, the cost, the gas or energy per degree-day (the weather taken out) and the
+boiler's efficiency or the heat pump's COP. Klimo reads the meters' long-term statistics from Home
+Assistant and stores nothing itself, so a meter bound today shows its whole recorded past. Prices are
+set in **Settings → Energy prices**, and the overview's energy tile adds up today.
 
 ### Strategy & triggers
 
@@ -242,7 +277,10 @@ message will look on the phone and in Telegram.
 
 Every Zigbee device and climate source Klimo uses, with its room, model, state, battery, signal and
 last report. **What to do** collects the devices that need a hand — a sensor that dropped off, a
-valve on a weak signal, a battery running low with an estimate of how long it lasts.
+valve on a weak signal, a battery running low with an estimate of how long it lasts. The page is live:
+a device that comes back shows as back within a second or so, without a reload. With MQTT, link
+quality, battery and last seen come straight from Zigbee2MQTT; a signal nobody reports is a quiet «—»,
+not a weak one.
 
 ### Settings
 
@@ -250,8 +288,9 @@ valve on a weak signal, a battery running low with an estimate of how long it la
 
 The outdoor sensors (one or several, combined like a room's — the coldest suits one the sun reaches)
 and the weather entity, units (°C or °F, Klimo counts in °C inside), the language of
-notifications and cards, the panel language and colour scheme, how long a target set in Home
-Assistant lasts, defaults for new rooms, the MQTT and Home Assistant status, the dashboard cards, and
+notifications and cards, the panel language for everyone and for this browser, the colour scheme, how
+long a target set in Home Assistant lasts, defaults for new rooms, energy prices, the MQTT and Home
+Assistant status with examples for controlling rooms from your automations, the dashboard cards, and
 backup and restore of the whole configuration as one file.
 
 ### Phone and languages
@@ -260,7 +299,10 @@ The UI is built for the phone first — this is the overview and a room in the c
 
 <img src="docs/screenshots/overview-mobile.png" width="320" alt="Overview on a phone" /> <img src="docs/screenshots/room-mobile.png" width="320" alt="A room on a phone" />
 
-And the same house in Ukrainian:
+The panel picks its language in this order: the choice made in this browser, the **panel language for
+everyone** (Settings), the Home Assistant user's language, the browser's. Notifications, the cards and
+the entity names have a language of their own, English on a new install. The same house in
+Ukrainian:
 
 ![Overview in Ukrainian](docs/screenshots/overview-uk.png)
 
@@ -330,16 +372,20 @@ sensors by their attributes, so renamed entity ids keep working. Every card has 
 
 ## Manual control
 
+<img src="docs/screenshots/manual-control.png" width="640" alt="The house schedule paused and a room under manual control, on a phone" />
+
 | Mode | What it means |
 |---|---|
-| **Schedule** | The room follows its profiles and schedules; a change for an hour or until the next slot ends by itself. |
+| **By schedule** | The room follows its profiles and schedules; a change for an hour or until the next slot ends by itself. |
 | **Manual** | The room holds its own target with no end — the schedule, house profile changes and presence leave it alone. −/+ change the value without asking how long. |
 | **Off** | The room is off until you switch it back; frost protection stays. |
 
-An open window still pauses a manual room, and frost protection acts in every mode. The house profile
-tile pauses the whole house schedule on the current profile, and **Resume schedule for the whole house**
-ends the house change and every room's manual or temporary change — rooms switched off stay off.
-Manual control survives restarts, and the journal says who switched what.
+An open window still pauses a manual room, and frost protection acts in every mode. Under manual
+control the room reads "Manual since 19:22 · not changed by the schedule", with **Resume schedule**
+beside it. The house profile tile pauses the whole house schedule on the current profile (**Manual**),
+and **Resume schedule for the whole house** ends the house change and every room's manual or temporary
+change — rooms switched off stay off. Manual control survives restarts, the thermostat card switches it
+too, and the journal says who switched what.
 
 From Home Assistant (an add-on cannot add services, so these do it):
 
@@ -431,6 +477,8 @@ Each event has a severity. Critical ones (a source that does not respond, frost 
 offline, a critically low battery during a blackout) always reach the primary phone, ignore quiet
 hours, repeat every 30 min until acknowledged and escalate to a second target after 10 min. The rest
 waits for the end of quiet hours (23:00–07:00, with a morning digest) and similar messages are grouped.
+Every message names the device and where it is — "Bedroom · Dresser: offline 20 min", with the entity id
+when two devices share a name — and a grouped message or the digest gives each device its own line.
 Messages are written in the notification language you pick in Settings, whatever the browser says.
 
 ## Reliability and fail-safe
@@ -493,7 +541,8 @@ cd klimo/frontend && npm install && npm run dev
 
 The **simulator** (`KLIMO_SIMULATE=1`, which `npm run dev:sim` sets) replaces Home Assistant with an
 in-process fake that has a thermal model of a seven-room house: a heat pump, a gas boiler, three air
-conditioners, a convector, two Zigbee2MQTT networks, an inverter and a family calendar. It also
+conditioners, a convector, two Zigbee2MQTT networks, an inverter, two outdoor sensors, gas, electricity
+and heat meters with two months of statistics, and a family calendar. It also
 serves the built panel from `klimo/frontend/dist` on port 8099. **Settings → Simulator** changes the
 speed, the scenario, the outdoor temperature, opens windows and injects device faults.
 
@@ -602,6 +651,20 @@ and answer late; Klimo retries three times before it warns.
 Another writer — usually an old automation. The **Changed by something else** warning names the entity
 and whether the change came from an automation or a person; see
 [Migrating from automations](#migrating-from-automations).
+
+### The consumption chart is empty
+
+Home Assistant keeps long-term statistics only for a sensor with a state class. Check the meter in
+Developer Tools → States: a counter needs `state_class: total_increasing` (or `total`), a power sensor
+`measurement`, and a unit Klimo knows — m³, ft³, L, kWh or MJ for gas, kWh, W or kW for electricity.
+Set a missing state class in its integration or with `homeassistant: customize:`; the chart fills from
+then on.
+
+### "permission denied" in Klimo's log
+
+The host's AppArmor profile refused a file Klimo tried to open. The host log (Settings → System → Logs,
+source **Host**) names the path in an `apparmor="DENIED"` line — please report it; see
+[Security](klimo/DOCS.md#security).
 
 ## License
 
