@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { ACTOR, MIN, SEC, WED_1910, det, kyiv, FakeClock, openNotify } = require('./notify-harness');
-const { DEFAULT_ROOM, DEFAULT_SENSOR } = require('../dist/shared/defaults');
+const { DEFAULT_ROOM, DEFAULT_SENSOR, DEFAULT_TRIGGER } = require('../dist/shared/defaults');
 const m = require('../dist/notify/messages');
 
 const TZ = 'Europe/Kyiv';
@@ -292,4 +292,81 @@ test('room chips name the silent sensor and the open window', () => {
   const win = { code: 'window_long', params: { since: WED_1910 - 25 * MIN, entityId: 'binary_sensor.kitchen_window_contact', more: 0 } };
   assert.equal(m.renderIssue(win, uk), 'Вікно біля плити: відкрито 25 хв');
   assert.equal(m.renderIssue({ code: 'trv_retry', params: { attempt: 2, of: 3, deviceId: 'climate.bathroom_towel_trv' } }, uk), 'Рушникосушка: ціль не підтверджено · повтор 2/3');
+});
+
+test('two outdoor sensors with the same name are told apart by their entity ids, also when they are back', async () => {
+  const h = await openNotify();
+  try {
+    await h.settings({ grouping: { enabled: false, windowMin: 2 } });
+    const ids = ['sensor.north_wall_temperature', 'sensor.south_wall_temperature'];
+    const settings = h.config.singleton('settings');
+    await h.config.patchSingleton('settings', { outdoor: { ...settings.outdoor, sensorEntityIds: ids } }, ACTOR);
+    for (const [k, id] of ids.entries()) h.ha.set(id, 'unavailable', { friendly_name: 'Wall' }, { changedAgoMs: (20 + k * 5) * MIN });
+    const gone = (id, minutes) => det('entity_unavailable', `entity_unavailable:${id}`, { roomId: null, entityId: id, deviceKey: `entity:${id}`, facts: { entityId: id, name: '', minutes, outdoor: true } });
+    await h.tick([gone(ids[0], 20), gone(ids[1], 25)]);
+    const titles = (await h.log()).map((x) => x.title).sort();
+    assert.deepEqual(titles, ids.map((id) => `Надворі · Wall (${id}): недоступно`).sort());
+    const resolved = h.incidents.list({ scope: 'all' }).map((i) => h.texts.resolved(h.incidents.snapshot(i.id) ?? i));
+    assert.notEqual(resolved[0], resolved[1]);
+  } finally {
+    await h.close();
+  }
+});
+
+test('a sensor without a name of its own is named from Home Assistant, never «Office · Office ·»', async () => {
+  const h = await openNotify();
+  try {
+    const { room, ids } = await office(h, ['', '']);
+    await h.settings({ grouping: { enabled: false, windowMin: 2 } });
+    h.ha.set(ids[0], '20.1', { unit_of_measurement: '°C', friendly_name: 'Desk thermometer' }, { reportedAgoMs: 100 * MIN });
+    h.ha.set(ids[1], '20.1', { unit_of_measurement: '°C', friendly_name: 'Shelf thermometer' }, { reportedAgoMs: 140 * MIN });
+    await h.tick(h.watch.watchDetections(h.clock.now()));
+    const titles = (await h.log()).map((x) => x.title).sort();
+    assert.deepEqual(titles, ['Office · Desk thermometer: не на зв’язку', 'Office · Shelf thermometer: не на зв’язку']);
+    assert.ok(h.watch.rules().filter((r) => ids.includes(r.entityId)).every((r) => r.name === 'Office'), 'no rule named «Office · »');
+  } finally {
+    await h.close();
+  }
+});
+
+test('two Zigbee2MQTT instances offline: each message and its recovery name the instance', async () => {
+  const h = await openNotify();
+  try {
+    await h.settings({ grouping: { enabled: false, windowMin: 2 } });
+    const out = [];
+    for (const [k, name] of ['Будинок', 'Z2M гараж'].entries()) {
+      const z = await h.config.create('z2m', { name, baseTopic: `zigbee2mqtt${k}`, frontendUrl: null, bridgeEntityId: `binary_sensor.z2m_${k}_bridge`, resendOnRestart: true }, ACTOR);
+      out.push(det('z2m_offline', `z2m_offline:${z.id}`, { entityId: `binary_sensor.z2m_${k}_bridge`, facts: { instanceId: z.id, name, since: WED_1910 - (k + 2) * MIN } }));
+    }
+    await h.tick(out);
+    const titles = (await h.log()).map((x) => x.title).sort();
+    assert.deepEqual(titles, ['Z2M гараж не на зв’язку', 'Zigbee2MQTT «Будинок» не на зв’язку']);
+    const incs = h.incidents.list({ scope: 'all' });
+    assert.deepEqual(incs.map((i) => h.texts.resolved(h.incidents.snapshot(i.id) ?? i)).sort(), [
+      'Z2M гараж повернувся — команди надіслано знову',
+      'Zigbee2MQTT «Будинок» повернувся — команди надіслано знову',
+    ]);
+    await language(h, 'en');
+    assert.deepEqual(incs.map((i) => h.texts.incident(h.incidents.snapshot(i.id)).title).sort(), ['Z2M гараж offline', 'Zigbee2MQTT «Будинок» offline']);
+  } finally {
+    await h.close();
+  }
+});
+
+test('two inputs of one trigger: named from Home Assistant, the same names told apart by their ids', async () => {
+  const h = await openNotify();
+  try {
+    await h.settings({ grouping: { enabled: false, windowMin: 2 } });
+    const ids = ['binary_sensor.grid_phase_a', 'binary_sensor.grid_phase_b'];
+    await h.config.create('triggers', { ...DEFAULT_TRIGGER(), name: 'Блекаут', condition: { op: 'any', items: ids.map((entityId) => ({ op: 'state', entityId, equals: ['on'] })) } }, ACTOR);
+    for (const id of ids) h.ha.set(id, 'unavailable', { friendly_name: 'Voltage' }, { changedAgoMs: 6 * MIN });
+    // what device health raises: no Klimo name of its own (the trigger's name is not the input's)
+    const gone = (id) => det('entity_unavailable', `entity_unavailable:${id}`, { roomId: null, entityId: id, deviceKey: `entity:${id}`, facts: { entityId: id, name: '', minutes: 6 } });
+    await h.tick(ids.map(gone));
+    const msgs = await h.log();
+    assert.deepEqual(msgs.map((x) => x.title).sort(), ids.map((id) => `Voltage (${id}): недоступно`).sort());
+    assert.ok(msgs.every((x) => x.body.includes('Тригер «Блекаут»')), msgs.map((x) => x.body).join(' / '));
+  } finally {
+    await h.close();
+  }
 });

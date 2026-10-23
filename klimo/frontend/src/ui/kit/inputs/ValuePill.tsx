@@ -29,6 +29,14 @@ const isSelect = (p: ValuePillProps): p is SelectPillProps => p.editor?.kind ===
 const isNumber = (p: ValuePillProps): p is NumberPillProps => p.editor?.kind === 'number';
 const isRange = (p: ValuePillProps): p is RangePillProps => p.editor?.kind === 'time_range';
 
+/** «3.5°», «66%», «90 min»: as many decimals as the step has, so 3.0 → 3.5 does not read «3 → 3.5». */
+function numberText(value: number, step: number, unit?: string): string {
+  const decimals = Number.isInteger(step) ? 0 : (String(step).split('.')[1]?.length ?? 1);
+  const n = value.toFixed(decimals).replace(/^-/, '−');
+  if (!unit) return n;
+  return unit === '°' || unit === '%' ? `${n}${unit}` : `${n} ${unit}`;
+}
+
 /**
  * A setting's current value as a pill. With an editor it opens in place: a menu of options, a
  * stepper or a time range; changes apply immediately (the page autosaves).
@@ -62,7 +70,7 @@ function EditorPill({ pill, name }: { pill: NumberPillProps | RangePillProps; na
           <Stepper
             variant="square"
             value={pill.value}
-            text={pill.editor.unit ? `${pill.value} ${pill.editor.unit}` : String(pill.value)}
+            text={numberText(pill.value, pill.editor.step, pill.editor.unit)}
             min={pill.editor.min}
             max={pill.editor.max}
             step={pill.editor.step}

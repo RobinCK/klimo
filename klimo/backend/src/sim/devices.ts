@@ -386,7 +386,14 @@ function buildDevices(): DeviceSpec[] {
       zigbee: null,
       integration: 'esphome',
       binding: { kind: 'gas_meter' },
-      entities: [ent('sensor.gas_meter', 'gas_consumption', 'gas_meter', null, '0', { ...counter('m³', 'gas'), icon: 'mdi:meter-gas' })],
+      entities: [
+        ent('sensor.gas_meter', 'gas_consumption', 'gas_meter', null, '0', { ...counter('m³', 'gas'), icon: 'mdi:meter-gas' }),
+        // the same count the way other installs report it: in cubic feet, as energy, and as a template
+        // sensor without a state class (HA keeps no statistics for it)
+        ent('sensor.gas_meter_ft3', 'gas_ft3', 'gas_meter', 'Газ, фут³', '0', { ...counter('ft³', 'gas'), icon: 'mdi:meter-gas' }),
+        ent('sensor.gas_meter_energy', 'gas_energy', 'gas_meter', 'Енергія газу', '0', { ...counter('kWh', 'gas'), icon: 'mdi:meter-gas' }),
+        ent('sensor.gas_meter_template', 'gas_template', 'gas_meter', 'Показник газу (шаблон)', '0', { device_class: 'gas', unit_of_measurement: 'm³', icon: 'mdi:meter-gas' }),
+      ],
     },
     ac('living_ac', 'living', 'Кондиціонер у вітальні'),
     ac('bedroom_ac', 'bedroom', 'Кондиціонер у спальні'),

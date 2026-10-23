@@ -290,3 +290,22 @@ test('«Повторити зараз» re-sends what the engine wants for the d
     assert.deepEqual(s.engine.resent, [{ deviceKey: 'dev_towel' }]);
     assert.throws(() => s.devices.resend('nope', ACTOR), (e) => e.code === 'not_found');
   }));
+
+test('two inputs of one trigger are named from Home Assistant, not both after the trigger', () =>
+  withHouse(async (s) => {
+    const ids = ['binary_sensor.grid_offline', 'binary_sensor.grid_phase_b'];
+    await s.config.create(
+      'triggers',
+      { name: 'Блекаут', enabled: true, condition: { op: 'any', items: ids.map((entityId) => ({ op: 'state', entityId, equals: ['on'] })) } },
+      ACTOR,
+    );
+    s.ha.set(ids[0], 'unavailable', { friendly_name: 'Мережа' }, { changedAgoMs: 60 * MIN });
+    s.ha.set(ids[1], 'unavailable', { friendly_name: 'Фаза B' }, { changedAgoMs: 60 * MIN });
+    const d = byKey(s.devices.detect(s.clock.now()));
+    const facts = ids.map((id) => d[`entity_unavailable:${id}`]?.facts);
+    assert.ok(facts.every(Boolean), 'both inputs are unavailable');
+    // the trigger's name would make both alerts read «Блекаут: недоступно»
+    assert.deepEqual(facts.map((f) => f.name), ['', '']);
+    const rows = s.devices.list().devices.filter((x) => ids.includes(x.primary?.entityId ?? x.entityIds[0]));
+    assert.deepEqual(rows.map((x) => x.name).sort(), ['Мережа', 'Фаза B']);
+  }));

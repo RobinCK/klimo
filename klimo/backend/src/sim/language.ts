@@ -53,6 +53,9 @@ const EN: Record<string, string> = {
   'Стан з’єднання': 'Connection state',
   'Спожита енергія': 'Energy consumed',
   'Вироблене тепло': 'Heat produced',
+  'Газ, фут³': 'Gas, ft³',
+  'Енергія газу': 'Gas energy',
+  'Показник газу (шаблон)': 'Gas reading (template)',
 
   // devices, sensors and their places in the rooms
   'Радіатор під вікном': 'Radiator under the window',

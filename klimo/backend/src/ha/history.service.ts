@@ -158,13 +158,14 @@ export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, 
   private cached<T>(key: string, ttl: number, load: () => Promise<T>): Promise<T> {
     const now = this.clock.now();
     const hit = this.cache.get(key);
-    if (hit && now - hit.at < hit.ttl) return hit.value as Promise<T>;
+    // an answer from a later time is stale too: the simulator's clock travels back to another scenario
+    if (hit && hit.at <= now && now - hit.at < hit.ttl) return hit.value as Promise<T>;
     const value = load();
     this.cache.set(key, { at: now, ttl, value });
     value.catch(() => {
       if (this.cache.get(key)?.value === value) this.cache.delete(key);
     });
-    if (this.cache.size > 256) for (const [k, v] of this.cache) if (now - v.at >= v.ttl) this.cache.delete(k);
+    if (this.cache.size > 256) for (const [k, v] of this.cache) if (v.at > now || now - v.at >= v.ttl) this.cache.delete(k);
     return value;
   }
 

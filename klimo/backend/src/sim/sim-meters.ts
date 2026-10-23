@@ -16,6 +16,13 @@ export const GAS_METER = 'sensor.gas_meter';
 export const HP_ENERGY_METER = 'sensor.heat_pump_energy';
 export const HP_HEAT_METER = 'sensor.heat_pump_heat_energy';
 
+/** The gas counter as other installs report it; the template copy has no state class, so no statistics. */
+export const GAS_METER_MIRRORS: readonly { entityId: EntityId; perM3: number; statistics: boolean }[] = [
+  { entityId: 'sensor.gas_meter_ft3', perM3: 35.3147, statistics: true },
+  { entityId: 'sensor.gas_meter_energy', perM3: DEFAULT_GAS_KWH_PER_M3, statistics: true },
+  { entityId: 'sensor.gas_meter_template', perM3: 1, statistics: false },
+];
+
 /** A condensing boiler turns this share of the gas energy into heat. */
 export const BOILER_EFFICIENCY = 0.92;
 export const BOILER_MIN_KW = 3.5;

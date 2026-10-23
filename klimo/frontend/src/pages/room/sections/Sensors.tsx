@@ -176,7 +176,8 @@ function Body(p: SectionProps) {
                 weightText={s.id === mainId ? t('main') : showWeight ? t('weight {w}', { w: fmtNum(s.weight, 1) }) : undefined}
                 valueText={fmtTemp(r?.smoothedC ?? r?.rawC ?? null)}
                 excluded={!counted}
-                meta={sensorMeta(p, s, r)}
+                // the phone row has no room for the tag, so the main sensor says it in its line
+                meta={p.phone && s.id === mainId ? [aggregationLabel('primary'), sensorMeta(p, s, r)].filter(Boolean).join(' · ') : sensorMeta(p, s, r)}
                 note={note.note}
                 noteTone={note.tone}
                 onEdit={p.canEdit ? () => openDialog(`edit-sensor:${s.id}`) : undefined}

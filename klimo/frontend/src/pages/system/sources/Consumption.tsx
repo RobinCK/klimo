@@ -48,7 +48,9 @@ import type { SystemData } from '../shared';
 import {
   bucketLabels,
   changeText,
+  copHint,
   degreeDayHint,
+  efficiencyHint,
   firstKind,
   hasPrice,
   kindLabel,
@@ -306,7 +308,7 @@ function ConsumptionBody({
             title={t('Per degree-day')}
             value={fmtAmount(perHdd, unit)}
             sub={t('{hdd} degree-days · outdoor {t}', { hdd: fmtNum(tot.hdd ?? 0, 0), t: fmtTemp(tot.outdoorAvgC) })}
-            hint={degreeDayHint(fmtTemp(data.hddBaseC, { decimals: 0 }))}
+            hint={degreeDayHint(fmtTemp(data.hddBaseC, { decimals: 0 }), kindLabel(kind))}
           />
         ) : null}
         <StatTile variant="well" title={t('Running time')} value={fmtDur(tot.runtimeMin)} sub={t('{count} cycles', { count: tot.runs })} />
@@ -315,6 +317,7 @@ function ConsumptionBody({
             variant="well"
             title={t('Efficiency')}
             value={fmtPct(tot.efficiency * 100)}
+            hint={efficiencyHint()}
             sub={t('{heat} of heat from {used}', { heat: fmtAmount(tot.heat, data.units.heat), used: fmtAmount(tot.gas, data.units.gas) })}
           />
         ) : tot.cop != null ? (
@@ -322,6 +325,7 @@ function ConsumptionBody({
             variant="well"
             title={t('COP')}
             value={fmtNum(tot.cop, 1)}
+            hint={copHint()}
             sub={t('{heat} of heat from {used}', { heat: fmtAmount(tot.heat, data.units.heat), used: fmtAmount(tot.electricity, data.units.electricity) })}
           />
         ) : null}
@@ -504,6 +508,8 @@ function MeterDialog({ kind, value, onClose, onPick }: { kind: MeterKind; value:
       title={meterLabel(kind)}
       size="md"
       actions={[
+        // the picker opens focused, so its own clear button stays hidden: unbinding needs a way of its own
+        ...(value ? [{ label: t('Remove'), icon: 'trash' as const, onClick: () => onPick(null), variant: 'danger' as const }] : []),
         { label: t('Cancel'), onClick: onClose, variant: 'secondary' },
         { label: t('Use it'), onClick: use },
       ]}

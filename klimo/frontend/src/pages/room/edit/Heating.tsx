@@ -18,7 +18,6 @@ import {
   Text,
   TextField,
   ToggleCard,
-  toast,
 } from '@ui';
 import { brand } from '@brand';
 import { circuitModeWords, fmtDur, fmtTemp, HEATING_KIND_ICON, HEATING_KIND_ORDER, heatingKindWords, t } from '@i18n';
@@ -179,6 +178,8 @@ export function HeatingKinds({ p, edit, circuits, write }: { p: SectionProps; ed
   const product = brand.productName;
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [floorChoice, setFloorChoice] = useState<Id | null>(null);
+  // the refused card, so the reason stands under the cards rather than in a passing toast
+  const [refused, setRefused] = useState<RoomHeatingKind | null>(null);
   const release = fmtTemp(room.config.trv.releaseSetpointC);
   const heads = h.bindings.filter((b) => b.role === 'trv');
   const radiatorCircuit = circuits.byId(h.radiators?.circuit?.id);
@@ -201,10 +202,8 @@ export function HeatingKinds({ p, edit, circuits, write }: { p: SectionProps; ed
     const on = kinds.includes(k);
     // the last kind of a controlled room cannot go: something has to answer for its temperature
     const last = on && kinds.length === 1 && k !== 'trv' && room.config.controlEnabled;
-    if (last) {
-      toast({ tone: 'warn', message: t('Something has to heat or cool the room. Tick what replaces it first, or let the room only be watched («{product} controls this room» below).', { product }) });
-      return;
-    }
+    setRefused(last ? k : null);
+    if (last) return;
     const plainWords = heatingKindWords('radiator_plain', product);
     switch (k) {
       case 'trv':
@@ -291,6 +290,12 @@ export function HeatingKinds({ p, edit, circuits, write }: { p: SectionProps; ed
           })}
         </AutoGrid>
       </Section>
+      {refused && kinds.length === 1 && kinds.includes(refused) ? (
+        <StatusBanner
+          tone="warn"
+          text={t('Something has to heat or cool the room. Tick what replaces it first, or let the room only be watched («{product} controls this room» below).', { product })}
+        />
+      ) : null}
       {!kinds.length && room.config.controlEnabled ? <StatusBanner tone="warn" text={t('Nothing heats or cools this room yet — tick what it has.')} /> : null}
       {kinds.includes('radiator_plain') && h.temperature === 'none' ? (
         <StatusBanner tone="warn" text={t('Ordinary radiators follow the room temperature — add a temperature sensor below.')} />

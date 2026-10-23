@@ -277,3 +277,19 @@ test('outdoor: no statistics → hourly means from the weather entity history', 
   assert.equal(o.avgC, 5);
   assert.ok(o.series.length >= 24);
 });
+
+test('cache: a clock set back (the simulator travelling to another season) never serves the answers of the later time', async () => {
+  const { ha, history, clock } = setup();
+  const from = Date.UTC(2026, 0, 15, 19, 0);
+  const q = { ids: ['sensor.gas_meter'], from, to: from + 3 * HOUR, period: 'hour', types: ['sum'] };
+  let world = 'october';
+  ha.statisticsFn = () => ({ 'sensor.gas_meter': [{ start: from + 2 * HOUR, sum: world === 'october' ? 320.55 : 1059.63 }] });
+  assert.equal((await history.statistics(q))[0].points[0].sum, 320.55);
+  // a scenario in January replaces the recorder: the same question must reach it again
+  clock.t = Date.UTC(2026, 0, 15, 5, 20);
+  world = 'january';
+  assert.equal((await history.statistics(q))[0].points[0].sum, 1059.63);
+  assert.equal(ha.statisticsCalls.length, 2);
+  await history.statistics(q);
+  assert.equal(ha.statisticsCalls.length, 2, 'cached again from then on');
+});

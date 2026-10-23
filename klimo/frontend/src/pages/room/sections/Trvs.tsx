@@ -4,6 +4,7 @@ import { api } from '@api/endpoints';
 import { useAutosave, useMutation } from '@data';
 import { Button, CheckboxRow, FallbackNote, RadioCardList, Row, Section, SegmentedControl, Stack, TrvCard, type Tone } from '@ui';
 import { brand } from '@brand';
+import { paths } from '@app';
 import { fmtAgo, fmtDelta, fmtPct, fmtTemp, fmtUntil, t, trvActivityLabel, trvManualPolicyLabel, trvStrategiesHint } from '@i18n';
 import { AddEntityDialog } from '../AddEntityDialog';
 import { closeDialog, openDialog, useOpenDialog } from '../dialogs';
@@ -176,6 +177,14 @@ function Body(p: SectionProps) {
               </Stack>
             );
           })}
+          {/* replacing or removing a head hands it back first, which «Room and devices» explains */}
+          {p.canEdit ? (
+            <Row>
+              <Button variant="link" size="sm" icon="pencil" to={paths.roomSettings(id, 'setup')}>
+                {t('Replace or remove a valve')}
+              </Button>
+            </Row>
+          ) : null}
         </Stack>
       ) : (
         <FallbackNote icon="radiator" text={t('No radiator valves in this room yet.')} />
@@ -310,7 +319,8 @@ export const trvsSection: SectionDef = {
   subtitle: (p) =>
     trvsOf(p).some((d) => d.transport.type === 'z2m') ? t('Zigbee via Zigbee2MQTT · commands arrive with a delay, so every target is confirmed') : undefined,
   summary,
-  hidden: (p) => !trvsOf(p).length && !p.room.emitters.some((e) => e.kind === 'radiator' || e.kind === 'towel_rail'),
+  // radiators with ordinary valves have no head to set up here
+  hidden: (p) => !trvsOf(p).length && !p.room.heating.kinds.includes('trv'),
   action: (p) =>
     p.canEdit && p.room.emitters.some((e) => e.kind === 'radiator' || e.kind === 'towel_rail') ? (
       <Button variant="secondary" size="sm" icon="plus" onClick={() => openDialog('add-trv')}>

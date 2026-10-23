@@ -614,6 +614,15 @@ function flowCircuitOf(t: Tick, s: SourceConfig): Circuit | null {
   return fed.find((c) => c.flowSafety) ?? fed[0] ?? null;
 }
 
+/**
+ * The pre-run goes through a loop the source is starting for, so the pump that will carry the heat
+ * starts first; a floor zone asking does not run the radiator pump. Without one, the flow-safety loop.
+ */
+function prerunCircuitOf(t: Tick, s: SourceConfig, want: Want | undefined): Circuit | null {
+  const asked = (t.idx.fedCircuits.get(s.id) ?? []).filter((c) => want?.circuitIds.has(c.id) && (t.idx.circuitPumps.get(c.id)?.length ?? 0) > 0);
+  return asked.find((c) => c.flowSafety) ?? asked[0] ?? flowCircuitOf(t, s);
+}
+
 const FORCE_RANK = ['flow_safety', 'source_hold', 'prerun', 'test'];
 
 /** Pumps: rules, run-on and forced flow; a second pass when a running source would otherwise dead-head. */
@@ -648,7 +657,7 @@ function pumpPhase(t: Tick, en: EnergyCtx, facts: CircuitFacts, sel: Selection, 
     const m = t.mem[s.id];
     const fed = idx.fedCircuits.get(s.id) ?? [];
     if (guards.held.has(s.id) && m.on) for (const c of fed) if (!isHeatCool(m.mode) || c.capabilities[m.mode]) force(c, 'source_hold', s.id);
-    if (guards.prerunning.has(s.id)) force(flowCircuitOf(t, s), 'prerun', s.id);
+    if (guards.prerunning.has(s.id)) force(prerunCircuitOf(t, s, plan.wants.get(s.id)), 'prerun', s.id);
     const test = plan.tests.get(s.id);
     const testMode = m.mode ?? test?.mode ?? null;
     if (test?.active && (m.on || guards.prerunning.has(s.id))) for (const c of fed) if (!isHeatCool(testMode) || c.capabilities[testMode]) force(c, 'test', s.id);

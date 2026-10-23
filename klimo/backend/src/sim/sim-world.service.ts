@@ -52,7 +52,7 @@ import { stream, type Rng } from './random';
 import { climateFor, SCENARIOS, scenarioStart, type Scenario } from './scenarios';
 import { buildSnapshot } from './snapshot';
 import { SimClock } from './sim.clock';
-import { type ArchivedSpan, GAS_METER, HP_ENERGY_METER, HP_HEAT_METER, meterValue, READINGS_AT_ARCHIVE_START, RunTracker, runningSources, SIMULATED_HISTORY, SimMeters } from './sim-meters';
+import { type ArchivedSpan, GAS_METER, GAS_METER_MIRRORS, HP_ENERGY_METER, HP_HEAT_METER, meterValue, READINGS_AT_ARCHIVE_START, RunTracker, runningSources, SIMULATED_HISTORY, SimMeters } from './sim-meters';
 import { advanceWorld, Environment, newWorld, relativeHumidity, trvLocalTemp, type Actuation, type World } from './thermal-model';
 
 /* =====================================================================================================
@@ -401,6 +401,9 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
     rec.importHours('sensor.outdoor_temperature', 'measurement', archive.outdoor);
     rec.importHours(SUNNY_WALL_ENTITY, 'measurement', archive.sunnyWall);
     rec.importHours(GAS_METER, 'meter', archive.gas);
+    for (const m of GAS_METER_MIRRORS) {
+      if (m.statistics) rec.importHours(m.entityId, 'meter', archive.gas.map((r) => ({ start: r.start, state: meterValue((r.state ?? 0) * m.perM3), sum: meterValue((r.sum ?? 0) * m.perM3) })));
+    }
     rec.importHours(HP_ENERGY_METER, 'meter', archive.hpEnergy);
     rec.importHours(HP_HEAT_METER, 'meter', archive.hpHeat);
     this.meters.reset(archive.end, from);
@@ -1030,6 +1033,7 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
       this.ha.report(entityId, value.toFixed(2), null, at);
     };
     report(GAS_METER, r.gasM3);
+    for (const m of GAS_METER_MIRRORS) report(m.entityId, r.gasM3 * m.perM3);
     report(HP_ENERGY_METER, r.hpKwh);
     report(HP_HEAT_METER, r.hpHeatKwh);
   }

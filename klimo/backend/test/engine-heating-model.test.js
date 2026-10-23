@@ -335,3 +335,40 @@ test('S3 zoned floor with a bypass: the zones of satisfied rooms stay shut even 
   assert.equal(boilerOn(r), true);
   assert.equal(zoneOpen(r, 'valve.zone_a') || zoneOpen(r, 'valve.zone_b'), false);
 });
+
+test('S3 next to radiators: a floor zone asking pre-runs the floor pump, the radiator pump stays off', () => {
+  // in the simulator the floor room's pre-run went through the radiator loop: its pump ran for a minute
+  // while no radiator room asked, and the floor pump only started with the boiler
+  const rooms = [room('r_liv'), room('r_a')];
+  const cfg = house({
+    rooms,
+    emitters: [
+      h.emitter('e_liv', 'r_liv', { kind: 'radiator', circuitId: 'c_rad', roles: { heat: 'primary', cool: null } }),
+      h.emitter('e_r_a', 'r_a', { kind: 'floor', circuitId: 'c_floor', roles: { heat: 'primary', cool: null } }),
+    ],
+    circuits: [
+      h.circuit('c_rad', ['s_boiler'], { kind: 'radiators', mode: 'zoned', flowSafety: true, order: 0 }),
+      h.circuit('c_floor', ['s_boiler'], { kind: 'floor', mode: 'zoned', bypass: false, order: 1 }),
+    ],
+    pumps: [h.pump('p_rad', 'c_rad', 'switch.rad_pump', { runOnHeatMin: 3 }), h.pump('p_floor', 'c_floor', 'switch.floor_pump', { runOnHeatMin: 10 })],
+    devices: { e_r_a: [zone('r_a', 'e_r_a', 'valve.zone_a')] },
+  });
+  const p = pipeline(cfg, { r_liv: 20.0, r_a: 20.0 });
+  let r = p.runFor(MIN);
+  assert.equal(boilerOn(r), false);
+
+  p.temps.r_a = 19.8;
+  r = p.tick();
+  assert.equal(boilerOn(r), false, 'the boiler waits for the pre-run');
+  assert.equal(zoneOpen(r, 'valve.zone_a'), true);
+  assert.equal(pumpOf(r, 'p_floor').on, true, 'the floor pump moves the water first');
+  assert.equal(pumpOf(r, 'p_floor').reason, 'prerun');
+  const pumpAt = p.st.now;
+  r = p.runFor(MIN);
+  assert.equal(boilerOn(r), true);
+  const fired = p.st.results.find((x) => boilerOn(x));
+  assert.ok(fired.memory.plant.updatedAt - pumpAt >= 20 * SEC, 'the boiler fires after the 20 s pre-run');
+  r = p.runFor(5 * MIN);
+  for (const x of p.st.results) assert.equal(pumpOf(x, 'p_rad').on, false, `radiator pump on at ${new Date(x.memory.plant.updatedAt).toISOString()}`);
+  assert.equal(p.st.states['switch.rad_pump'], 'off');
+});

@@ -9,7 +9,7 @@
 import type { HouseControlMode, HouseState, RoomSummary } from '@api/model';
 import { api } from '@api/endpoints';
 import { liveStore, useMutation } from '@data';
-import { Button, closeToast, Row, SegmentedControl, Stack, Text, toast, undoToast } from '@ui';
+import { Button, closeToast, InfoHint, Row, SegmentedControl, Stack, Text, toast, undoToast, type InfoHintContent } from '@ui';
 import { t, type CodeContext } from '@i18n';
 import { newReqId } from './reqId';
 
@@ -79,22 +79,38 @@ function offNote(hc: HouseControlView): string | null {
   return t('Rooms switched off stay off: {rooms}.', { rooms: hc.offRooms.map((r) => r.name).join(', ') });
 }
 
+/** What pausing the house does, and what the resume ends and leaves alone. */
+function houseModesHint(): InfoHintContent {
+  return {
+    bullets: [
+      `«${t('By schedule')}» — ${t('the house profile changes at the times the schedule sets.')}`,
+      `«${t('Manual')}» — ${t('the schedule is paused: the profile active now holds until the schedule is resumed. Open windows and frost protection still act.')}`,
+      t('«Resume schedule for the whole house» also ends every room’s own manual or temporary change; rooms switched off stay off.'),
+    ],
+  };
+}
+
 /** The toggle and the resume button; `full`: the toggle takes the whole width. */
 export function HouseControlBlock({ hc, full }: { hc: HouseControlView; full?: boolean }) {
   const note = offNote(hc);
   return (
     <Stack gap="xs">
-      <SegmentedControl<HouseControlMode>
-        value={hc.mode}
-        options={[
-          { value: 'schedule', label: t('By schedule') },
-          { value: 'manual', label: t('Manual') },
-        ]}
-        onChange={hc.set}
-        size="xs"
-        full={full}
-        ariaLabel={t('House schedule')}
-      />
+      <Row gap="xs" align="center">
+        <Row grow>
+          <SegmentedControl<HouseControlMode>
+            value={hc.mode}
+            options={[
+              { value: 'schedule', label: t('By schedule') },
+              { value: 'manual', label: t('Manual') },
+            ]}
+            onChange={hc.set}
+            size="xs"
+            full={full}
+            ariaLabel={t('House schedule')}
+          />
+        </Row>
+        <InfoHint content={houseModesHint()} subject={t('House schedule')} />
+      </Row>
       {hc.mode === 'manual' ? (
         <Text variant="caption">{t('«By schedule» resumes the whole house, the rooms’ own changes too.')}</Text>
       ) : hc.resumable ? (

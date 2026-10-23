@@ -1,6 +1,7 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { lazyRef } from '../common/refs';
+import { conditionEntities } from '../config/refs';
 import { sourceLabels } from '../config/source-labels';
 import type {
   CardTextKey,
@@ -22,6 +23,7 @@ import type {
   SourceAdapter,
   Trigger,
 } from '../shared/model';
+import { outdoorSensorIds } from '../shared/model';
 import { CLOCK, CONFIG_STORE, ENGINE, HA_PORT } from '../tokens';
 import {
   clock,
@@ -375,6 +377,10 @@ function boundEntities(cfg: EngineConfig, sourceNames: Map<string, string>): Map
   }
   for (const m of cfg.manifolds) for (const id of [m.supplySensorEntityId, m.returnSensorEntityId]) add(id, { name: m.name, roomId: null, role: 'circuit' });
   for (const id of Object.values(cfg.energy.entities)) add(id, { name: '', roomId: null, role: 'energy' });
+  // outdoor sensors and trigger inputs share one place each: two «Temperature» sensors outside, two
+  // «Voltage» inputs of a blackout trigger are told apart by their ids
+  for (const id of outdoorSensorIds(cfg.settings.outdoor)) add(id, { name: '', roomId: null, role: 'outdoor' });
+  for (const t of cfg.triggers) for (const id of conditionEntities(t.condition)) add(id, { name: '', roomId: null, role: 'trigger' });
   return out;
 }
 

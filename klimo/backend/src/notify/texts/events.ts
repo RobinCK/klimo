@@ -29,6 +29,12 @@ const has = (v: Vars, k: string) => v[k] !== undefined && v[k] !== null && v[k] 
 const cool = (v: Vars) => v.mode === 'cool';
 const outdoor = (v: Vars) => v.outdoor === true || v.role === 'outdoor';
 
+/** Which bridge, when there may be several: «Zigbee2MQTT «Garage»», or a name that already says it («Z2M #2»). */
+function bridge(v: Vars): string {
+  if (!has(v, 'instance')) return 'Zigbee2MQTT';
+  return /zigbee2mqtt|z2m/i.test(String(v.instance)) ? '{instance}' : 'Zigbee2MQTT «{instance}»';
+}
+
 /** «Кухня · », «Надворі · » or nothing: where the device is, in front of its name. */
 function where(v: Vars, lang: 0 | 1): string {
   if (has(v, 'room')) return '{room} · ';
@@ -262,13 +268,13 @@ export const EVENTS: Record<EventKind, EventTexts> = {
     resolved: [(v) => (has(v, 'room') ? '{room}: frost risk is over' : 'Frost risk is over'), (v) => (has(v, 'room') ? '{room}: ризику замерзання вже немає' : 'Ризику замерзання вже немає')],
   },
   z2m_offline: {
-    title: ['Zigbee2MQTT offline', 'Zigbee2MQTT не на зв’язку'],
+    title: [(v) => `${bridge(v)} offline`, (v) => `${bridge(v)} не на зв’язку`],
     body: [
-      '[{instance} ]offline[ for {duration}]. Valves and sensors get no commands — Klimo resends everything once it is back.',
-      '[{instance} ]офлайн[ {duration}]. Головки й датчики не отримують команд — повторю все, щойно міст повернеться.',
+      'Offline[ for {duration}]. Valves and sensors get no commands — Klimo resends everything once it is back.',
+      'Офлайн[ {duration}]. Головки й датчики не отримують команд — повторю все, щойно міст повернеться.',
     ],
-    short: ['Zigbee2MQTT offline', 'Zigbee2MQTT не на зв’язку'],
-    resolved: ['Zigbee2MQTT is back — commands resent', 'Zigbee2MQTT повернувся — команди надіслано знову'],
+    short: [(v) => `${bridge(v)} offline`, (v) => `${bridge(v)} не на зв’язку`],
+    resolved: [(v) => `${bridge(v)} is back — commands resent`, (v) => `${bridge(v)} повернувся — команди надіслано знову`],
   },
   room_no_data: {
     title: ['{room}: no data', '{room}: немає даних'],

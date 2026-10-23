@@ -574,6 +574,8 @@ button.valuePill[aria-expanded='true'] {
 
 .popover.popover {
   min-width: 220px;
+  /* a long label wraps above the stepper instead of pushing «+» off a phone screen */
+  max-width: min(360px, calc(100vw - 32px));
   padding: var(--ui-space-12);
   border-radius: var(--ui-radius-xl);
   border: 1px solid var(--ui-border-strong);

@@ -645,7 +645,8 @@ export class DeviceHealthService implements IDeviceHealth, OnModuleInit, OnModul
     for (const id of Object.values(cfg.energy.entities)) if (id) add({ entityId: id, role: 'energy', kind: 'entity', roomId: null, label: '', primary: true });
     for (const t of cfg.triggers) {
       if (!t.enabled) continue;
-      for (const id of conditionIds(t.condition)) add({ entityId: id, role: 'trigger', kind: 'entity', roomId: null, label: t.name, primary: true });
+      // named from Home Assistant: two inputs of one trigger must not both read «Blackout» (its usage says which trigger)
+      for (const id of conditionIds(t.condition)) add({ entityId: id, role: 'trigger', kind: 'entity', roomId: null, label: '', primary: true });
     }
     return out;
   }

@@ -160,7 +160,7 @@ export class WatchService {
     }
     for (const room of cfg.rooms) {
       for (const s of cfg.sensorsByRoom[room.id] ?? []) {
-        const name = `${room.name} · ${s.name}`;
+        const name = s.name ? `${room.name} · ${s.name}` : room.name;
         if (s.role === 'contact') {
           add({ entityId: s.entityId, name, role: 'room.contact', ref: { roomId: room.id }, condition: { type: 'unavailable', forMin: health.offline.contactMin }, severity: 'warning', eventKind: 'sensor_offline' });
         } else if (s.role === 'temperature' || s.role === 'humidity') {
@@ -169,7 +169,7 @@ export class WatchService {
       }
       for (const e of cfg.emittersByRoom[room.id] ?? []) {
         for (const d of cfg.devicesByEmitter[e.id] ?? []) {
-          const name = `${room.name} · ${d.label || d.name}`;
+          const name = d.label || d.name ? `${room.name} · ${d.label || d.name}` : room.name;
           if (d.kind === 'trv') {
             add({ entityId: d.entityId, name, role: 'room.trv', ref: { roomId: room.id, deviceKey: d.haDeviceId ?? undefined }, condition: { type: 'not_confirmed', attempts: health.trvUnconfirmed.attempts }, severity: 'warning', eventKind: 'trv_not_confirmed' });
           } else {
@@ -320,11 +320,12 @@ export class WatchService {
   private subjectName(rule: WatchRule, cfg: EngineConfig): string | null {
     const roomId = rule.ref?.roomId;
     if (roomId) {
+      // a device without a name of its own is named from Home Assistant later, never as «Office · »
       const sensor = (cfg.sensorsByRoom[roomId] ?? []).find((s) => s.entityId === rule.entityId);
-      if (sensor?.name) return sensor.name;
+      if (sensor) return sensor.name || null;
       for (const e of cfg.emittersByRoom[roomId] ?? []) {
         const d = (cfg.devicesByEmitter[e.id] ?? []).find((x) => x.entityId === rule.entityId);
-        if (d) return d.label || d.name;
+        if (d) return d.label || d.name || null;
       }
     }
     return rule.name || null;

@@ -190,13 +190,33 @@ export function meterHint(kind: MeterKind, source: { kind: SourceKind; carrier: 
   };
 }
 
-/** Heating degree-days, explained once for the tile and the chart. */
-export function degreeDayHint(baseC: string): InfoHintContent {
+/** The COP tile of a heat pump with a heat meter. */
+export function copHint(): InfoHintContent {
   return {
-    title: t('Gas per degree-day: what each degree of cold cost.'),
+    title: t('COP: the heat delivered for each unit of electricity.'),
+    text: [
+      t('A COP of 3 means 3 kWh of heat for every kWh of electricity. It falls in frost and when the water has to be hotter, so a cold period shows a lower value without anything being wrong.'),
+    ],
+  };
+}
+
+/** The efficiency tile of a gas boiler with a heat meter. */
+export function efficiencyHint(): InfoHintContent {
+  return {
+    title: t('Efficiency: the heat delivered ÷ the energy of the gas burnt.'),
+    text: [
+      t('The energy of the gas comes from the calorific value in Settings. A condensing boiler gets less out of the gas when the water comes back hot, so a high flow temperature lowers it.'),
+    ],
+  };
+}
+
+/** Heating degree-days, explained once for the tile and the chart; `what` is the counted kind («Газ», «Електрика»). */
+export function degreeDayHint(baseC: string, what: string): InfoHintContent {
+  return {
+    title: t('{what} per degree-day: how much each degree of cold took.', { what }),
     text: [
       t('A degree-day is one degree below {base} outdoors for a whole day; a day at 3° is 15 degree-days. The outdoor temperature is the combined value of the outdoor sensors.', { base: baseC }),
-      t('Dividing by degree-days takes the weather out: a lower number means the house or the boiler got more efficient, not that the month was warmer.'),
+      t('Dividing by degree-days takes the weather out: a lower number means the house or the source got more efficient, not that the month was warmer.'),
     ],
   };
 }
