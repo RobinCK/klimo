@@ -35,6 +35,8 @@ export class ManifoldRow {
   @NameCol() name: string;
   @EntityCol(true) supplySensorEntityId: string | null;
   @EntityCol(true) returnSensorEntityId: string | null;
+  /** NULL in rows saved before manifolds listed their sources (read as the sources its circuits share). */
+  @JsonCol() sourceIds: string[] | null;
   @IntCol() order: number;
 }
 

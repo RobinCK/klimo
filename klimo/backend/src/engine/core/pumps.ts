@@ -70,8 +70,10 @@ export interface PumpStepInput {
   flows: Map<Id, CircuitFlow>;
   circuitPumps: Map<Id, Pump[]>;
   manifoldPumps: Map<Id, Pump[]>;
-  /** manifoldId → a source feeding one of its circuits runs. */
+  /** manifoldId → a source feeding it (or one of its circuits) runs. */
   manifoldFeedOn: Map<Id, boolean>;
+  /** manifoldId → its primary pump moves the water of a source that is about to start (pre-run). */
+  manifoldForced?: Map<Id, NonNullable<CircuitFlow['forced']>>;
   phase: EnergyPhase;
   overlay: RuleOverlay;
   ledger: Record<string, ActuatorRecord>;
@@ -310,8 +312,9 @@ export function stepPumps(x: PumpStepInput): PumpStepResult {
   }
 
   /*
-   * manifold primary pumps: on while any source feeding the manifold runs (with the longest run-on of its
-   * circuits after the stop) and while any of its circuit pumps runs
+   * manifold primary pumps: on while any source feeding the manifold runs (then for its own run-on, or the
+   * longest of its circuits' when that is longer), while any of its circuit pumps runs, and through a
+   * feeding source's pre-run
    */
   for (const [manifoldId, pumps] of x.manifoldPumps) {
     const circuits = [...x.flows.values()].filter((f) => f.circuit.manifoldId === manifoldId);
@@ -320,17 +323,18 @@ export function stepPumps(x: PumpStepInput): PumpStepResult {
     const mode: ModeOrNone = circuits.find((f) => f.mode !== 'none')?.mode ?? 'none';
     const runOns = circuits.flatMap((f) => x.circuitPumps.get(f.circuit.id) ?? []);
     const frost = circuits.some((f) => f.frost);
+    const forced = x.phase === 'critical' ? null : (x.manifoldForced?.get(manifoldId)?.reason ?? null);
     for (const p of pumps) {
       runPump(
         p,
         {
           cond: feedOn && (x.phase !== 'critical' || frost),
           follow: circuitPumpOn,
-          forced: null,
+          forced,
           inGroup: true,
           blockedOff: false,
           exerciseAllowed: !circuits.some((f) => f.coolingFeed),
-          runOnMin: (md) => Math.max(0, ...runOns.map((cp) => (md === 'cool' ? cp.runOnCoolMin : cp.runOnHeatMin))),
+          runOnMin: (md) => Math.max(md === 'cool' ? p.runOnCoolMin : p.runOnHeatMin, ...runOns.map((cp) => (md === 'cool' ? cp.runOnCoolMin : cp.runOnHeatMin))),
           mode,
           ruleReason: 'manifold',
         },

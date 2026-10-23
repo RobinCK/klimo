@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { addDays, dowOfDate, fromLocal, toLocal } from '../engine/core/time';
 import { env } from '../env';
+import { HaCommandError } from '../ha/ha.service';
 import type { DesiredValue, EntityId, EpochMs, HaConfigInfo, HaPort, HaRegistries, HaServiceResult, HaStateObj, IBus, MqttTransport, SimFaultRequest } from '../shared/model';
 import { BUS, MQTT_TRANSPORT } from '../tokens';
 import { DEVICES, demoRegistries, deviceOfEntity, entityOfRole, friendlyName, HOME, PERSONS, USERS, z2mBase, type DeviceSpec, type EntitySpec } from './devices';
@@ -122,6 +123,7 @@ export class FakeHaService implements HaPort, TemplateHost, OnModuleDestroy {
   private readonly rng: Rng;
   private registryTimer: { cancel(): void } | null = null;
   private countdown = { remainingMs: 0, shown: 0, at: 0 };
+  private recorderReadyAt = 0;
 
   constructor(
     @Inject(SimClock) private readonly clock: SimClock,
@@ -199,11 +201,24 @@ export class FakeHaService implements HaPort, TemplateHost, OnModuleDestroy {
   }
 
   async history(entityIds: EntityId[], start: EpochMs, end: EpochMs, opts: { minimal: boolean; noAttributes: boolean }) {
+    this.recorderAnswers();
     return this.recorder.history(entityIds, start, end, opts);
   }
 
   async statistics(statIds: string[], start: EpochMs, end: EpochMs, period: '5minute' | 'hour' | 'day' | 'week' | 'month', types: ('mean' | 'min' | 'max' | 'state' | 'sum' | 'change')[]) {
+    this.recorderAnswers();
     return this.recorder.statistics(statIds, start, end, period, types, this.clock.now());
+  }
+
+  /** Like the real client: nothing is asked of a Home Assistant that is not connected, and a starting one has no recorder commands yet. */
+  private recorderAnswers(): void {
+    if (!this.online) throw new Error('Home Assistant is not connected');
+    if (Date.now() < this.recorderReadyAt) throw new HaCommandError('unknown_command', 'Unknown command.');
+  }
+
+  /** The recorder's commands appear only `ms` (real time) from now, as while HA itself is starting. */
+  delayRecorder(ms: number): void {
+    this.recorderReadyAt = Date.now() + ms;
   }
 
   registries(): HaRegistries {

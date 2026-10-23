@@ -847,11 +847,24 @@ export function validateEmitterDevice(d: EmitterDevice, g: ConfigGraph): Issues 
 
 /* ── hydronics ────────────────────────────────────────────────────────────────────────────────── */
 
-export function validateManifold(m: Manifold): Issues {
+export function validateManifold(m: Manifold, g: ConfigGraph): Issues {
   const v = new V();
-  v.str('name', m.name, 1, 40);
+  if (v.str('name', m.name, 1, 40)) {
+    const lower = m.name.trim().toLowerCase();
+    for (const o of g.manifolds.values()) if (o.id !== m.id && o.name.trim().toLowerCase() === lower) v.push('name', 'unique');
+  }
   v.entity('supplySensorEntityId', m.supplySensorEntityId, ['sensor', 'input_number', 'number']);
   v.entity('returnSensorEntityId', m.returnSensorEntityId, ['sensor', 'input_number', 'number']);
+  if (v.arr('sourceIds', m.sourceIds, 20)) {
+    const seen = new Set<string>();
+    m.sourceIds.forEach((id, i) => {
+      const s = g.sources.get(id);
+      if (!s) v.push(`sourceIds.${i}`, 'not_found');
+      else if (s.scope !== 'central') v.push(`sourceIds.${i}`, 'scope');
+      if (seen.has(id)) v.push(`sourceIds.${i}`, 'unique');
+      seen.add(id);
+    });
+  }
   return v.issues;
 }
 
@@ -1555,7 +1568,7 @@ export function validateCollectionItem(c: ConfigCollectionName, value: unknown, 
     case 'schedules': return validateSchedule(value as Schedule, g);
     case 'scheduleExceptions': return validateScheduleException(value as ScheduleException, g);
     case 'sources': return validateSource(value as SourceConfig, g, env);
-    case 'manifolds': return validateManifold(value as Manifold);
+    case 'manifolds': return validateManifold(value as Manifold, g);
     case 'circuits': return validateCircuit(value as Circuit, g);
     case 'pumps': return validatePump(value as Pump, g);
     case 'triggers': return validateTrigger(value as Trigger, g, env);

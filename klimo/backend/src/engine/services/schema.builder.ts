@@ -117,13 +117,17 @@ export function buildSchema(x: SchemaInput): SchemaView {
     });
   }
 
-  const usedManifolds = new Set(cfg.circuits.map((c) => c.manifoldId).filter((m): m is Id => !!m));
-  for (const m of cfg.manifolds.filter((m) => usedManifolds.has(m.id))) {
+  // every manifold the house has, even before circuits are put on it, so it can be opened from here
+  const manifolds = [...cfg.manifolds].sort((a, b) => a.order - b.order);
+  for (const m of manifolds) {
     const live = plant.manifolds.find((x) => x.manifoldId === m.id);
-    const feeding = cfg.circuits
-      .filter((c) => c.manifoldId === m.id)
-      .flatMap((c) => circuitState.get(c.id)?.feedingSourceIds ?? [])
-      .filter((id, i, all) => all.indexOf(id) === i);
+    const feeding = [
+      ...cfg.circuits.filter((c) => c.manifoldId === m.id).flatMap((c) => circuitState.get(c.id)?.feedingSourceIds ?? []),
+      ...(m.sourceIds ?? []).filter((id) => {
+        const st = sourceState.get(id);
+        return !!st && isRunningState(st.state);
+      }),
+    ].filter((id, i, all) => all.indexOf(id) === i);
     const runningMode = feeding.map((id) => sourceState.get(id)?.mode).find((mode) => !!mode) ?? null;
     const tone: NodeTone = live?.tone ?? 'idle';
     const state: Reason = feeding.length
@@ -131,8 +135,11 @@ export function buildSchema(x: SchemaInput): SchemaView {
         ? { code: 'circuit.cooling', params: { supplyC: live?.supplyC ?? null, dewC: null } }
         : { code: 'circuit.heating', params: { supplyC: live?.supplyC ?? null, sourceId: feeding[0] } }
       : { code: 'circuit.idle' };
-    addNode({ key: `manifold:${m.id}`, column: 'manifolds', band: 'hydronic', tone, icon: 'manifold', title: m.name, state, meta: null, roomIds: [], dashed: !FLOWING.has(tone) });
+    const pump = plant.manifoldPumps.find((p) => p.manifoldId === m.id && p.state === 'run_on' && p.runOnUntil !== null);
+    const meta: Reason | null = pump ? { code: 'circuit.run_on', params: { until: pump.runOnUntil } } : null;
+    addNode({ key: `manifold:${m.id}`, column: 'manifolds', band: 'hydronic', tone, icon: 'manifold', title: m.name, state, meta, roomIds: [], dashed: !FLOWING.has(tone) });
   }
+  const manifoldOf = new Map(manifolds.map((m) => [m.id, m]));
 
   const circuits: Circuit[] = [...cfg.circuits].sort((a, b) => a.order - b.order);
   for (const c of circuits) {
@@ -168,11 +175,14 @@ export function buildSchema(x: SchemaInput): SchemaView {
     });
   }
 
+  // a source reaches a circuit through the manifold it feeds; a circuit's own direct sources reach it straight
   for (const s of central) {
     const st = sourceState.get(s.id);
+    for (const m of manifolds) if ((m.sourceIds ?? []).includes(s.id)) addEdge(`source:${s.id}`, `manifold:${m.id}`, `source:${s.id}`, st?.roleReason ?? null);
     for (const c of circuits.filter((c) => c.sourceIds.includes(s.id))) {
-      const target = c.manifoldId && nodeTone.has(`manifold:${c.manifoldId}`) ? `manifold:${c.manifoldId}` : `circuit:${c.id}`;
-      addEdge(`source:${s.id}`, target, `source:${s.id}`, st?.roleReason ?? null);
+      const m = c.manifoldId ? manifoldOf.get(c.manifoldId) : undefined;
+      const viaManifold = !!m && ((m.sourceIds ?? []).includes(s.id) || !(m.sourceIds ?? []).length);
+      addEdge(`source:${s.id}`, viaManifold && m ? `manifold:${m.id}` : `circuit:${c.id}`, `source:${s.id}`, st?.roleReason ?? null);
     }
   }
   for (const c of circuits) {

@@ -27,6 +27,7 @@ import type {
   OutdoorHistoryDto,
   RoomConfig,
   RoomDayDiag,
+  RoomDayEntityRole,
   RoomDayDto,
   RoomDaySource,
   RoomSensor,
@@ -38,9 +39,9 @@ import type {
 } from '../shared/model';
 import { BUS, CLOCK, CONFIG_STORE, HA_PORT, READ_MODELS, SPAN_STORE } from '../tokens';
 import { combineBuckets } from './outdoor';
-import { combineSteps, dropOutliers, extremes, onGrid, type OutlierRule, type SensorSteps } from './room-series';
+import { combineSteps, dropOutliers, extremes, onGrid, type SensorSteps } from './room-series';
 import { bucketize, combine, downsample, type Point, roundTo, valueAt } from './series';
-import { domainOf, entityTempUnit, fToC, isAvailableState, parseNumber, systemTempUnit, type TempUnit } from './units';
+import { domainOf, entityTempUnit, fToC, isAvailableState, parseNumber, systemTempUnit, tempUnit, type TempUnit } from './units';
 
 type HistoryRows = Record<EntityId, { s: string; lu: number; a?: Record<string, unknown> }[]>;
 type StatRows = Awaited<ReturnType<HaPort['statistics']>>;
@@ -58,10 +59,14 @@ const RING_SPAN = 6 * HOUR;
 const SPARK_STEP = 30 * MIN;
 const SPARK_POINTS = 13;
 const STAT_BUCKET = 5 * MIN;
-/** A rebuilt room series is sampled on this grid (fine enough for a day chart, ≤ 288 points). */
-const REBUILD_STEP = 5 * MIN;
-/** Klimo's own sensor counts for the trend seed when it reported this close to the end of the window. */
-const SEED_FRESH = 5 * MIN;
+/** The day chart samples the room's step series on this grid (≤ 288 points); min and max come from the changes themselves. */
+const CHART_STEP = 5 * MIN;
+const MINIMAL = { minimal: true, noAttributes: true } as const;
+const FULL = { minimal: false, noAttributes: false } as const;
+/** Targets that hold until a known end (or until changed by hand): drawn ahead of the schedule until then. */
+const HELD_LAYERS = new Set<TargetLayer>(['manual', 'room_off', 'room_profile', 'house_manual', 'calendar', 'presence']);
+/** The engine's last view of a room counts as current for this long (it evaluates at least every minute). */
+const CURRENT_FRESH = 5 * MIN;
 
 const DISPLAY_KINDS = new Set<TargetDisplayKind>([
   'schedule', 'profile_updated', 'manual', 'range', 'boost', 'window', 'airing', 'off', 'monitor', 'frost', 'presence',
@@ -93,7 +98,19 @@ interface RingSample {
 
 type Segment = RoomDayDto['targetSegments'][number];
 
+interface CurrentTarget {
+  at: EpochMs;
+  heatC: number | null;
+  coolC: number | null;
+  layer: TargetLayer;
+  kind: TargetDisplayKind;
+  until: EpochMs | null;
+}
+
 const minuteOf = (t: EpochMs) => Math.floor(t / MIN);
+const hasData = (points: readonly Point[]) => points.some(([, v]) => v !== null);
+/** Entity-id-safe form of a slug, as the MQTT discovery writes it. */
+const objectId = (id: string) => id.toLowerCase().replace(/[^a-z0-9_]/g, '_');
 
 /** The recorder's view of the last hour of room temperatures, for the engine's trend after a restart. */
 export interface RecentRoomTemps {
@@ -102,8 +119,9 @@ export interface RecentRoomTemps {
 
 /**
  * Charts come from the HA recorder (Klimo stores no samples): entity series, statistics, the room day
- * (Klimo's own MQTT sensors, else rebuilt from the raw sensors, else the last 6 h kept in memory),
- * sparklines for every room in one statistics call, and the outdoor history of the season card.
+ * (the room's own sensors combined the way the live value is, else Klimo's published MQTT sensor, else
+ * the last 6 h kept in memory), sparklines for every room in one statistics call, and the outdoor history
+ * of the season card. An answer given before the recorder could be read is never cached.
  */
 @Injectable()
 export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, OnModuleDestroy {
@@ -112,6 +130,7 @@ export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, 
   private readonly cache = new Map<string, { at: EpochMs; ttl: number; value: Promise<unknown> }>();
   private readonly ring = new Map<Id, RingSample[]>();
   private readonly learned = new Map<Id, { heat: number | null; cool: number | null; mode: Mode | 'dual' | 'none' }>();
+  private readonly current = new Map<Id, CurrentTarget>();
   private readonly readModels: () => IReadModels | null;
   private unsubscribe: (() => void) | null = null;
 
@@ -148,9 +167,11 @@ export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, 
       this.ring.set(r.roomId, list);
       const mem = result.memory.rooms[r.roomId];
       this.learned.set(r.roomId, { heat: mem?.learned.heatRateCPerH ?? null, cool: mem?.learned.coolRateCPerH ?? null, mode: r.target.mode });
+      this.current.set(r.roomId, { at, heatC: r.target.heatC, coolC: r.target.coolC, layer: r.target.layer, kind: r.target.display, until: r.target.until ?? null });
     }
     const alive = new Set(result.rooms.map((r) => r.roomId));
     for (const id of this.ring.keys()) if (!alive.has(id)) this.ring.delete(id);
+    for (const id of this.current.keys()) if (!alive.has(id)) this.current.delete(id);
   }
 
   private ringPoints(roomId: Id, pick: (s: RingSample) => number | null): Point[] {
@@ -159,16 +180,20 @@ export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, 
 
   /* ── plumbing ──────────────────────────────────────────────────────────────────────────────── */
 
-  private cached<T>(key: string, ttl: number, load: () => Promise<T>): Promise<T> {
+  /** `keep` false for an answer that must not be reused (the recorder could not be read yet). */
+  private cached<T>(key: string, ttl: number, load: () => Promise<T>, keep: (value: T) => boolean = () => true): Promise<T> {
     const now = this.clock.now();
     const hit = this.cache.get(key);
     // an answer from a later time is stale too: the simulator's clock travels back to another scenario
     if (hit && hit.at <= now && now - hit.at < hit.ttl) return hit.value as Promise<T>;
     const value = load();
     this.cache.set(key, { at: now, ttl, value });
-    value.catch(() => {
+    const forget = () => {
       if (this.cache.get(key)?.value === value) this.cache.delete(key);
-    });
+    };
+    value.then((v) => {
+      if (!keep(v)) forget();
+    }, forget);
     if (this.cache.size > 256) for (const [k, v] of this.cache) if (v.at > now || now - v.at >= v.ttl) this.cache.delete(k);
     return value;
   }
@@ -281,15 +306,15 @@ export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, 
     });
   }
 
-  /* ── Klimo's own sensors ───────────────────────────────────────────────────────────────────── */
+  /* ── the room's sensors and Klimo's own ────────────────────────────────────────────────────── */
 
-  /** Klimo's MQTT sensor of a room: by unique id in the registry (the entity id may have been renamed), else the documented id. */
+  /** Klimo's MQTT sensor of a room: by unique id in the registry (the entity id may have been renamed or suffixed), else the documented id. */
   private klimoIds(rooms: RoomConfig[]): Map<Id, Record<'temperature' | 'target' | 'humidity' | 'heat_demand' | 'cool_demand', EntityId>> {
     const byUnique = new Map<string, EntityId>();
     for (const e of this.ha.registries().entities) if (e.platform === 'mqtt' && e.unique_id?.startsWith('klimo_')) byUnique.set(e.unique_id, e.entity_id);
     const out = new Map<Id, Record<'temperature' | 'target' | 'humidity' | 'heat_demand' | 'cool_demand', EntityId>>();
     for (const r of rooms) {
-      const id = (kind: string, domain: string) => byUnique.get(`klimo_${r.id}_${kind}`) ?? `${domain}.klimo_${r.slug}_${kind}`;
+      const id = (kind: string, domain: string) => byUnique.get(`klimo_${r.id}_${kind}`) ?? `${domain}.klimo_${objectId(r.slug)}_${kind}`;
       out.set(r.id, {
         temperature: id('temperature', 'sensor'),
         target: id('target', 'sensor'),
@@ -299,6 +324,44 @@ export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, 
       });
     }
     return out;
+  }
+
+  /** The room's included sensors of one role, in its order (the first live one is «primary»). */
+  private roomSensors(roomId: Id, role: 'temperature' | 'humidity'): RoomSensor[] {
+    return (this.config.engineConfig().sensorsByRoom[roomId] ?? []).filter((s) => s.included && s.role === role).sort((a, b) => a.order - b.order);
+  }
+
+  /** Recorder rows of room sensors: plain sensors as a minimal response, thermostats with their attributes. */
+  private async readSensors(sensors: readonly RoomSensor[], from: EpochMs, end: EpochMs): Promise<HistoryRows> {
+    const ids = [...new Set(sensors.map((s) => s.entityId))];
+    const plain = ids.filter((id) => domainOf(id) !== 'climate');
+    const climate = ids.filter((id) => domainOf(id) === 'climate');
+    const [a, b] = await Promise.all([
+      plain.length ? this.ha.history(plain, from, end, MINIMAL) : Promise.resolve({} as HistoryRows),
+      climate.length ? this.ha.history(climate, from, end, FULL) : Promise.resolve({} as HistoryRows),
+    ]);
+    return { ...a, ...b };
+  }
+
+  /** One sensor's rows as numbers (°C for temperatures); a thermostat stands in with its current reading, never its setpoint. */
+  private sensorPoints(entityId: EntityId, rows: HistoryRows[string] | undefined, role: 'temperature' | 'humidity'): Point[] {
+    const climate = domainOf(entityId) === 'climate';
+    const unit = role === 'temperature' ? this.tempUnitOf(entityId) : null;
+    let attrs: Record<string, unknown> = {};
+    return (rows ?? []).map((row) => {
+      if (row.a) attrs = row.a;
+      const raw = climate ? (isAvailableState(row.s) ? attrs[role === 'temperature' ? 'current_temperature' : 'current_humidity'] : null) : row.s;
+      const n = parseNumber(raw);
+      return [Math.round(row.lu * 1000), n === null ? null : unit === '°F' ? fToC(n) : n] as Point;
+    });
+  }
+
+  private sensorSteps(raw: HistoryRows, sensors: readonly RoomSensor[], role: 'temperature' | 'humidity', note?: (entityId: EntityId, points: Point[]) => void): SensorSteps[] {
+    return sensors.map((s) => {
+      const points = this.sensorPoints(s.entityId, raw[s.entityId], role);
+      note?.(s.entityId, points);
+      return { weight: s.weight, points };
+    });
   }
 
   private numericPoints(rows: HistoryRows[string] | undefined, unit: TempUnit | null): Point[] {
@@ -315,40 +378,12 @@ export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, 
     return u === '°F' || u === '°C' ? u : null;
   }
 
-  /**
-   * A room series rebuilt from its raw sensors with the room's own method, on a 5-min grid. The
-   * recorder stores changes only, so a quiet sensor keeps its value until it changes or goes unavailable.
-   */
-  private rebuild(
-    raw: HistoryRows,
-    sensors: { entityId: EntityId; weight: number }[],
-    method: Parameters<typeof combine>[1],
-    from: EpochMs,
-    end: EpochMs,
-    round: (x: number) => number,
-    temperature: boolean,
-    step = REBUILD_STEP,
-  ): Point[] {
-    const series = sensors.map((s) => ({ w: s.weight, points: this.numericPoints(raw[s.entityId], temperature ? this.tempUnitOf(s.entityId) : null) }));
-    if (!series.some((s) => s.points.some(([, v]) => v !== null))) return [];
-    const out: Point[] = [];
-    for (let t = from; t <= end; t += step) {
-      const values = series.flatMap((s) => {
-        const v = valueAt(s.points, t);
-        return v === null ? [] : [{ v, w: s.w }];
-      });
-      const c = combine(values, method);
-      out.push([t, c === null ? null : round(c)]);
-    }
-    return out;
-  }
-
   /* ── the engine's trend after a restart ────────────────────────────────────────────────────── */
 
   /**
    * Room temperatures over [from, to] on a 1-min grid, so the trend shows right after a restart rather
-   * than after 15 min of new samples. Klimo's own sensor (the aggregate as it was published) when it ran
-   * until shortly before, else the room rebuilt from its raw sensors. Rooms without data are left out.
+   * than after 15 min of new samples: the room's sensors combined by its method, Klimo's own sensor only
+   * for a room whose sensors are not recorded. Rooms without data are left out.
    */
   async recentRoomTemps(rooms: readonly RoomConfig[], from: EpochMs, to: EpochMs): Promise<Record<Id, [EpochMs, number][]>> {
     const out: Record<Id, [EpochMs, number][]> = {};
@@ -362,28 +397,21 @@ export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, 
       }
       return res;
     };
-    const ids = this.klimoIds([...rooms]);
-    const ownIds = rooms.map((r) => ids.get(r.id)!.temperature);
-    const own = await this.ha.history(ownIds, from, to, { minimal: true, noAttributes: true });
-    const cfg = this.config.engineConfig();
-    const tempSensors = (r: RoomConfig) => (cfg.sensorsByRoom[r.id] ?? []).filter((s) => s.included && s.role === 'temperature');
-    const ownOf = new Map<Id, [EpochMs, number][]>();
-    const stale: RoomConfig[] = [];
+    const temps = new Map(rooms.map((r) => [r.id, this.roomSensors(r.id, 'temperature')]));
+    const raw = await this.readSensors([...temps.values()].flat(), from, to);
+    const missing: RoomConfig[] = [];
     for (const r of rooms) {
-      const id = ids.get(r.id)!.temperature;
-      const points = grid(this.numericPoints(own[id], this.tempUnitOf(id)));
-      ownOf.set(r.id, points);
-      // Klimo was down for a while: its sensor has a gap at the end the raw sensors do not
-      if (points.length && points[points.length - 1][0] >= to - SEED_FRESH) out[r.id] = points;
-      else if (tempSensors(r).length) stale.push(r);
-      else if (points.length) out[r.id] = points;
+      const steps = combineSteps(this.sensorSteps(raw, temps.get(r.id) ?? [], 'temperature'), r.temperature.method, r.temperature.outlier, from, to);
+      const points = grid(steps);
+      if (points.length) out[r.id] = points;
+      else missing.push(r);
     }
-    if (stale.length) {
-      const rawIds = [...new Set(stale.flatMap((r) => tempSensors(r).map((s) => s.entityId)))];
-      const raw = await this.ha.history(rawIds, from, to, { minimal: true, noAttributes: true });
-      for (const r of stale) {
-        const rebuilt = this.rebuild(raw, tempSensors(r), r.temperature.method, start, to, (x) => x, true, MIN).filter((p): p is [EpochMs, number] => p[1] !== null);
-        const points = rebuilt.length ? rebuilt : ownOf.get(r.id) ?? [];
+    if (missing.length) {
+      const ids = this.klimoIds(missing);
+      const own = await this.ha.history(missing.map((r) => ids.get(r.id)!.temperature), from, to, MINIMAL);
+      for (const r of missing) {
+        const id = ids.get(r.id)!.temperature;
+        const points = grid(this.numericPoints(own[id], this.tempUnitOf(id)));
         if (points.length) out[r.id] = points;
       }
     }
@@ -397,82 +425,134 @@ export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, 
     const room = this.config.room(roomId);
     if (!room) throw notFound('Room');
     const now = this.clock.now();
-    return this.cached(`day|${room.id}|${date}|${minuteOf(now)}`, HISTORY_TTL, () => this.buildRoomDay(room, date, now));
+    return this.cached(`day|${room.id}|${date}|${minuteOf(now)}`, HISTORY_TTL, () => this.buildRoomDay(room, date, now), (d) => d.complete);
   }
 
   private async buildRoomDay(room: RoomConfig, date: LocalDate, now: EpochMs): Promise<RoomDayDto> {
     const tz = this.clock.tz();
     const from = fromLocal(date, 0, tz);
     const to = fromLocal(addDays(date, 1), 0, tz);
-    const end = Math.min(to, now);
+    const end = Math.max(from, Math.min(to, now));
     const ids = this.klimoIds([room]).get(room.id)!;
-    const cfg = this.config.engineConfig();
-    const sensors = (cfg.sensorsByRoom[room.id] ?? []).filter((s) => s.included);
-    const tempSensors = sensors.filter((s) => s.role === 'temperature');
-    const humSensors = sensors.filter((s) => s.role === 'humidity');
+    const tempSensors = this.roomSensors(room.id, 'temperature');
+    const humSensors = this.roomSensors(room.id, 'humidity');
+    const diag: RoomDayDiag = { ha: this.ha.connected, recorder: 'skipped', error: null, entities: [], humiditySource: 'none', targetSource: 'none' };
+    const note = (role: RoomDayEntityRole, rows: HistoryRows) => (entityId: EntityId, points: Point[]) =>
+      diag.entities.push({ entityId, role, rows: rows[entityId]?.length ?? 0, numeric: points.filter(([, v]) => v !== null).length });
 
-    let series: Point[] = [];
+    let temperature: Point[] = [];
     let humidity: Point[] = [];
-    let source: RoomDayDto['source'] = 'klimo_entity';
+    let source: RoomDaySource = 'none';
     let targetRows: HistoryRows[string] = [];
-    let demandRows: HistoryRows = {};
-    let recorderOk = end > from && this.ha.connected;
+    // only a recorder that answered makes a day worth keeping; before that the page asks again
+    let complete = end <= from;
 
-    if (recorderOk) {
+    if (end > from && this.ha.connected) {
       try {
-        const own = await this.ha.history([ids.temperature, ids.humidity, ids.heat_demand, ids.cool_demand], from, end, { minimal: true, noAttributes: true });
-        series = this.numericPoints(own[ids.temperature], null);
-        humidity = this.numericPoints(own[ids.humidity], null);
-        demandRows = own;
-        targetRows = (await this.ha.history([ids.target], from, end, { minimal: false, noAttributes: false }))[ids.target] ?? [];
+        const [raw, target] = await Promise.all([this.readSensors([...tempSensors, ...humSensors], from, end), this.ha.history([ids.target], from, end, FULL)]);
+        temperature = combineSteps(this.sensorSteps(raw, tempSensors, 'temperature', note('temperature', raw)), room.temperature.method, room.temperature.outlier, from, end);
+        humidity = combineSteps(this.sensorSteps(raw, humSensors, 'humidity', note('humidity', raw)), room.humidity.method, null, from, end);
+        if (hasData(temperature)) source = 'raw_sensors';
+        if (hasData(humidity)) diag.humiditySource = 'raw_sensors';
+        targetRows = target[ids.target] ?? [];
+        note('klimo_target', target)(ids.target, targetRows.map((r) => [0, parseNumber(r.s)] as Point));
 
-        const hasData = (p: Point[]) => p.some(([, v]) => v !== null);
-        if (!hasData(series) || (!hasData(humidity) && humSensors.length)) {
-          const rawIds = [...new Set([...(hasData(series) ? [] : tempSensors), ...(hasData(humidity) ? [] : humSensors)].map((s) => s.entityId))];
-          const raw = rawIds.length ? await this.ha.history(rawIds, from, end, { minimal: true, noAttributes: true }) : {};
-          if (!hasData(series)) {
-            source = 'raw_sensors';
-            series = this.rebuild(raw, tempSensors, room.temperature.method, from, end, round1, true);
+        // Klimo's published sensors only stand in where the room's sensors have nothing recorded
+        const ownIds = [...(source === 'none' ? [ids.temperature] : []), ...(diag.humiditySource === 'none' && humSensors.length ? [ids.humidity] : [])];
+        if (ownIds.length) {
+          const own = await this.ha.history(ownIds, from, end, MINIMAL);
+          // HA shows (and records) Klimo's °C sensors in its own unit system
+          const ownSteps = (id: EntityId, role: RoomDayEntityRole) => {
+            const points = this.numericPoints(own[id], role === 'klimo_temperature' ? this.tempUnitOf(id) : null);
+            note(role, own)(id, points);
+            return combineSteps([{ weight: 1, points }], 'average', null, from, end);
+          };
+          if (source === 'none') {
+            temperature = ownSteps(ids.temperature, 'klimo_temperature');
+            if (hasData(temperature)) source = 'klimo_entity';
           }
-          if (!hasData(humidity)) humidity = this.rebuild(raw, humSensors, room.humidity.method, from, end, Math.round, false);
+          if (diag.humiditySource === 'none' && humSensors.length) {
+            humidity = ownSteps(ids.humidity, 'klimo_humidity');
+            if (hasData(humidity)) diag.humiditySource = 'klimo_entity';
+          }
         }
-        // a recorder that keeps none of these entities (excluded) has nothing — the memory still may
-        if (!hasData(series) && this.ringPoints(room.id, (s) => s.c).some(([t, v]) => v !== null && t >= from)) recorderOk = false;
+        diag.recorder = 'ok';
+        complete = true;
+        this.once.reset(`day:${room.id}`);
       } catch (e) {
+        diag.recorder = 'error';
+        diag.error = errorText(e);
+        temperature = [];
+        humidity = [];
+        source = 'none';
+        diag.humiditySource = 'none';
+        targetRows = [];
         this.once.warn(`day:${room.id}`, `recorder unavailable for the room day, using the last hours in memory: ${errorText(e)}`);
-        recorderOk = false;
       }
     }
-    if (!recorderOk && end > from) {
-      source = 'memory';
+    // the recorder cannot be read (yet), or keeps none of these entities: the last hours Klimo kept itself
+    if (end > from) {
       const inDay = ([t]: Point) => t >= from && t <= end;
-      series = this.ringPoints(room.id, (s) => s.c).filter(inDay);
-      humidity = this.ringPoints(room.id, (s) => s.h).filter(inDay);
-    } else if (recorderOk) this.once.reset(`day:${room.id}`);
+      if (source === 'none') {
+        const ring = this.ringPoints(room.id, (s) => s.c).filter(inDay);
+        if (hasData(ring)) [temperature, source] = [ring, 'memory'];
+      }
+      if (diag.humiditySource === 'none') {
+        const ring = this.ringPoints(room.id, (s) => s.h).filter(inDay);
+        if (hasData(ring)) [humidity, diag.humiditySource] = [ring, 'memory'];
+      }
+    }
 
-    const targetSegments = await this.targetSegments(room, date, from, to, now, targetRows);
-    const demandSpans = await this.demandSpans(room, from, to, end, demandRows, ids);
-    return {
+    const target = this.targetSegments(room, date, from, to, now, targetRows, this.tempUnitOf(ids.target));
+    diag.targetSource = target.source;
+    const demandSpans = await this.demandSpans(room, from, to, end, ids, diag);
+    const chart = (points: Point[], kind: RoomDaySource, round: (x: number) => number): [EpochMs, number | null][] =>
+      (kind === 'memory' ? downsample(points, from, end, MAX_POINTS) : onGrid(points, from, end, CHART_STEP)).map(([t, v]) => [t, v === null ? null : round(v)]);
+    const day: RoomDayDto = {
       roomId: room.id,
       date,
-      series: downsample(series, from, end, MAX_POINTS).map(([t, v]) => [t, v === null ? null : round1(v)] as [EpochMs, number | null]),
+      series: chart(temperature, source, round1),
       source,
-      humidity: downsample(humidity, from, end, MAX_POINTS).map(([t, v]) => [t, v === null ? null : Math.round(v)] as [EpochMs, number | null]),
-      targetSegments,
+      humidity: chart(humidity, diag.humiditySource, Math.round),
+      targetSegments: target.segments,
       demandSpans,
-      stats: this.dayStats(room.id, series, demandSpans, from, end),
+      stats: this.dayStats(room.id, temperature, demandSpans, from, end),
+      asOf: end,
+      complete,
+      diag,
     };
+    this.log.debug(
+      `day ${room.name} ${date}: temperature ${source}, humidity ${diag.humiditySource}, target ${diag.targetSource}; ` +
+        `${complete ? 'complete' : 'incomplete'} (HA ${diag.ha ? 'connected' : 'not connected'}, recorder ${diag.recorder}${diag.error ? `: ${diag.error}` : ''}); ` +
+        (diag.entities.map((e) => `${e.entityId} ${e.role} ${e.numeric}/${e.rows}`).join(', ') || 'no entities read'),
+    );
+    return day;
   }
 
-  private async targetSegments(room: RoomConfig, date: LocalDate, from: EpochMs, to: EpochMs, now: EpochMs, rows: HistoryRows[string]): Promise<Segment[]> {
-    const out: Segment[] = [];
+  /**
+   * The target band: the past from Klimo's recorded target sensor, its gaps (Klimo stopped, sensor not
+   * recorded) from the schedule, so the elapsed part of the day always has a band. Ahead: a target held
+   * by hand (or a room profile, presence…) until it ends, then the schedule.
+   */
+  private targetSegments(
+    room: RoomConfig,
+    date: LocalDate,
+    from: EpochMs,
+    to: EpochMs,
+    now: EpochMs,
+    rows: HistoryRows[string],
+    unit: TempUnit | null,
+  ): { segments: Segment[]; source: RoomDayDiag['targetSource'] } {
     const mode = this.learned.get(room.id)?.mode ?? 'heat';
+    const pastEnd = Math.max(from, Math.min(now, to));
     let attrs: Record<string, unknown> = {};
     const past: { at: EpochMs; seg: Omit<Segment, 'from' | 'to'> | null }[] = [];
     for (const row of rows) {
       if (row.a) attrs = row.a;
       const at = Math.max(from, Math.round(row.lu * 1000));
-      const v = parseNumber(row.s);
+      // the state is in HA's unit (°F with an imperial unit system); lo / hi are Klimo's own °C attributes
+      const state = parseNumber(row.s);
+      const v = state !== null && (tempUnit(attrs.unit_of_measurement) ?? unit) === '°F' ? fToC(state) : state;
       const lo = parseNumber(attrs.lo);
       const hi = parseNumber(attrs.hi);
       const kindAttr = typeof attrs.source === 'string' && DISPLAY_KINDS.has(attrs.source as TargetDisplayKind) ? (attrs.source as TargetDisplayKind) : null;
@@ -491,26 +571,39 @@ export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, 
         },
       });
     }
-    const pastEnd = Math.min(now, to);
+    const recorded: Segment[] = [];
     for (let i = 0; i < past.length; i++) {
       const seg = past[i].seg;
       const segTo = Math.min(i + 1 < past.length ? past[i + 1].at : pastEnd, pastEnd);
-      if (seg && segTo > past[i].at) out.push({ from: past[i].at, to: segTo, ...seg });
+      if (seg && segTo > past[i].at) recorded.push({ from: past[i].at, to: segTo, ...seg });
     }
 
-    // the plan from the schedule: the future, and the past too when Klimo's target sensor is not recorded
-    const plannedFrom = out.length ? Math.max(from, now) : from;
-    if (plannedFrom < to) {
-      for (const s of this.planned(room, date, from, to)) {
-        const a = Math.max(s.from, plannedFrom);
-        if (s.to <= a) continue;
-        if (a < now && s.to > now) {
-          out.push({ ...s, from: a, to: now, future: false });
-          out.push({ ...s, from: now, future: true });
-        } else out.push({ ...s, from: a, future: a >= now });
+    const plan = this.planned(room, date, from, to);
+    const out: Segment[] = [...recorded];
+    const gaps = gapsOf(recorded, from, pastEnd);
+    for (const [a, b] of gaps) {
+      for (const s of plan) {
+        const x = Math.max(a, s.from);
+        const y = Math.min(b, s.to);
+        if (y > x) out.push({ ...s, from: x, to: y, future: false });
       }
     }
-    return mergeSegments(out);
+    let ahead = pastEnd;
+    const cur = this.current.get(room.id);
+    if (cur && now - cur.at <= CURRENT_FRESH && cur.at <= now && HELD_LAYERS.has(cur.layer) && (cur.heatC !== null || cur.coolC !== null)) {
+      const until = Math.min(to, cur.until ?? to);
+      if (until > ahead) {
+        out.push({ from: ahead, to: until, heatC: cur.heatC, coolC: cur.coolC, future: true, kind: cur.kind });
+        ahead = until;
+      }
+    }
+    for (const s of plan) {
+      const x = Math.max(ahead, s.from);
+      if (s.to > x) out.push({ ...s, from: x, future: true });
+    }
+    const covered = pastEnd - from - gaps.reduce((n, [a, b]) => n + b - a, 0);
+    const source: RoomDayDiag['targetSource'] = !recorded.length ? (plan.length ? 'plan' : 'none') : covered >= pastEnd - from ? 'klimo_target' : plan.length ? 'mixed' : 'klimo_target';
+    return { segments: mergeSegments(out), source };
   }
 
   private planned(room: RoomConfig, date: LocalDate, from: EpochMs, to: EpochMs): Segment[] {
@@ -544,8 +637,8 @@ export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, 
     from: EpochMs,
     to: EpochMs,
     end: EpochMs,
-    rows: HistoryRows,
     ids: Record<'heat_demand' | 'cool_demand', EntityId>,
+    diag: RoomDayDiag,
   ): Promise<RoomDayDto['demandSpans']> {
     let spans: RoomDayDto['demandSpans'] = [];
     try {
@@ -555,10 +648,18 @@ export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, 
     } catch (e) {
       this.log.warn(`run spans unavailable: ${errorText(e)}`);
     }
-    if (spans.length) return spans.sort((a, b) => a.from - b.from);
+    if (spans.length || diag.recorder !== 'ok') return spans.sort((a, b) => a.from - b.from);
     // no spans yet (new database): the recorded demand sensors tell the same story
+    let rows: HistoryRows = {};
+    try {
+      rows = await this.ha.history([ids.heat_demand, ids.cool_demand], from, end, MINIMAL);
+    } catch (e) {
+      this.log.debug(`demand sensors not read: ${errorText(e)}`);
+    }
     for (const mode of ['heat', 'cool'] as const) {
-      const list = rows[mode === 'heat' ? ids.heat_demand : ids.cool_demand] ?? [];
+      const id = mode === 'heat' ? ids.heat_demand : ids.cool_demand;
+      const list = rows[id] ?? [];
+      if (list.length) diag.entities.push({ entityId: id, role: mode === 'heat' ? 'klimo_heat_demand' : 'klimo_cool_demand', rows: list.length, numeric: 0 });
       let open: EpochMs | null = null;
       for (const row of list) {
         const at = Math.max(from, Math.round(row.lu * 1000));
@@ -581,14 +682,7 @@ export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, 
       if (s.mode === 'heat') heated += ms;
       else cooled += ms;
     }
-    let min: { c: number; at: EpochMs } | null = null;
-    let max: { c: number; at: EpochMs } | null = null;
-    for (const [at, v] of series) {
-      if (v === null) continue;
-      const c = round1(v);
-      if (!min || c < min.c) min = { c, at };
-      if (!max || c > max.c) max = { c, at };
-    }
+    const { min, max } = extremes(series, from, end, round1);
     const l = this.learned.get(roomId);
     const rate = l ? (l.mode === 'cool' ? l.cool : l.heat ?? l.cool) : null;
     return {
@@ -608,22 +702,25 @@ export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, 
     const now = this.clock.now();
     const last = Math.floor(now / STAT_BUCKET) * STAT_BUCKET;
     const key = `sparks|${rooms.map((r) => r.id).sort().join(',')}|${minuteOf(last)}`;
-    return this.cached(key, HISTORY_TTL, () => this.buildSparks(rooms, last, now));
+    return this.cached(key, HISTORY_TTL, () => this.buildSparks(rooms, last, now), (v) => Object.values(v).every((s) => s.complete));
   }
 
   private async buildSparks(rooms: RoomConfig[], last: EpochMs, now: EpochMs): Promise<Record<Id, SparkDto>> {
     const from = last - (SPARK_POINTS - 1) * SPARK_STEP;
     const times = Array.from({ length: SPARK_POINTS }, (_, i) => from + i * SPARK_STEP);
     const ids = this.klimoIds(rooms);
-    const sensorsByRoom = this.config.engineConfig().sensorsByRoom;
-    const rawByRoom = new Map(rooms.map((r) => [r.id, (sensorsByRoom[r.id] ?? []).filter((s) => s.role === 'temperature' && s.included)]));
+    // thermostats keep no statistics of their current temperature: those rooms use Klimo's sensor
+    const rawByRoom = new Map(rooms.map((r) => [r.id, this.roomSensors(r.id, 'temperature').filter((s) => domainOf(s.entityId) !== 'climate')]));
     const statIds = [...new Set(rooms.flatMap((r) => [ids.get(r.id)!.temperature, ids.get(r.id)!.target, ...(rawByRoom.get(r.id) ?? []).map((s) => s.entityId)]))];
 
     let stats: StatRows = {};
+    let complete = this.ha.connected;
     if (statIds.length && this.ha.connected) {
       try {
         stats = await this.ha.statistics(statIds, from - 3 * STAT_BUCKET, now, '5minute', ['mean']);
+        this.once.reset('sparks');
       } catch (e) {
+        complete = false;
         this.once.warn('sparks', `statistics unavailable for sparklines, using memory: ${errorText(e)}`);
       }
     }
@@ -636,14 +733,21 @@ export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, 
     const out: Record<Id, SparkDto> = {};
     for (const room of rooms) {
       const own = ids.get(room.id)!;
-      let values = times.map((t) => pick(stats[own.temperature], t));
-      if (!nonEmpty(values)) {
-        const raw = rawByRoom.get(room.id) ?? [];
-        values = times.map((t) => combine(raw.flatMap((s) => {
-          const v = pick(stats[s.entityId], t);
-          return v === null ? [] : [{ v, w: s.weight }];
-        }), room.temperature.method));
-      }
+      const raw = rawByRoom.get(room.id) ?? [];
+      // the room's sensors combined like the live value; Klimo's published sensor only without them
+      let values = times.map((t) =>
+        combine(
+          dropOutliers(
+            raw.flatMap((s) => {
+              const v = pick(stats[s.entityId], t);
+              return v === null ? [] : [{ v, w: s.weight }];
+            }),
+            room.temperature.outlier,
+          ),
+          room.temperature.method,
+        ),
+      );
+      if (!nonEmpty(values)) values = times.map((t) => pick(stats[own.temperature], t));
       if (!nonEmpty(values)) {
         const ring = this.ringPoints(room.id, (s) => s.c);
         values = times.map((t) => valueAt(ring, t, 15 * MIN));
@@ -658,6 +762,7 @@ export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, 
         targets: nonEmpty(targets) ? targets.map((v) => (v === null ? null : round1(v))) : null,
         from,
         stepMin: 30,
+        complete,
       };
     }
     return out;
@@ -741,6 +846,19 @@ function toBuckets(buckets: ReturnType<typeof bucketize>): StatisticsSeriesDto['
     state: null,
     sum: null,
   }));
+}
+
+/** The parts of [from, end] no segment covers. */
+function gapsOf(segments: readonly Segment[], from: EpochMs, end: EpochMs): [EpochMs, EpochMs][] {
+  const gaps: [EpochMs, EpochMs][] = [];
+  let at = from;
+  for (const s of [...segments].sort((a, b) => a.from - b.from)) {
+    if (s.from > at) gaps.push([at, Math.min(s.from, end)]);
+    at = Math.max(at, s.to);
+    if (at >= end) break;
+  }
+  if (at < end) gaps.push([at, end]);
+  return gaps.filter(([a, b]) => b > a);
 }
 
 /** Adjacent segments with the same values and kind become one. */

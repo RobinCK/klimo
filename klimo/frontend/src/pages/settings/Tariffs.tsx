@@ -41,7 +41,7 @@ export function TariffsSection({ bundle, onSaved, canEdit }: { bundle: SettingsB
           value={v.electricityPerKwh}
           min={0}
           max={100}
-          step={0.0001}
+          step={0.01}
           placeholder={t('not set')}
           onChange={(electricityPerKwh) => set({ electricityPerKwh })}
           onClear={() => set({ electricityPerKwh: null })}
@@ -61,7 +61,7 @@ export function TariffsSection({ bundle, onSaved, canEdit }: { bundle: SettingsB
             value={v.gasPrice}
             min={0}
             max={10000}
-            step={0.0001}
+            step={0.01}
             placeholder={t('not set')}
             onChange={(gasPrice) => set({ gasPrice })}
             onClear={() => set({ gasPrice: null })}

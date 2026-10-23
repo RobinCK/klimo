@@ -65,6 +65,7 @@ export function CircuitDrawer({ d, dto, onClose }: { d: SystemData; dto: Circuit
   const [runOn, setRunOn] = useState(defaultRunOn('radiators'));
   const [confirmDelete, setConfirmDelete] = useState(false);
   const manifolds = useResource('manifolds', api.manifolds.list, { reloadOn: ['manifold'] });
+  const manifold = (manifolds.data ?? []).find((m) => m.id === draft.manifoldId);
   const sensorSearch = useEntitySearch('temperature');
   const numberSearch = useEntitySearch('number');
   const pumpSearch = useEntitySearch('pump');
@@ -172,16 +173,21 @@ export function CircuitDrawer({ d, dto, onClose }: { d: SystemData; dto: Circuit
         />
         <Section variant="plain" level={3} title={t('Fed by')}>
           <Stack gap="xs">
-            {central.map((s) => (
-              <CheckboxRow
-                key={s.config.id}
-                checked={draft.sourceIds.includes(s.config.id)}
-                title={d.nameOf(s.config.id)}
-                onChange={(on) => set({ sourceIds: on ? [...draft.sourceIds, s.config.id] : draft.sourceIds.filter((x) => x !== s.config.id) })}
-              />
-            ))}
+            {central.map((s) => {
+              // a source of the circuit's manifold feeds it through the manifold, changed there
+              const via = manifold?.sourceIds.includes(s.config.id) ? manifold : undefined;
+              return (
+                <CheckboxRow
+                  key={s.config.id}
+                  checked={!!via || draft.sourceIds.includes(s.config.id)}
+                  title={d.nameOf(s.config.id)}
+                  locked={via ? { reason: t('through the manifold «{name}»', { name: via.name }) } : undefined}
+                  onChange={(on) => set({ sourceIds: on ? [...draft.sourceIds, s.config.id] : draft.sourceIds.filter((x) => x !== s.config.id) })}
+                />
+              );
+            })}
             {!central.length ? <StatusBanner tone="event" icon="info" text={t('No central sources yet.')} /> : null}
-            {central.length && !draft.sourceIds.length ? (
+            {central.length && !draft.sourceIds.length && !manifold?.sourceIds.length ? (
               <StatusBanner tone="warn" icon="alert" text={t('Nothing feeds this circuit: its rooms could not start a boiler or heat pump.')} />
             ) : null}
           </Stack>

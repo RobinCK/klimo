@@ -6,7 +6,7 @@ import { Icon } from '../../basic/Icon';
 import { IconButton } from '../../basic/IconButton';
 import { VisuallyHidden } from '../../basic/VisuallyHidden';
 import { cx } from '../internal/util';
-import { useEntityResults } from './EntityPicker';
+import { useEntityResults, usedByText } from './EntityPicker';
 import f from './fields.module.css';
 import s from './finder.module.css';
 
@@ -141,13 +141,7 @@ export function EntityFinder({ search, choices, onPick, placeholder, ariaLabel, 
   };
 
   const text = (e: HaEntityDto, why?: string | null) => {
-    const meta = [
-      e.areaName,
-      e.deviceName && e.deviceName !== e.name ? e.deviceName : null,
-      e.usedBy.length ? ut('used by {what}', { what: e.usedBy.map((u) => u.label).join(', ') }) : null,
-    ]
-      .filter(Boolean)
-      .join(' · ');
+    const meta = [e.areaName, e.deviceName && e.deviceName !== e.name ? e.deviceName : null, usedByText(e, ut)].filter(Boolean).join(' · ');
     const extra = why ?? note?.(e);
     return (
       <span className={s.text}>

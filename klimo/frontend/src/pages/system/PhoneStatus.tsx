@@ -7,10 +7,13 @@ import type { SourceDto, SourceState, Tone } from '@api/model';
 import { api } from '@api/endpoints';
 import { useLiveEvent, useResource } from '@data';
 import { InboxBell, navigate, paths } from '@app';
-import { AutoGrid, LoopTile, MobileTopBar, Row, RowList, Section, SourceRow, Stack } from '@ui';
+import { AutoGrid, DashedAddButton, LoopTile, MobileTopBar, Row, RowList, Section, SourceRow, Stack } from '@ui';
 import { fmtClock, fmtTemp, renderJournal, renderReason, t } from '@i18n';
+import { useState } from 'react';
+import type { Id } from '@api/model';
 import { CircuitsSection } from './Circuits';
 import { HouseModeSection } from './HouseMode';
+import { ManifoldDrawer, ManifoldsSection, useManifolds } from './Manifolds';
 import { EnergyLine, whenLine } from './Schema';
 import { isRunning, SOURCE_ICON, sourceChip, sourceMeta, type SystemData } from './shared';
 
@@ -43,6 +46,10 @@ export function PhoneStatus({ d }: { d: SystemData }) {
   const house = d.house;
   const energy = d.plant?.energy ?? null;
   const circuits = d.circuits.data ?? [];
+  const manifoldList = useManifolds().manifolds;
+  const manifolds = manifoldList.data ?? [];
+  // without a manifold an editor gets the way to add one right here, not only behind a circuit tile
+  const [addingManifold, setAddingManifold] = useState(false);
   const last = journal.data?.items[0] ?? null;
   const devices = house?.deviceIssuesCount ?? 0;
   const inbox = house?.inboxCount ?? 0;
@@ -85,29 +92,47 @@ export function PhoneStatus({ d }: { d: SystemData }) {
       {circuits.length ? (
         <Section variant="plain" level={3} overline={t('Circuits & pumps')}>
           {/* a tile opens the circuits with their modes, pumps and rooms */}
-          <AutoGrid min={150} columns={2} gap="sm">
-            {circuits.map((c) => {
-              const live = d.plant?.circuits.find((x) => x.circuitId === c.config.id) ?? c.state;
-              const requesting = live.requestingRoomIds.map((id) => d.roomName(id) ?? id);
-              const sub =
-                live.runOnUntil && live.runOnUntil > d.now
-                  ? t('run-on until {time}', { time: fmtClock(live.runOnUntil, d.now) })
-                  : requesting.length
-                    ? requesting.join(', ')
-                    : renderReason(live.state, d.ctx);
-              return (
-                <LoopTile
-                  key={c.config.id}
-                  dotTone={live.pumpOn ? live.tone : 'off'}
-                  name={c.config.shortName || c.config.name}
-                  state={live.pumpOn ? t('Pump running') : t('Pump stopped')}
-                  sub={sub}
-                  on={live.pumpOn}
-                  to={paths.system({ section: 'circuits' })}
-                />
-              );
-            })}
-          </AutoGrid>
+          <Stack gap="sm">
+            <AutoGrid min={150} columns={2} gap="sm">
+              {manifolds.map((m) => {
+                const pump = d.plant?.manifoldPumps.find((p) => p.manifoldId === m.id);
+                const tone = d.plant?.manifolds.find((x) => x.manifoldId === m.id)?.tone ?? 'idle';
+                return (
+                  <LoopTile
+                    key={m.id}
+                    dotTone={pump?.on ? tone : 'off'}
+                    name={m.name}
+                    state={pump ? (pump.on ? t('Pump running') : t('Pump stopped')) : t('No pump')}
+                    sub={m.sourceIds.map(d.nameOf).join(', ') || undefined}
+                    on={!!pump?.on}
+                    to={paths.system({ section: 'circuits' })}
+                  />
+                );
+              })}
+              {circuits.map((c) => {
+                const live = d.plant?.circuits.find((x) => x.circuitId === c.config.id) ?? c.state;
+                const requesting = live.requestingRoomIds.map((id) => d.roomName(id) ?? id);
+                const sub =
+                  live.runOnUntil && live.runOnUntil > d.now
+                    ? t('run-on until {time}', { time: fmtClock(live.runOnUntil, d.now) })
+                    : requesting.length
+                      ? requesting.join(', ')
+                      : renderReason(live.state, d.ctx);
+                return (
+                  <LoopTile
+                    key={c.config.id}
+                    dotTone={live.pumpOn ? live.tone : 'off'}
+                    name={c.config.shortName || c.config.name}
+                    state={live.pumpOn ? t('Pump running') : t('Pump stopped')}
+                    sub={sub}
+                    on={live.pumpOn}
+                    to={paths.system({ section: 'circuits' })}
+                  />
+                );
+              })}
+            </AutoGrid>
+            {manifoldList.settled && !manifolds.length && d.canEdit ? <DashedAddButton label={t('Add a manifold')} onClick={() => setAddingManifold(true)} /> : null}
+          </Stack>
         </Section>
       ) : d.circuits.settled && d.canEdit ? (
         <RowList ariaLabel={t('Circuits & pumps')}>
@@ -184,16 +209,20 @@ export function PhoneStatus({ d }: { d: SystemData }) {
           to={paths.settings()}
         />
       </RowList>
+      {addingManifold ? <ManifoldDrawer d={d} id={null} onClose={() => setAddingManifold(false)} /> : null}
     </Stack>
   );
 }
 
 /** The circuits on a phone: the same cards as on the system page, under a bar that leads back. */
 export function PhoneCircuits({ d }: { d: SystemData }) {
+  const [manifold, setManifold] = useState<{ id: Id | null } | null>(null);
   return (
     <Stack gap="lg">
       <MobileTopBar title={t('Circuits & pumps')} onBack={() => navigate(paths.system())} />
+      <ManifoldsSection d={d} phone onEdit={(id) => setManifold({ id })} />
       <CircuitsSection d={d} phone />
+      {manifold ? <ManifoldDrawer d={d} id={manifold.id} onClose={() => setManifold(null)} /> : null}
     </Stack>
   );
 }

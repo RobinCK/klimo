@@ -14,6 +14,7 @@ import {
   LANG_NAMES,
   aggregationLabel,
   fmtAgo,
+  fmtDelta,
   fmtDur,
   fmtTemp,
   minRequestHint,
@@ -29,9 +30,20 @@ import {
 type Save = (bundle: SettingsBundle) => void;
 
 /** A number setting as a pill; people who may not change the configuration just read it. */
-export function NumPill(p: { text: string; label: string; value: number; min: number; max: number; step: number; unit?: string; canEdit: boolean; onChange: (v: number) => void }) {
+export function NumPill(p: {
+  text: string;
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  unit?: string;
+  format?: (v: number) => string;
+  canEdit: boolean;
+  onChange: (v: number) => void;
+}) {
   if (!p.canEdit) return <ValuePill text={p.text} ariaLabel={p.label} />;
-  return <ValuePill text={p.text} ariaLabel={p.label} editor={{ kind: 'number', min: p.min, max: p.max, step: p.step, unit: p.unit }} value={p.value} onChange={p.onChange} />;
+  return <ValuePill text={p.text} ariaLabel={p.label} editor={{ kind: 'number', min: p.min, max: p.max, step: p.step, unit: p.unit, format: p.format }} value={p.value} onChange={p.onChange} />;
 }
 
 function useGeneral<K extends keyof GeneralSettings>(bundle: SettingsBundle, keys: readonly K[], onSaved: Save) {
@@ -285,19 +297,23 @@ export function BehaviourSection({ bundle, onSaved, canEdit }: { bundle: Setting
   const setD = (p: Partial<RoomDefaults>) => auto.set((prev) => ({ ...prev, defaults: { ...prev.defaults, ...p } }));
   const delays = windowDelayHints({ openDelaySec: d.windowOpenDelaySec, resumeDelaySec: d.windowResumeDelaySec, remindAfterMin: d.windowRemindAfterMin });
   const band = (b: { below: number; above: number }) => `−${b.below.toFixed(1)} / +${b.above.toFixed(1)}°`;
-  const bandPill = (mode: 'heat' | 'cool', side: 'below' | 'above', label: string) => (
-    <NumPill
-      canEdit={canEdit}
-      label={label}
-      text={`${side === 'below' ? '−' : '+'}${d.tolerance[mode][side].toFixed(1)}°`}
-      value={d.tolerance[mode][side]}
-      min={0.1}
-      max={1}
-      step={0.1}
-      unit="°"
-      onChange={(n) => setD({ tolerance: { ...d.tolerance, [mode]: { ...d.tolerance[mode], [side]: Math.round(n * 10) / 10 } } })}
-    />
-  );
+  const bandPill = (mode: 'heat' | 'cool', side: 'below' | 'above', label: string) => {
+    const signed = (x: number) => `${side === 'below' ? '−' : '+'}${fmtDelta(x)}`;
+    return (
+      <NumPill
+        canEdit={canEdit}
+        label={label}
+        text={signed(d.tolerance[mode][side])}
+        value={d.tolerance[mode][side]}
+        min={0.1}
+        max={1}
+        step={0.1}
+        unit="°"
+        format={signed}
+        onChange={(n) => setD({ tolerance: { ...d.tolerance, [mode]: { ...d.tolerance[mode], [side]: Math.round(n * 10) / 10 } } })}
+      />
+    );
+  };
   return (
     <Section title={t('Behaviour')} icon="sparkle" action={<AutosaveStatus state={auto.state} retry={auto.retry} />}>
       <Stack gap="lg">

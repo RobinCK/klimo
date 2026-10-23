@@ -47,6 +47,12 @@ export interface Env {
     warmup: boolean;
     /** Language of the demo house: names, the fake HA's language and so Klimo's notification language. */
     lang: Lang;
+    /** Real ms after boot before the fake HA accepts Klimo (an add-on start racing HA's WebSocket). */
+    haDelayMs: number;
+    /** Real ms after boot while the recorder answers `unknown_command` (HA itself still starting). */
+    recorderDelayMs: number;
+    /** Minutes before the scenario's moment Klimo was down (its MQTT entities recorded as unavailable). */
+    klimoDowntimeMin: number;
   };
   /** Development: requests without ingress headers are treated as an HA admin. */
   devAdmin: boolean;
@@ -131,6 +137,9 @@ export function loadEnv(vars: Vars = process.env, options?: Options): Env {
       seed: num(vars.KLIMO_SIM_SEED) ?? 42,
       warmup: vars.KLIMO_SIM_WARMUP !== '0',
       lang: pick(vars.KLIMO_SIM_LANG, SIM_LANGS, 'en'),
+      haDelayMs: Math.max(0, (num(vars.KLIMO_SIM_HA_DELAY) ?? 0) * 1000),
+      recorderDelayMs: Math.max(0, (num(vars.KLIMO_SIM_RECORDER_DELAY) ?? 0) * 1000),
+      klimoDowntimeMin: Math.max(0, num(vars.KLIMO_SIM_KLIMO_DOWNTIME) ?? 0),
     },
     devAdmin: flag(vars.KLIMO_DEV_ADMIN),
     ingressOnly: !simulate && !flag(vars.KLIMO_DEV_ADMIN) && !!vars.SUPERVISOR_TOKEN,

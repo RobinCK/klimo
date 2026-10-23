@@ -37,8 +37,10 @@ import { applySiblings, mainEntity, modeMapText, rolePreset, roleLabel, setpoint
 import { ConditionDrawer, DeleteDialog, DuplicateDialog, EditDialog, EnergyDialog, GuardsDialog, LockDialog, PickEntityDialog } from './SourceDialogs';
 import { bindingHint, controlHint, hvacProofHint, modesHint, setpointHint, type HintSource } from './hints';
 import { ConsumptionSection } from './Consumption';
+import { DeliveryDialog } from './Delivery';
+import { useManifolds } from '../Manifolds';
 
-type DialogKind = 'lock' | 'edit' | 'duplicate' | 'delete' | 'energy' | 'guards';
+type DialogKind = 'lock' | 'edit' | 'duplicate' | 'delete' | 'energy' | 'guards' | 'delivery';
 
 const ADAPTERS: readonly AdapterType[] = ['relay', 'climate', 'flow', 'script'];
 
@@ -202,9 +204,15 @@ export function SourceDetail({ d, dto, phone }: { d: SystemData; dto: SourceDto;
   const setCap = (k: keyof typeof caps) => editable && void patch.run({ capabilities: { ...caps, [k]: !caps[k] } });
 
   /* ---- feeds ---- */
+  const manifolds = useManifolds().manifolds.data ?? [];
+  const circuitLabel = (id: string) => {
+    const c = d.circuits.data?.find((x) => x.config.id === id)?.config;
+    const m = c?.manifoldId ? manifolds.find((x) => x.id === c.manifoldId && x.sourceIds.includes(cfg.id)) : undefined;
+    return m && c ? `${m.name} → ${c.name}` : (c?.name ?? id);
+  };
   const feedChips = (list: SourceDto['feeds']['heat']) =>
     list.map((f) => ({
-      label: f.type === 'circuit' ? (d.circuits.data?.find((c) => c.config.id === f.id)?.config.name ?? f.id) : (d.roomName(f.id) ?? f.id),
+      label: f.type === 'circuit' ? circuitLabel(f.id) : (d.roomName(f.id) ?? f.id),
       to: f.type === 'room' ? paths.room(f.id) : `${paths.system()}`,
     }));
 
@@ -416,7 +424,18 @@ export function SourceDetail({ d, dto, phone }: { d: SystemData; dto: SourceDto;
         </Section>
 
         <AutoGrid min={300} gap="lg">
-          <Section variant="plain" level={3} title={t('Where it delivers')}>
+          <Section
+            variant="plain"
+            level={3}
+            title={t('Where it delivers')}
+            action={
+              editable ? (
+                <Button variant="link" size="sm" onClick={() => setDialog(cfg.scope === 'central' ? 'delivery' : 'edit')}>
+                  {t('Change')}
+                </Button>
+              ) : undefined
+            }
+          >
             <Stack gap="sm">
               <FeedRow label={t('Heating →')} tone="heat" chips={feedChips(dto.feeds.heat)} empty={t('does not heat')} />
               <FeedRow label={t('Cooling →')} tone="cool" chips={feedChips(dto.feeds.cool)} empty={t('does not cool')} />
@@ -539,6 +558,7 @@ export function SourceDetail({ d, dto, phone }: { d: SystemData; dto: SourceDto;
       ) : null}
       {dialog === 'energy' ? <EnergyDialog d={d} dto={dto} onClose={() => setDialog(null)} /> : null}
       {dialog === 'guards' ? <GuardsDialog d={d} dto={dto} onClose={() => setDialog(null)} /> : null}
+      {dialog === 'delivery' ? <DeliveryDialog d={d} sourceId={cfg.id} onClose={() => setDialog(null)} /> : null}
       {picking ? (
         <PickEntityDialog
           role={picking}

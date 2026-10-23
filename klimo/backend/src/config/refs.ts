@@ -255,6 +255,7 @@ export function usagesOf(g: ConfigGraph, q: UsageQuery): UsageRef[] {
       if (g.energy.shedOrder.includes(q.id) || g.energy.exempt.sourceIds.includes(q.id)) refs.push({ type: 'energy', id: null, label: '' });
       for (const e of g.emitters.values()) if (e.sourceId === q.id) refs.push(roomRef(e.roomId));
       for (const c of g.circuits.values()) if (c.sourceIds.includes(q.id)) refs.push({ type: 'circuit', id: c.id, label: c.name });
+      for (const m of g.manifolds.values()) if (m.sourceIds.includes(q.id)) refs.push({ type: 'circuit', id: m.id, label: m.name });
       for (const s of g.sources.values()) if (s.linkedTo === q.id) refs.push({ type: 'source', id: s.id, label: s.name });
       break;
     }

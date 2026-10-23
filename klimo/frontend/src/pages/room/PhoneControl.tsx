@@ -15,7 +15,7 @@ import {
 } from '@ui';
 import { navigate, paths, previousRoute, usePref } from '@app';
 import { brand } from '@brand';
-import { aggregationLabel, fmtClock, fmtPct, fmtRate, fmtTemp, heatingKindWords, roomStateLabel, t, trvStrategyLabel, windowReactionLabel } from '@i18n';
+import { aggregationLabel, fmtClock, fmtDelta, fmtPct, fmtRate, fmtTemp, heatingKindWords, roomStateLabel, t, trvStrategyLabel, windowReactionLabel } from '@i18n';
 import { isControllable, RoomControlBar } from './Control';
 import { QuickActions } from './QuickActions';
 import { RoomToday } from './RoomToday';
@@ -183,8 +183,8 @@ export function PhoneControl({ p, ed, profiles, now }: { p: SectionProps; ed: Ta
           slider: t('Target'),
           lo: t('Not colder than'),
           hi: t('Not warmer than'),
-          dec: t('Lower the target by 0.5°'),
-          inc: t('Raise the target by 0.5°'),
+          dec: t('Lower the target by {d}', { d: fmtDelta(ed.stepC) }),
+          inc: t('Raise the target by {d}', { d: fmtDelta(ed.stepC) }),
           locked: t('View only'),
           valueText: (x) => fmtTemp(x),
         }}

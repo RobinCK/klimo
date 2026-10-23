@@ -744,7 +744,10 @@ export class MqttService implements IMqtt, OnApplicationBootstrap, OnModuleDestr
     }
   }
 
-  /** Sparklines come from the recorder (30-min points): refreshed every 5 min, or at once for a new room. */
+  /**
+   * Sparklines come from the recorder (30-min points): refreshed every 5 min, or at once for a new room.
+   * An answer from before the recorder could be read (just started) is asked again on the next pass.
+   */
   private refreshSparks(cfg: EngineConfig): void {
     if (this.sparksLoading) return;
     const rooms = cfg.rooms
@@ -759,7 +762,7 @@ export class MqttService implements IMqtt, OnApplicationBootstrap, OnModuleDestr
       .sparks()
       .then((s) => {
         this.sparks = s;
-        this.sparksAt = this.clock.now();
+        this.sparksAt = Object.values(s).every((x) => x.complete !== false) ? this.clock.now() : Number.NEGATIVE_INFINITY;
         this.sparksRooms = rooms;
         this.schedulePass();
       })

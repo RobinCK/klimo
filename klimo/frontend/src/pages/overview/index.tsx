@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { HouseState, PlantState, SourceDto } from '@api/model';
 import { api } from '@api/endpoints';
-import { liveStore, useCodeContext, useHouse, useIncidents, useLayout, useLiveEvent, useMe, useNow, usePlant, useResource, useRoomSummaries, useRoomsLoaded } from '@data';
+import { liveStore, useCodeContext, useHouse, useIncidents, useLayout, useLiveEvent, useMe, useNow, usePlant, useResource, useRetryUntilComplete, useRoomSummaries, useRoomsLoaded } from '@data';
 import { AutoGrid, Button, Page, ProfileTile, RowList, Row, Section, Skeleton, SourceRow, Stack, StatusBanner } from '@ui';
 import { LogoMark, Wordmark } from '@brand';
 import { HouseSeasonPill, InboxBell, paths } from '@app';
@@ -72,6 +72,8 @@ function useOverviewData() {
   const sources = useResource('names:sources', api.sources.list, { reloadOn: ['source'] });
   const circuits = useResource('names:circuits', api.circuits.list, { reloadOn: ['circuit', 'pump'] });
   useEvery(FIVE_MIN, sparks.reload);
+  // read while the add-on was starting (memory only): asked again shortly
+  useRetryUntilComplete(sparks, (s) => Object.values(s).some((x) => x.complete === false));
   // the outdoor sensors' readings on the outdoor tile
   useEvery(FIVE_MIN, overview.reload);
   useEvery(FIVE_MIN, today.reload);

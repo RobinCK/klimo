@@ -178,7 +178,7 @@ export function SeasonCard({ d, s, embedded }: { d: SystemData; s: StrategyData;
   const cutoff = useAutosave(dto.heat.heatingCutoffOutdoorC, (v) => api.strategy.patchHeat({ heatingCutoffOutdoorC: v }).then(setData));
   const v = season.value;
   const set = (p: Partial<SeasonConfig>) => season.set((x) => ({ ...x, ...p }));
-  const tile = (key: keyof SeasonConfig, label: string, sub: string, text: string, min: number, max: number, step: number, hint?: string) => (
+  const tile = (key: keyof SeasonConfig, label: string, sub: string, text: string, min: number, max: number, step: number, hint?: string, unit?: string) => (
     <Stepper
       variant="tile"
       label={label}
@@ -186,6 +186,7 @@ export function SeasonCard({ d, s, embedded }: { d: SystemData; s: StrategyData;
       hint={hint}
       value={v[key] as number}
       text={text}
+      unit={unit}
       min={min}
       max={max}
       step={step}
@@ -239,6 +240,7 @@ export function SeasonCard({ d, s, embedded }: { d: SystemData; s: StrategyData;
             72,
             6,
             t('A season that has just begun holds at least this long before it can change again. Default: 24 h.'),
+            t('h'),
           )}
           {tile(
             'confirmH',
@@ -249,6 +251,7 @@ export function SeasonCard({ d, s, embedded }: { d: SystemData; s: StrategyData;
             24,
             1,
             t('The average has to stay past the threshold this long before the season changes. Default: 6 h.'),
+            t('h'),
           )}
           {tile(
             'neutralColdGuardC',

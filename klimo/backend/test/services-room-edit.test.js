@@ -129,6 +129,37 @@ test('a room with ordinary radiators and only a temperature sensor joins the rad
     assert.deepEqual(circuitMemberRows(cfgOf(s), circuit.id).map((m) => m.roomId), [report.roomId, other.roomId]);
   }));
 
+test('ordinary radiators with one sensor added as its temperature and its humidity: every step passes, no head is asked for', () =>
+  withHouse(async (s) => {
+    const T = 'sensor.zig_temp_warehouse_temperature';
+    const H = 'sensor.zig_temp_warehouse_humidity';
+    s.ha.set(T, '12.4', { device_class: 'temperature', unit_of_measurement: '°C', friendly_name: 'zig_temp_warehouse Temperature' }, { deviceId: 'dev_wh' });
+    s.ha.set(H, '61', { device_class: 'humidity', unit_of_measurement: '%', friendly_name: 'zig_temp_warehouse Humidity' }, { deviceId: 'dev_wh' });
+    const draft = wizard({
+      name: 'Warehouse',
+      devices: [
+        { role: 'temp_humidity', entityId: T, name: 'zig_temp_warehouse' },
+        { role: 'humidity', entityId: H, name: 'zig_temp_warehouse Humidity' },
+      ],
+    });
+    for (const step of [1, 2, 3, 4]) assert.deepEqual(s.setup.validate({ step, draft }).issues, [], `step ${step}`);
+    // smart heads ticked as well want a head; ordinary radiators alone never do
+    const both = s.setup.validate({ step: 2, draft: { ...draft, emitterKinds: ['trv', 'radiator_plain'] } });
+    assert.deepEqual(both.issues.map((i) => [i.path, i.code, i.params?.role]), [['devices', 'required', 'trv']]);
+
+    const report = await s.setup.create(draft, ACTOR);
+    const cfg = cfgOf(s);
+    const circuit = cfg.circuits.find((c) => c.kind === 'radiators');
+    assert.ok(circuit, 'the house had no radiator circuit: one is set up with the room');
+    const [e] = cfg.emittersByRoom[report.roomId];
+    assert.deepEqual([e.kind, e.circuitId, e.roles.heat], ['radiator', circuit.id, 'primary']);
+    assert.deepEqual(cfg.devicesByEmitter[e.id] ?? [], []);
+    // the pair is read once: one temperature and one humidity row
+    assert.deepEqual(cfg.sensorsByRoom[report.roomId].map((x) => `${x.role} ${x.entityId}`).sort(), [`humidity ${H}`, `temperature ${T}`]);
+    assert.deepEqual(heating(s, report.roomId).kinds, ['radiator_plain']);
+    assert.equal(roomOf(s, report.roomId).demand.policy, 'call');
+  }));
+
 test('ordinary radiators need a temperature, a heat source to switch and a room allowed to call it', () =>
   withHouse(
     async (s) => {

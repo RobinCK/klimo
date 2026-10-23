@@ -29,10 +29,13 @@ import {
   defaultSeason,
   defaultSettings,
   defaultTariffs,
+  roomSourceRoles,
   sourceMergeBase,
   storedMeters,
+  WIZARD_DEFAULTS,
   withDefaults,
 } from '../shared/defaults';
+import { ID_PREFIX, newId } from '../common/ids';
 import type {
   Circuit,
   ConfigCollectionName,
@@ -396,7 +399,39 @@ export function legacyCircuitModes(g: ConfigGraph, ids: readonly Id[]): void {
   }
 }
 
-export async function loadGraph(em: EntityManager): Promise<{ graph: ConfigGraph; missingSingletons: ConfigSingletonName[] }> {
+/** Manifolds saved before they listed their sources: fed by what every circuit on them shares (nothing changes). */
+export function legacyManifoldSources(g: ConfigGraph, ids: readonly Id[]): void {
+  for (const id of ids) {
+    const m = g.manifolds.get(id);
+    if (!m) continue;
+    const circuits = [...g.circuits.values()].filter((c) => c.manifoldId === id).sort((a, b) => a.order - b.order);
+    m.sourceIds = circuits.length ? circuits[0].sourceIds.filter((s) => circuits.every((c) => c.sourceIds.includes(s))) : [];
+  }
+}
+
+/**
+ * Room sources added without their room's emitter (the source wizard before 0.2.2): the engine serves a
+ * room only through one, so each gets it. Returns how many.
+ */
+export function healRoomEmitters(g: ConfigGraph): number {
+  let n = 0;
+  for (const s of g.sources.values()) {
+    if (s.scope !== 'room' || !s.roomId || !g.rooms.has(s.roomId)) continue;
+    const emitters = [...g.emitters.values()];
+    if (emitters.some((e) => e.sourceId === s.id)) continue;
+    const roomId = s.roomId;
+    const inRoom = emitters.filter((e) => e.roomId === roomId);
+    const roles = roomSourceRoles(s, inRoom.some((e) => e.enabled && e.roles.heat !== null));
+    const assist = roles.heat === 'assist' ? { deficitC: WIZARD_DEFAULTS.ac.assistDeficitC } : null;
+    const order = inRoom.reduce((m, e) => Math.max(m, e.order + 1), 0);
+    const id = newId(ID_PREFIX.emitter);
+    g.emitters.set(id, { ...DEFAULT_EMITTER(), id, roomId, kind: 'direct', name: s.name, order, sourceId: s.id, roles, assist });
+    n++;
+  }
+  return n;
+}
+
+export async function loadGraph(em: EntityManager): Promise<{ graph: ConfigGraph; missingSingletons: ConfigSingletonName[]; migratedManifolds: Id[] }> {
   const g = emptyGraph();
   const missingSingletons: ConfigSingletonName[] = [];
   const one = async <K extends ConfigSingletonName>(k: K, entity: EntityTarget<ObjectLiteral>) => {
@@ -441,6 +476,8 @@ export async function loadGraph(em: EntityManager): Promise<{ graph: ConfigGraph
   const feeds = await em.getRepository(CircuitSourceRow).find({ order: { order: 'ASC' } });
   for (const f of feeds) g.circuits.get(f.circuitId)?.sourceIds.push(f.sourceId);
   for (const c of g.circuits.values()) c.sourceIds = [...new Set(c.sourceIds)];
+  const migratedManifolds = (await em.getRepository(ManifoldRow).find()).filter((r) => !Array.isArray(r.sourceIds)).map((r) => r.id as Id);
+  legacyManifoldSources(g, migratedManifolds);
 
   for (const r of await em.getRepository(ProfileRoomRow).find()) {
     g.profileRooms.set(prKey(r.profileId, r.roomId), { profileId: r.profileId, roomId: r.roomId, mode: r.mode as 'own' | 'off', heatC: r.heatC, coolC: r.coolC, writtenAt: r.writtenAt });
@@ -457,7 +494,7 @@ export async function loadGraph(em: EntityManager): Promise<{ graph: ConfigGraph
   for (const r of await em.getRepository(DeviceMetaRow).find()) {
     g.deviceMeta.set(r.key, { key: r.key, label: r.label, ignored: r.ignored, batteryType: r.batteryType });
   }
-  return { graph: g, missingSingletons };
+  return { graph: g, missingSingletons, migratedManifolds };
 }
 
 export type RowSnapshot = Map<string, Map<string, string>>;

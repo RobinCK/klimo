@@ -199,6 +199,7 @@ function CalendarFields({ value, onChange }: { value: Calendar; onChange: (v: Ca
         label={t('Warm up before the event')}
         value={value.preheatMin}
         text={value.preheatMin ? fmtDur(value.preheatMin) : t('no')}
+        unit={t('min')}
         min={0}
         max={240}
         step={15}
@@ -213,8 +214,13 @@ function CalendarFields({ value, onChange }: { value: Calendar; onChange: (v: Ca
 function VacationFields({ c, value, onChange }: { c: ScheduleContext; value: Vacation; onChange: (v: Vacation) => void }) {
   const untilParts = value.until != null ? zonedParts(value.until) : null;
   const date = untilParts?.date ?? '';
-  const minute = untilParts?.minuteOfDay ?? 18 * 60;
-  const setUntil = (d: string, m: number) => onChange({ ...value, until: d ? atMinute(dayStart(d), m) : null });
+  // the arrival time is kept here until a date is picked, so it moves before that too
+  const [loose, setLoose] = useState(18 * 60);
+  const minute = untilParts?.minuteOfDay ?? loose;
+  const setUntil = (d: string, m: number) => {
+    setLoose(m);
+    onChange({ ...value, until: d ? atMinute(dayStart(d), m) : null });
+  };
   const profiles = c.profiles.data ?? [];
   return (
     <Stack gap="md">
@@ -242,6 +248,7 @@ function VacationFields({ c, value, onChange }: { c: ScheduleContext; value: Vac
         label={t('Warm up before the return')}
         value={value.returnLeadH}
         text={value.returnLeadH ? t('{h} h', { h: value.returnLeadH }) : t('no')}
+        unit={t('h')}
         min={0}
         max={12}
         step={1}

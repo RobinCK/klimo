@@ -65,7 +65,7 @@ function Phone({ d, s }: { d: SystemData; s: StrategyData }) {
                 id: 'energy',
                 icon: 'battery_storage' as IconName,
                 title: t('Energy during a blackout'),
-                summary: t('budget {kw}', { kw: fmtKw(s.energy.data.policy.budgetKw) }),
+                summary: t('budget {kw}', { kw: fmtKw(s.energy.data.policy.budgetKw, 1) }),
                 body: <EnergySection d={d} s={s} embedded />,
               },
             ]

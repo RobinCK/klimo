@@ -34,8 +34,8 @@ and the watchdog) and its own container; other add-ons on the internal network a
    Pick the type, then how Klimo switches it and how it knows the source really runs; **Test for 2 min**
    checks the wiring. Bind its gas, electricity or heat meter under *Consumption meters* if it has one.
 2. **Rooms → Add a room**: a name, a Home Assistant area and what heats or cools the room. Klimo offers
-   the radiator valves, thermometers, humidity sensors and window contacts of the area; one search box
-   finds anything else. The first room with radiators or a floor sets up the house circuit; the next
+   the radiator valves, thermometers, humidity sensors and window contacts of the area by kind;
+   **Add a device** finds anything else. The first room with radiators or a floor sets up the house circuit; the next
    ones join it. Then choose how the temperature is combined, the tolerance, the window reaction and how
    the valves are driven.
 3. **System → Schema → Circuits & pumps** for hydronic systems: which sources feed which circuit, how
@@ -60,8 +60,9 @@ device with what it expects before it sends a command.
 - **Room** — a controlled space with its own targets, tolerance, sensors, windows and emitters. Its id
   never changes; its slug gives the entity id `climate.klimo_<slug>`. Switch **Klimo controls this room**
   off to only watch it. A room is under the schedule, under manual control or off.
-- **Radiators** — with smart heads (Klimo sets each head) or with ordinary valves (mechanical or manual;
-  the room then works as a room thermostat that switches the source and the radiator pump).
+- **Radiators** — with smart heads (Klimo sets each head) or with ordinary valves (hand valves or
+  mechanical thermostatic heads; no device needed — the room then works as a room thermostat that
+  switches the source and the radiator pump). A room may have both.
 - **Emitter** — how a room receives heat or cold: radiators, underfloor heating, a fan coil or a towel
   rail on a circuit, or a room-level source (an air conditioner, a convector). Each emitter has a role per
   mode: *primary*; *top-up* (joins when the room lacks more than 1.5°); *trigger* (runs only while its
@@ -97,15 +98,17 @@ device with what it expects before it sends a command.
 The add-room wizard has four steps: the name, the area and what heats or cools the room; the devices;
 how to control it; a final check.
 
-- **Devices**: the area's radiator valves, thermometers and window contacts are offered ticked. The
-  search box at the top looks through all of Home Assistant — the room's area first — and a click adds
-  the device in the role it fits; when it could be two things (a plug: a heater or a floor zone valve)
-  the result shows both. Every picked device has a **Use as…** menu to change its role. A relay or
-  `climate` entity that a source already switches is shown but cannot be added, and a device of another
-  room is marked and moved here when ticked.
-- **What heats the room** follows the devices too: picking a valve ticks the radiators. A room with
-  ordinary valves needs a thermometer and a source it may start; a thermostat on the radiator can measure
-  the room by itself (it reads warmer than the room).
+- **Devices**: one block per kind — smart heads, temperature and humidity, windows, air conditioner,
+  heater, underfloor heating, dehumidifier — for what heats the room and for whatever the area holds.
+  The area's devices are offered ticked. **Add a device** at the top (or **+ Add** in a block) asks
+  what it is, then searches all of Home Assistant — the room's area first. A relay or `climate` entity
+  that a source already switches cannot be added, a circulation pump is not offered as a heater unless
+  searched for by name, and a device of another room is marked and moved here. A combined sensor is
+  added once, through its temperature: its humidity comes with it.
+- **What heats the room** follows the devices too: picking a smart head ticks the radiators. A room with
+  ordinary valves needs only a thermometer and a source it may start; ticked smart heads without one
+  offer to switch to ordinary valves. A thermostat on the radiator can measure the room by itself (it
+  reads warmer than the room).
 - **Circuits**: a room with radiators joins the house's radiator circuit, a floor room the floor
   circuit (and its zone valve, when the floor runs by zones). With none set up yet, the wizard sets it up
   once, for every room after.

@@ -6,7 +6,6 @@
 import { useEffect, useState } from 'react';
 import type {
   AdapterType,
-  CircuitDto,
   Id,
   SourceAdapter,
   SourceBinding,
@@ -43,6 +42,8 @@ import { SOURCE_ICON, type SystemData } from '../shared';
 import { applySiblings, draftRows, emptyAdapter, mainEntity, rolePreset, roleLabel, setRole } from './bindings';
 import { bindingHint, type HintSource } from './hints';
 import { PickEntityDialog } from './SourceDialogs';
+import { DeliveryPicker, NO_DELIVERY, saveDelivery, type Delivery } from './Delivery';
+import { useManifolds } from '../Manifolds';
 
 const ADAPTERS: readonly AdapterType[] = ['relay', 'climate', 'flow', 'script'];
 const STEPS = 4;
@@ -54,11 +55,12 @@ interface Draft {
   adapter: SourceAdapter;
   energy: SourceEnergy;
   capabilities: SourceConfig['capabilities'];
-  circuitIds: Id[];
+  delivery: Delivery;
   enable: boolean;
 }
 
-function fromTemplate(tpl: SourceTemplate, d: SystemData): Draft {
+/** `manifoldId`: a boiler or heat pump goes into the house's manifold unless chosen otherwise. */
+function fromTemplate(tpl: SourceTemplate, d: SystemData, manifoldId: Id | null): Draft {
   return {
     kind: tpl.kind,
     name: sourceKindLabel(tpl.kind),
@@ -66,13 +68,15 @@ function fromTemplate(tpl: SourceTemplate, d: SystemData): Draft {
     adapter: tpl.defaults.adapter,
     energy: tpl.defaults.energy,
     capabilities: tpl.defaults.capabilities,
-    circuitIds: [],
+    delivery: tpl.scope === 'central' && manifoldId ? { manifoldIds: [manifoldId], circuitIds: [] } : NO_DELIVERY,
     enable: true,
   };
 }
 
 export function AddSource({ d, phone, onClose, onCreated }: { d: SystemData; phone: boolean; onClose: () => void; onCreated: (id: Id) => void }) {
   const templates = useResource('source-templates', api.sources.templates);
+  const { manifolds } = useManifolds();
+  const firstManifold = manifolds.data?.[0]?.id ?? null;
   const [step, setStep] = useState(1);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [picking, setPicking] = useState<string | null>(null);
@@ -84,8 +88,8 @@ export function AddSource({ d, phone, onClose, onCreated }: { d: SystemData; pho
   const list = templates.data ?? [];
   const tpl = list.find((x) => x.kind === draft?.kind) ?? null;
   useEffect(() => {
-    if (!draft && list.length) setDraft(fromTemplate(list.find((x) => x.kind === 'electric_boiler') ?? list[0], d));
-  }, [draft, list, d]);
+    if (!draft && list.length && manifolds.settled) setDraft(fromTemplate(list.find((x) => x.kind === 'electric_boiler') ?? list[0], d, firstManifold));
+  }, [draft, list, d, manifolds.settled, firstManifold]);
 
   // live values of what is chosen so far, checked by the server
   useEffect(() => {
@@ -112,10 +116,7 @@ export function AddSource({ d, phone, onClose, onCreated }: { d: SystemData; pho
       const id = dto.config.id;
       const ready = requiredSet(draft);
       await api.sources.patch(id, { adapter: draft.adapter, energy: draft.energy, capabilities: draft.capabilities, enabled: draft.enable && ready });
-      for (const cid of draft.circuitIds) {
-        const c = d.circuits.data?.find((x) => x.config.id === cid);
-        if (c && !c.config.sourceIds.includes(id)) await api.circuits.patch(cid, { sourceIds: [...c.config.sourceIds, id] });
-      }
+      if (tpl.scope === 'central') await saveDelivery(id, draft.delivery, manifolds.data ?? [], d.circuits.data ?? []);
       return id;
     },
     {
@@ -124,6 +125,7 @@ export function AddSource({ d, phone, onClose, onCreated }: { d: SystemData; pho
         setStep(STEPS + 1);
         void d.sources.reload();
         void d.circuits.reload();
+        void manifolds.reload();
       },
     },
   );
@@ -181,7 +183,6 @@ export function AddSource({ d, phone, onClose, onCreated }: { d: SystemData; pho
   });
 
   const central = tpl.scope === 'central';
-  const circuits: CircuitDto[] = d.circuits.data ?? [];
   const g = tpl.defaults.guards;
   const ready = requiredSet(draft);
 
@@ -239,7 +240,7 @@ export function AddSource({ d, phone, onClose, onCreated }: { d: SystemData; pho
                   can={sourceTemplateCan(x.kind)}
                   how={sourceTemplateHow(x.kind)}
                   selected={x.kind === draft.kind}
-                  onClick={() => setDraft(fromTemplate(x, d))}
+                  onClick={() => setDraft(fromTemplate(x, d, firstManifold))}
                 />
               ))}
             </AutoGrid>
@@ -250,15 +251,6 @@ export function AddSource({ d, phone, onClose, onCreated }: { d: SystemData; pho
         return (
           <Stack gap="md">
             <TextField label={t('Name')} value={draft.name} maxLength={40} onChange={(name) => set({ name })} />
-            {!central ? (
-              <Select
-                label={t('Room')}
-                ariaLabel={t('Room')}
-                value={draft.roomId ?? ''}
-                options={d.rooms.map((r) => ({ value: r.id, label: r.name }))}
-                onChange={(roomId) => set({ roomId })}
-              />
-            ) : null}
             <SegmentedControl<AdapterType>
               ariaLabel={t('Way of control')}
               value={draft.adapter.type}
@@ -303,26 +295,24 @@ export function AddSource({ d, phone, onClose, onCreated }: { d: SystemData; pho
               </Row>
             </Section>
             {central ? (
-              <Section variant="plain" level={3} title={t('Which circuits it feeds')}>
-                <Stack gap="xs">
-                  {circuits.map((c) => (
-                    <CheckboxRow
-                      key={c.config.id}
-                      checked={draft.circuitIds.includes(c.config.id)}
-                      title={c.config.name}
-                      hint={c.memberRoomIds.map((id) => d.roomName(id) ?? id).join(', ')}
-                      onChange={(on) => set({ circuitIds: on ? [...draft.circuitIds, c.config.id] : draft.circuitIds.filter((x) => x !== c.config.id) })}
-                    />
-                  ))}
-                  {!circuits.length ? <StatusBanner tone="event" icon="info" text={t('No circuits yet — add them on the schema tab.')} /> : null}
+              <DeliveryPicker d={d} value={draft.delivery} onChange={(delivery) => set({ delivery })} />
+            ) : (
+              <Section variant="plain" level={3} title={t('Where it sends heat or cold')}>
+                <Stack gap="sm">
+                  <Select
+                    label={t('Room')}
+                    ariaLabel={t('Room')}
+                    value={draft.roomId ?? ''}
+                    options={d.rooms.map((r) => ({ value: r.id, label: r.name }))}
+                    onChange={(roomId) => set({ roomId })}
+                  />
+                  {draft.roomId ? (
+                    <StatusBanner tone="event" icon="home" text={t('Heats or cools {room} directly, without a circuit.', { room: d.roomName(draft.roomId) ?? '' })} />
+                  ) : (
+                    <StatusBanner tone="warn" icon="alert" text={t('Add a room first: this source heats or cools one room.')} />
+                  )}
                 </Stack>
               </Section>
-            ) : (
-              <StatusBanner
-                tone="event"
-                icon="home"
-                text={t('Heats or cools {room} directly, without a circuit.', { room: d.roomName(draft.roomId ?? '') ?? '' })}
-              />
             )}
           </Stack>
         );

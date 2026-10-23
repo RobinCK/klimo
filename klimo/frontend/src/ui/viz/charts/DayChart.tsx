@@ -60,6 +60,8 @@ export interface DayChartProps {
   /** Suffix of the y labels («°», «°F»); values are drawn as given. */
   unitText: string;
   axis?: string[];
+  /** Said over the plot while the readings are missing («loading», «no history yet»). */
+  emptyText?: string;
 }
 
 const DEFAULT_TOL = { heat: { below: 0.2, above: 0.2 }, cool: { below: 0.3, above: 0.3 } };
@@ -78,6 +80,7 @@ export function DayChart({
   ariaLabel,
   unitText,
   axis = HOUR_AXIS_3H,
+  emptyText,
 }: DayChartProps) {
   const ut = useUiText();
   const end = dayEnd ?? dayStart + DAY_MS;
@@ -241,6 +244,11 @@ export function DayChart({
             {fmtAxisDeg(v, unitText)}
           </span>
         ))}
+        {emptyText ? (
+          <span className={s.dayEmpty} role="status">
+            {emptyText}
+          </span>
+        ) : null}
         {nowPct != null ? (
           <span className={s.dayNowLabel} data-edge={nowPct > 94 ? 'end' : nowPct < 8 ? 'start' : undefined} style={{ left: pct(nowPct) }} aria-hidden="true">
             {ut('now')}

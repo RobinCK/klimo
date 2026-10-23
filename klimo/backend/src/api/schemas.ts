@@ -98,6 +98,7 @@ import type {
   Lang,
   LocalDate,
   ManifoldPatch,
+  ManifoldPumpRequest,
   Mode,
   NotifySettingsPatch,
   NotifyTargetPatch,
@@ -1079,7 +1080,18 @@ export const pumpCreateRequest = checked(patch(pumpShape), (v, add) => {
 });
 export const pumpPatch: Schema<DeepPartial<PumpPatch>> = patch({ ...pumpShape, order: int(0, 10_000) });
 
-const manifoldShape = { name: name(40), supplySensorEntityId: nullableEntity, returnSensorEntityId: nullableEntity };
+const manifoldPumpRequest = checked(patch({ entityId: entityId(), name: name(40), runOnHeatMin: int(0, 30), runOnCoolMin: int(0, 30) }), (v, add) => {
+  if (v.entityId === undefined) add('entityId', 'required');
+  if (v.runOnHeatMin === undefined) add('runOnHeatMin', 'required');
+}) as Schema<ManifoldPumpRequest>;
+const manifoldShape = {
+  name: name(40),
+  supplySensorEntityId: nullableEntity,
+  returnSensorEntityId: nullableEntity,
+  sourceIds: arr(id(), { max: 20 }),
+  circuitIds: arr(id(), { max: 50 }),
+  pump: nullable(manifoldPumpRequest),
+};
 export const manifoldCreateRequest = checked(patch(manifoldShape), (v, add) => {
   if (v.name === undefined) add('name', 'required');
 });

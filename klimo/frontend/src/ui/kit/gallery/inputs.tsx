@@ -12,6 +12,7 @@ import { Stepper, TimeStepper } from '../inputs/steppers';
 import { ValuePill } from '../inputs/ValuePill';
 import { EntityMultiPicker, EntityPicker } from '../inputs/EntityPicker';
 import { EntityFinder } from '../inputs/EntityFinder';
+import { AddDeviceDialog } from '../inputs/AddDeviceDialog';
 import { ColorSwatchPicker, DayOfWeekToggle, DayTabs, IconPicker, MonthToggleGrid } from '../inputs/pickers';
 import { SortableList } from '../inputs/SortableList';
 import { PeriodNav } from '../inputs/PeriodNav';
@@ -233,6 +234,7 @@ function Numbers() {
   const [heat, setHeat] = useState(20);
   const [biv, setBiv] = useState(-10);
   const [runOn, setRunOn] = useState(3);
+  const [power, setPower] = useState(24);
   const [start, setStart] = useState(6 * 60 + 30);
   const [end, setEnd] = useState(8 * 60 + 30);
   const [range, setRange] = useState({ from: '23:00', to: '07:00' });
@@ -250,6 +252,22 @@ function Numbers() {
           <Stepper variant="tile" label={ut('Return to the heat pump')} sub={ut('fixed by the mode')} value={-8} text="−8°" onChange={() => undefined} min={-25} max={10} step={1} disabled ariaDec={ut('Lower')} ariaInc={ut('Higher')} />
         </AutoGrid>
         <Stepper variant="compact" label={ut('Run-on after stop')} sub={ut('takes the remaining heat out of the circuit')} value={runOn} text={ut('{n} min', { n: runOn })} onChange={setRunOn} min={0} max={30} step={1} ariaDec={ut('Shorter run-on')} ariaInc={ut('Longer run-on')} />
+        <Stepper
+          variant="compact"
+          label={ut('Rated power')}
+          value={power}
+          text={ut('{v} kW', { v: power })}
+          onChange={setPower}
+          min={0}
+          max={100}
+          step={0.1}
+          coarseSteps={[
+            { from: 2, step: 0.5 },
+            { from: 10, step: 1 },
+          ]}
+          ariaDec={ut('Less')}
+          ariaInc={ut('More')}
+        />
       </Item>
       <Item name="TimeStepper · TimeRangeInput">
         <Row gap="lg" wrap>
@@ -271,6 +289,8 @@ function Fields() {
   const [name, setName] = useState(ut('Home'));
   const [budget, setBudget] = useState<number | null>(2.5);
   const [entity, setEntity] = useState<string | null>('sensor.outdoor_temperature');
+  const [adding, setAdding] = useState(false);
+  const [kind, setKind] = useState<'temp' | 'heater'>('temp');
   const [many, setMany] = useState<string[]>(['sensor.living_sofa_temperature']);
   const [area, setArea] = useState<string | null>('bedroom');
   const [date, setDate] = useState('2026-12-31');
@@ -328,6 +348,25 @@ function Fields() {
           onPick={() => undefined}
           placeholder={ut('Add a device — name or entity id')}
           help={ut('Searches all of Home Assistant: thermostats, valves, sensors, plugs.')}
+        />
+      </Item>
+      <Item name="AddDeviceDialog">
+        <DashedAddButton label={ut('Add a device')} onClick={() => setAdding(true)} />
+        <AddDeviceDialog
+          open={adding}
+          onClose={() => setAdding(false)}
+          title={ut('Add a device')}
+          kinds={[
+            { value: 'temp', label: ut('Temperature or humidity sensor') },
+            { value: 'heater', label: ut('Heater, relay or plug') },
+          ]}
+          kind={kind}
+          onKind={setKind}
+          kindLabel={ut('What it is')}
+          search={gallerySearch}
+          placeholder={ut('Find a sensor…')}
+          addLabel={ut('Add')}
+          onAdd={() => setAdding(false)}
         />
       </Item>
     </>

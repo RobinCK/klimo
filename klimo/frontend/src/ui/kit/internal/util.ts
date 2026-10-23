@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import type { Tone } from '../../types';
 import { toneVar } from '../../tokens/vars';
+import { decimalsOf } from '../../basic/stepNumber';
 
 /** Joins class names, skipping falsy ones. */
 export function cx(...names: (string | false | null | undefined)[]): string {
@@ -9,13 +10,6 @@ export function cx(...names: (string | false | null | undefined)[]): string {
 
 export function clamp(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v));
-}
-
-/** Number of decimals a step implies (0.5 → 1, 0.05 → 2, 30 → 0). */
-export function decimalsOf(step: number): number {
-  const s = String(step);
-  const dot = s.indexOf('.');
-  return dot < 0 ? 0 : s.length - dot - 1;
 }
 
 /**

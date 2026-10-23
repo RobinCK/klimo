@@ -226,6 +226,7 @@ export function HeatCard({ d, s, embedded }: { d: SystemData; s: StrategyData; e
                 })}
                 value={lag.value.forMin}
                 text={fmtDur(lag.value.forMin)}
+                unit={t('min')}
                 min={15}
                 max={180}
                 step={15}

@@ -4,7 +4,7 @@
  * (frost, a sunny blackout, summer, or your own) without switching anything.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { EnergyState, SchemaNode, SchemaView, SimConditions, SimPreset, SimPresetId, SourceDto } from '@api/model';
+import type { EnergyState, Id, Reason, SchemaNode, SchemaView, SimConditions, SimPreset, SimPresetId, SourceDto } from '@api/model';
 import { api } from '@api/endpoints';
 import { useMutation, useResource, type NameDirectory } from '@data';
 import { brand } from '@brand';
@@ -51,7 +51,7 @@ export function energyItems(e: EnergyState): string[] {
   if (e.pvKw != null) items.push(t('sun {kw}', { kw: fmtKw(e.pvKw) }));
   if (e.batteryPct != null) items.push(t('battery {pct}', { pct: fmtPct(e.batteryPct) }));
   if (e.houseLoadKw != null) items.push(t('house {kw}', { kw: fmtKw(e.houseLoadKw) }));
-  if (e.restrictionsActive && e.budgetKw != null) items.push(t('heat and cold {used} of {budget}', { used: fmtKw(e.usedKw), budget: fmtKw(e.budgetKw) }));
+  if (e.restrictionsActive && e.budgetKw != null) items.push(t('heat and cold {used} of {budget}', { used: fmtKw(e.usedKw, 1), budget: fmtKw(e.budgetKw, 1) }));
   return items;
 }
 
@@ -115,9 +115,37 @@ interface Props {
   onSim: (id: SimPresetId) => void;
   /** The view shown (live or simulated), lifted so «Чому саме так» explains the same picture. */
   onView: (v: SchemaView | null) => void;
+  /** Opens a manifold's editor (null: a new one). */
+  onManifold?: (id: Id | null) => void;
 }
 
-export function SchemaSection({ d, sim, onSim, onView }: Props) {
+/** The dashed «+ Add a manifold» box a house without one gets in the manifold column. */
+const ADD_MANIFOLD_KEY = 'add:manifold';
+const ADD_MANIFOLD_STATE: Reason = { code: 'circuit.idle' };
+
+/** Without a manifold the column goes, or (for an editor) holds the box that adds one. */
+function withManifoldColumn(nodes: SchemaNode[], canAdd: boolean): { nodes: SchemaNode[]; column: boolean } {
+  if (nodes.some((n) => n.column === 'manifolds')) return { nodes, column: true };
+  const hydronic = nodes.filter((n) => n.band === 'hydronic');
+  if (!canAdd || !hydronic.length) return { nodes, column: false };
+  // below the loops, where no arrow from a source to a circuit runs through it
+  const add: SchemaNode = {
+    key: ADD_MANIFOLD_KEY,
+    column: 'manifolds',
+    band: 'hydronic',
+    row: Math.max(...hydronic.map((n) => n.row)) + 1,
+    tone: 'off',
+    icon: 'plus',
+    title: t('Add a manifold'),
+    state: ADD_MANIFOLD_STATE,
+    meta: null,
+    roomIds: [],
+    dashed: true,
+  };
+  return { nodes: [...nodes, add], column: true };
+}
+
+export function SchemaSection({ d, sim, onSim, onView, onManifold }: Props) {
   const live = useSchema(d);
   const presets = useResource('system:presets', api.system.presets);
   const [simulated, setSimulated] = useState<SchemaView | null>(null);
@@ -145,12 +173,15 @@ export function SchemaSection({ d, sim, onSim, onView }: Props) {
   useEffect(() => onView(view), [view, onView]);
   const sources = d.sources.data;
   const ctx = d.ctx;
-  const nodes = useMemo(() => (view ? distinctTitles(view.nodes, sources, ctx) : []), [view, sources, ctx]);
+  const canAdd = d.canEdit && sim === 'now' && !!onManifold;
+  const { nodes, column: manifoldColumn } = useMemo(() => withManifoldColumn(view ? distinctTitles(view.nodes, sources, ctx) : [], canAdd), [view, sources, ctx, canAdd]);
 
   const nodeClick = (n: SchemaNode) => {
     const [kind, ...rest] = n.key.split(':');
     const id = rest.join(':');
-    if (kind === 'source' || kind === 'local') navigate(paths.source(id));
+    if (n.key === ADD_MANIFOLD_KEY) onManifold?.(null);
+    else if (kind === 'manifold') onManifold?.(id);
+    else if (kind === 'source' || kind === 'local') navigate(paths.source(id));
     else if ((kind === 'room' || kind === 'rooms') && n.roomIds.length === 1) navigate(paths.room(n.roomIds[0]));
     // a loop's card (mode, pump, rooms) sits under the schema
     else if (kind === 'circuit' || kind === 'rooms') document.getElementById('circuits')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
@@ -206,11 +237,11 @@ export function SchemaSection({ d, sim, onSim, onView }: Props) {
               edges={view.edges}
               columns={[
                 { key: 'sources', label: t('Sources') },
-                { key: 'manifolds', label: t('Manifold') },
+                ...(manifoldColumn ? [{ key: 'manifolds', label: t('Manifold') }] : []),
                 { key: 'circuits', label: t('Circuits & pumps') },
                 { key: 'rooms', label: t('Rooms') },
               ]}
-              renderState={(r) => renderReason(r, d.ctx)}
+              renderState={(r) => (r === ADD_MANIFOLD_STATE ? t('Where sources meet circuits — optional') : renderReason(r, d.ctx))}
               bandLabel={t('In the rooms — directly, without circuits')}
               energy={<EnergyLine energy={view.energy} ctx={d.ctx} />}
               onNodeClick={nodeClick}
@@ -291,7 +322,7 @@ function CustomConditions({ initial, onClose, onApply }: { initial: SimCondition
           variant="compact"
           label={t('Sun')}
           value={c.pvKw}
-          text={fmtKw(c.pvKw)}
+          text={fmtKw(c.pvKw, 1)}
           min={0}
           max={20}
           step={0.5}
@@ -315,7 +346,7 @@ function CustomConditions({ initial, onClose, onApply }: { initial: SimCondition
           variant="compact"
           label={t('House load')}
           value={c.houseLoadKw}
-          text={fmtKw(c.houseLoadKw)}
+          text={fmtKw(c.houseLoadKw, 1)}
           min={0}
           max={20}
           step={0.5}

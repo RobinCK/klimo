@@ -186,6 +186,19 @@
   pointer-events: none;
 }
 
+.dayEmpty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-caption);
+  text-align: center;
+  pointer-events: none;
+}
+
 .dayNowLabel {
   position: absolute;
   top: 2px;

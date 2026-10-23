@@ -11,7 +11,7 @@ export {
   type SimClock,
   type SyncSlice,
 } from './live';
-export { invalidate, setResourceData, useResource, type ResourceSnapshot, type ResourceState, type UseResourceOptions } from './resource';
+export { invalidate, setResourceData, useResource, useRetryUntilComplete, type ResourceSnapshot, type ResourceState, type UseResourceOptions } from './resource';
 export {
   formErrorsOf,
   useAutosave,

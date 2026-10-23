@@ -287,6 +287,7 @@ function TriggerDrawer({ d, s, dto, kind, onClose }: { d: SystemData; s: Strateg
                 label={t('Keep the last state for')}
                 value={holdMaxMin}
                 text={fmtDur(holdMaxMin)}
+                unit={t('min')}
                 min={5}
                 max={240}
                 step={5}

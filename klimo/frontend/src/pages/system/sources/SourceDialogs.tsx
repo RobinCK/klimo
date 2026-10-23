@@ -38,11 +38,16 @@ import {
   TextField,
   TimeStepper,
 } from '@ui';
-import { energyCarrierLabel, fmtDur, fmtKw, fmtPct, fmtTemp, fmtUntil, lockDurationLabel, minuteToHhmm, t, zonedParts } from '@i18n';
+import { energyCarrierLabel, fmtDur, fmtKw, fmtPct, fmtTemp, fmtUntil, fmtW, lockDurationLabel, minuteToHhmm, t, zonedParts } from '@i18n';
 import type { SystemData } from '../shared';
 import { roleLabel } from './bindings';
 
 const LOCKS: readonly LockDuration[] = ['1h', '4h', 'morning', 'until', 'none'];
+// rated power: 0.1 kW below 2 kW (heaters of 0.8 kW), 0.5 kW up to 10 kW, whole kW above
+const POWER_STEPS = [
+  { from: 2, step: 0.5 },
+  { from: 10, step: 1 },
+] as const;
 
 export function LockDialog({ d, dto, onClose }: { d: SystemData; dto: SourceDto; onClose: () => void }) {
   const [duration, setDuration] = useState<LockDuration>('4h');
@@ -253,9 +258,10 @@ export function EnergyDialog({ d, dto, onClose }: { d: SystemData; dto: SourceDt
           value={e.maxPowerKw}
           text={fmtKw(e.maxPowerKw)}
           min={0}
-          max={40}
+          max={100}
           step={0.1}
-          onChange={(maxPowerKw) => set({ maxPowerKw: Math.round(maxPowerKw * 10) / 10 })}
+          coarseSteps={POWER_STEPS}
+          onChange={(maxPowerKw) => set({ maxPowerKw })}
           ariaDec={t('Less')}
           ariaInc={t('More')}
         />
@@ -263,12 +269,12 @@ export function EnergyDialog({ d, dto, onClose }: { d: SystemData; dto: SourceDt
           <Stepper
             variant="compact"
             label={t('Electricity of its electronics')}
-            value={e.auxPowerKw}
-            text={fmtKw(e.auxPowerKw)}
+            value={Math.round(e.auxPowerKw * 1000)}
+            text={fmtW(e.auxPowerKw * 1000)}
             min={0}
-            max={2}
-            step={0.05}
-            onChange={(auxPowerKw) => set({ auxPowerKw: Math.round(auxPowerKw * 100) / 100 })}
+            max={2000}
+            step={10}
+            onChange={(w) => set({ auxPowerKw: w / 1000 })}
             ariaDec={t('Less')}
             ariaInc={t('More')}
           />
@@ -334,6 +340,7 @@ export function GuardsDialog({ d, dto, onClose }: { d: SystemData; dto: SourceDt
       sub={sub}
       value={g[key] as number}
       text={fmtDur(g[key] as number)}
+      unit={t('min')}
       min={min}
       max={max}
       step={1}
@@ -387,7 +394,7 @@ export function GuardsDialog({ d, dto, onClose }: { d: SystemData; dto: SourceDt
         <CheckboxRow
           checked={g.roomMaxC != null}
           title={t('Switch off above a room temperature')}
-          trailing={g.roomMaxC != null ? fmtTemp(g.roomMaxC, { decimals: 0 }) : undefined}
+          trailing={g.roomMaxC != null ? fmtTemp(g.roomMaxC) : undefined}
           onChange={(on) => set({ roomMaxC: on ? 26 : null })}
         />
         {g.roomMaxC != null ? (
@@ -395,10 +402,10 @@ export function GuardsDialog({ d, dto, onClose }: { d: SystemData; dto: SourceDt
             variant="compact"
             label={t('Room temperature limit')}
             value={g.roomMaxC}
-            text={fmtTemp(g.roomMaxC, { decimals: 0 })}
+            text={fmtTemp(g.roomMaxC)}
             min={20}
             max={32}
-            step={1}
+            step={0.5}
             onChange={(roomMaxC) => set({ roomMaxC })}
             ariaDec={t('Lower')}
             ariaInc={t('Higher')}

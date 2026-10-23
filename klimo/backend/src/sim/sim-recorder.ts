@@ -51,6 +51,9 @@ const THIN_AFTER = DAY;
 const THIN_STEP = 5 * MIN;
 const KEEP = 10 * DAY;
 
+/** Domains HA always answers with full states (attributes in every row), even for a minimal response. */
+const NEED_ATTRIBUTE_DOMAINS = new Set(['climate', 'humidifier', 'input_datetime', 'thermostat', 'water_heater']);
+
 /** Huge, churning attributes are not kept (the hub and card sensors are recorder-excluded in the docs). */
 const NO_ATTRIBUTES = [/^sensor\.klimo_hub$/, /^sensor\.klimo_reply$/, /^sensor\.klimo_.*_card$/];
 
@@ -148,20 +151,26 @@ export class SimRecorder {
     this.thinnedUntil = Math.max(this.thinnedUntil, thinTo);
   }
 
-  /** `history/history_during_period`: the state at `start` first, `lu` in seconds. */
+  /**
+   * `history/history_during_period` as HA answers it: the state at `start` first (its `lu` is `start`), then
+   * every row up to `end`, `lu` in float seconds, states as strings. A minimal response keeps only state
+   * changes after the first row and leaves their attributes out — except for the domains that need them.
+   */
   history(entityIds: EntityId[], start: EpochMs, end: EpochMs, opts: { minimal: boolean; noAttributes: boolean }): HistoryResult {
     const out: HistoryResult = {};
     for (const id of entityIds) {
       const s = this.series.get(id);
       if (!s || !s.samples.length) continue;
+      const full = !opts.minimal || NEED_ATTRIBUTE_DOMAINS.has(id.slice(0, id.indexOf('.')));
       const rows: HistoryResult[string] = [];
       const first = lastIndexBefore(s.samples, start);
       const from = first >= 0 ? first : 0;
       for (let i = from; i < s.samples.length; i++) {
         const x = s.samples[i];
         if (x.t > end) break;
+        if (!full && rows.length && rows[rows.length - 1].s === x.s) continue;
         const lu = Math.max(x.t, start) / 1000;
-        const withAttrs = !opts.noAttributes && x.a && (!opts.minimal || rows.length === 0);
+        const withAttrs = !opts.noAttributes && (full || rows.length === 0);
         rows.push(withAttrs ? { s: x.s, lu, a: x.a ?? {} } : { s: x.s, lu });
       }
       if (rows.length) out[id] = rows;

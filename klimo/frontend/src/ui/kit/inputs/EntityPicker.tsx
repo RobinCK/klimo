@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Combobox, useCombobox } from '@mantine/core';
-import type { HaEntityDto } from '@api/model';
-import { useUiText } from '../../UiTextContext';
+import type { HaEntityDto, UsageRef } from '@api/model';
+import { useUiText, type UiTextFn } from '../../UiTextContext';
 import { Icon } from '../../basic/Icon';
 import { IconButton } from '../../basic/IconButton';
 import { cx } from '../internal/util';
@@ -9,8 +9,30 @@ import s from './fields.module.css';
 
 // typing pauses this long before the search runs (the HA registry search is server-side)
 const DEBOUNCE_MS = 200;
+const LIST_MAX_PX = 360;
+const LIST_MIN_PX = 140;
+
+// the list fits the room left on screen (a phone keyboard takes half of it) and scrolls inside
+const FIT_VIEWPORT = {
+  flip: true,
+  shift: true,
+  size: {
+    padding: 8,
+    apply({ availableHeight, elements }: { availableHeight: number; elements: { floating: HTMLElement; reference: { getBoundingClientRect(): { top: number; bottom: number } } } }) {
+      const list = elements.floating;
+      const need = Math.min(LIST_MAX_PX, list.scrollHeight);
+      // a field low on the screen: rather than two rows below it, let the list flip above where there is room
+      const r = elements.reference.getBoundingClientRect();
+      const screen = window.visualViewport?.height ?? window.innerHeight;
+      const other = Math.max(r.top, screen - r.bottom) - 16;
+      const room = availableHeight < need && other > availableHeight ? Math.min(need, other) : availableHeight;
+      list.style.maxHeight = `${Math.max(LIST_MIN_PX, Math.min(LIST_MAX_PX, Math.floor(room)))}px`;
+    },
+  },
+};
 
 type Search = (q: string) => Promise<HaEntityDto[]>;
+type ValueText = (e: HaEntityDto) => string | null;
 
 /** Debounced search with stale-response protection; runs while `active`. */
 export function useEntityResults(search: Search, query: string, active: boolean) {
@@ -44,12 +66,29 @@ export function useEntityResults(search: Search, query: string, active: boolean)
   return { results, state };
 }
 
-function EntityOption({ e, checked }: { e: HaEntityDto; checked: boolean }) {
+/** «used by Bedroom, Settings»: a use without a name of its own (the outdoor sensor, the energy budget) says what it is. */
+export function usedByText(e: HaEntityDto, ut: UiTextFn): string | null {
+  const word = (u: UsageRef): string => {
+    if (u.label) return u.label;
+    switch (u.type) {
+      case 'energy':
+        return ut('energy budget');
+      case 'heat_chain':
+        return ut('heating chain');
+      case 'cool_chain':
+        return ut('cooling chain');
+      default:
+        return ut('Settings');
+    }
+  };
+  const names = [...new Set(e.usedBy.map(word))];
+  return names.length ? ut('used by {what}', { what: names.join(', ') }) : null;
+}
+
+function EntityOption({ e, checked, valueText }: { e: HaEntityDto; checked: boolean; valueText?: ValueText }) {
   const ut = useUiText();
-  const meta = [e.areaName, e.deviceName && e.deviceName !== e.name ? e.deviceName : null, e.usedBy.length ? ut('used by {what}', { what: e.usedBy.map((u) => u.label).join(', ') }) : null]
-    .filter(Boolean)
-    .join(' · ');
-  const stateText = !e.available ? ut('unavailable') : e.state == null ? '' : e.unit ? `${e.state} ${e.unit}` : e.state;
+  const meta = [e.areaName, e.deviceName && e.deviceName !== e.name ? e.deviceName : null, usedByText(e, ut)].filter(Boolean).join(' · ');
+  const stateText = (e.available ? valueText?.(e) : null) ?? (!e.available ? ut('unavailable') : e.state == null ? '' : e.unit ? `${e.state} ${e.unit}` : e.state);
   return (
     <Combobox.Option value={e.entityId} className={s.option} active={checked}>
       <span className={s.optionText}>
@@ -80,9 +119,10 @@ interface SearchBoxProps {
   autoFocus?: boolean;
   /** Id of the error line under the field (marks the input invalid). */
   errorId?: string;
+  valueText?: ValueText;
 }
 
-function SearchBox({ search, placeholder, display, selected, onPick, stayOpen, clear, ariaLabel, autoFocus, errorId }: SearchBoxProps) {
+function SearchBox({ search, placeholder, display, selected, onPick, stayOpen, clear, ariaLabel, autoFocus, errorId, valueText }: SearchBoxProps) {
   const ut = useUiText();
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState(false);
@@ -109,6 +149,7 @@ function SearchBox({ search, placeholder, display, selected, onPick, stayOpen, c
       position="bottom-start"
       offset={6}
       zIndex={350}
+      middlewares={FIT_VIEWPORT}
       onOptionSubmit={(id) => {
         const e = results.find((r) => r.entityId === id);
         if (e) onPick(e);
@@ -161,7 +202,7 @@ function SearchBox({ search, placeholder, display, selected, onPick, stayOpen, c
       <Combobox.Dropdown className={s.dropdown}>
         <Combobox.Options>
           {results.map((e) => (
-            <EntityOption key={e.entityId} e={e} checked={selected.has(e.entityId)} />
+            <EntityOption key={e.entityId} e={e} checked={selected.has(e.entityId)} valueText={valueText} />
           ))}
           {!results.length ? (
             <Combobox.Empty className={s.empty}>
@@ -190,10 +231,12 @@ export interface EntityPickerProps {
   autoFocus?: boolean;
   /** Why this entity cannot be used (the server's objection), under the field. */
   error?: string;
+  /** The value on the right of a result in words («19.4°», «off»); its raw state by default. */
+  valueText?: (e: HaEntityDto) => string | null;
 }
 
 /** Searchable Home Assistant entity choice: name, id, area, live state and who already uses it. */
-export function EntityPicker({ value, onChange, search, placeholder, clearable, entity, ariaLabel, autoFocus, error }: EntityPickerProps) {
+export function EntityPicker({ value, onChange, search, placeholder, clearable, entity, ariaLabel, autoFocus, error, valueText }: EntityPickerProps) {
   const ut = useUiText();
   const errorId = `${useId()}-err`;
   const [picked, setPicked] = useState<HaEntityDto | null>(null);
@@ -208,6 +251,7 @@ export function EntityPicker({ value, onChange, search, placeholder, clearable, 
         ariaLabel={ariaLabel}
         autoFocus={autoFocus}
         errorId={error ? errorId : undefined}
+        valueText={valueText}
         onPick={(e) => {
           setPicked(e);
           onChange(e.entityId, e);
@@ -216,7 +260,7 @@ export function EntityPicker({ value, onChange, search, placeholder, clearable, 
       />
       {known ? (
         <span className={s.help}>
-          {[known.name, known.areaName, !known.available ? ut('unavailable') : known.state != null ? `${known.state}${known.unit ? ` ${known.unit}` : ''}` : null]
+          {[known.name, known.areaName, !known.available ? ut('unavailable') : (valueText?.(known) ?? (known.state != null ? `${known.state}${known.unit ? ` ${known.unit}` : ''}` : null))]
             .filter(Boolean)
             .join(' · ')}
         </span>

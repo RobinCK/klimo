@@ -9,7 +9,7 @@ import { api } from '@api/endpoints';
 import { useAutosave, useEntitySearch, useMutation } from '@data';
 import { brand } from '@brand';
 import { AutoGrid, Button, CheckboxRow, Dialog, EntityPicker, FallbackNote, KeyValueList, Section, SortableList, Stack, StatusBanner, Stepper } from '@ui';
-import { fmtDurSec, fmtKw, fmtPct, renderReason, t } from '@i18n';
+import { fmtKw, fmtPct, renderReason, t } from '@i18n';
 import type { SystemData } from '../shared';
 import type { StrategyData } from './data';
 
@@ -21,7 +21,7 @@ function banner(dto: EnergyDto, d: SystemData): { tone: 'ok' | 'warn' | 'err' | 
     case 'normal':
       return { tone: 'ok', text: s.restrictionsActive ? t('Restrictions are active.') : t('The grid is on now — no restrictions apply.') };
     case 'blackout':
-      return { tone: 'warn', text: t('Blackout — heat and cold use {used} of {budget}.', { used: fmtKw(s.usedKw), budget: fmtKw(s.budgetKw) }) };
+      return { tone: 'warn', text: t('Blackout — heat and cold use {used} of {budget}.', { used: fmtKw(s.usedKw, 1), budget: fmtKw(s.budgetKw, 1) }) };
     case 'economy':
       return { tone: 'err', text: s.note ? renderReason(s.note, d.ctx) : t('Economy — battery {pct}.', { pct: fmtPct(s.batteryPct) }) };
     case 'critical':
@@ -77,7 +77,7 @@ export function EnergySection({ d, s, embedded }: { d: SystemData; s: StrategyDa
               def: fmtKw(4),
             })}
             value={p.budgetKw}
-            text={fmtKw(p.budgetKw)}
+            text={fmtKw(p.budgetKw, 1)}
             min={1}
             max={15}
             step={0.5}
@@ -91,7 +91,7 @@ export function EnergySection({ d, s, embedded }: { d: SystemData; s: StrategyDa
             label={t('Start one by one, pause')}
             hint={t('Sources start one at a time with this pause between them, the most important first, so an inverter never sees two compressors start together. Default: 30 s.')}
             value={p.staggerSec}
-            text={fmtDurSec(p.staggerSec)}
+            text={t('{s} s', { s: p.staggerSec })}
             min={0}
             max={120}
             step={10}

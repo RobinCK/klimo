@@ -135,7 +135,7 @@ function Body(p: SectionProps) {
                 readOnly={!p.canEdit}
                 text={fmtDelta(v.dewGlassMarginC)}
                 ariaLabel={t('Margin to the dew point on the glass')}
-                editor={{ kind: 'number', min: 0.5, max: 10, step: 0.5, unit: '°' }}
+                editor={{ kind: 'number', min: 0.5, max: 10, step: 0.5, unit: '°', format: (x) => fmtDelta(x) }}
                 value={v.dewGlassMarginC}
                 onChange={(x: number) => hum.set((c) => ({ ...c, dewGlassMarginC: x }))}
               />

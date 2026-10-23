@@ -16,7 +16,7 @@ import {
   UndoBar,
 } from '@ui';
 import { paths } from '@app';
-import { fmtRate, fmtTemp, roomStateLabel, t, type CodeContext } from '@i18n';
+import { fmtDelta, fmtRate, fmtTemp, roomStateLabel, t, type CodeContext } from '@i18n';
 import { isControllable, RoomControlBar } from './Control';
 import { QuickActions } from './QuickActions';
 import { RoomToday } from './RoomToday';
@@ -46,8 +46,8 @@ function TargetBlock({ ed, state }: { ed: TargetEditor; state: RoomState }) {
             disabled={!ed.canEdit}
             editing={editing}
             label={bound === 'lo' ? t('Not colder than') : t('Not warmer than')}
-            ariaDec={t('Lower by 0.5°')}
-            ariaInc={t('Raise by 0.5°')}
+            ariaDec={t('Lower by {d}', { d: fmtDelta(ed.stepC) })}
+            ariaInc={t('Raise by {d}', { d: fmtDelta(ed.stepC) })}
           />
         }
       />
@@ -67,8 +67,8 @@ function TargetBlock({ ed, state }: { ed: TargetEditor; state: RoomState }) {
           disabled={!ed.canEdit}
           editing={editing}
           label={t('Target')}
-          ariaDec={t('Lower the target by 0.5°')}
-          ariaInc={t('Raise the target by 0.5°')}
+          ariaDec={t('Lower the target by {d}', { d: fmtDelta(ed.stepC) })}
+          ariaInc={t('Raise the target by {d}', { d: fmtDelta(ed.stepC) })}
         />
       }
     />

@@ -297,7 +297,7 @@ export function buildDemoHouse(base: ExportBundle, now: EpochMs, lang: Lang = 'u
   b.sources = demoSources(now);
 
   /* hydronics */
-  const manifold: Manifold = { ...DEFAULT_MANIFOLD(), id: MANIFOLD_ID, name: 'Колектор', supplySensorEntityId: 'sensor.manifold_supply_temperature', returnSensorEntityId: 'sensor.manifold_return_temperature', order: 0 };
+  const manifold: Manifold = { ...DEFAULT_MANIFOLD(), id: MANIFOLD_ID, name: 'Колектор', supplySensorEntityId: 'sensor.manifold_supply_temperature', returnSensorEntityId: 'sensor.manifold_return_temperature', sourceIds: [SOURCE_IDS.heatPump, SOURCE_IDS.boiler], order: 0 };
   const radiatorLoop: Circuit = {
     ...DEFAULT_CIRCUIT(),
     id: CIRCUIT_IDS.radiators,

@@ -765,6 +765,16 @@ function fmt1(v) {
 /** «19.8°», «—» when unknown. */
 const fmtTemp = (v) => (isNum(v) ? `${fmt1(v)}°` : '—');
 
+/** Decimals a target step needs: one, two for a 0.25 or 0.05 step, so every press shows. */
+const stepDigits = (step) => Math.max(1, (String(step).split('.')[1] || '').length);
+
+/** `d` decimals with a real minus sign. */
+function fmtN(v, d) {
+  if (!isNum(v)) return '—';
+  const r = Number(v.toFixed(d));
+  return (r < 0 ? '−' : '') + Math.abs(r).toFixed(d);
+}
+
 /** «20.0–24.5°» */
 const fmtRange = (lo, hi) => `${fmt1(lo)}–${fmt1(hi)}°`;
 
@@ -2598,7 +2608,8 @@ class KlimoThermostatCard extends KlimoBase {
 
   _fmtValue(v) {
     if (v === null || v === undefined) return '—';
-    return typeof v === 'number' ? fmtTemp(v) : fmtRange(v.lo, v.hi);
+    const d = this._m ? stepDigits(this._m.step) : 1;
+    return typeof v === 'number' ? `${fmtN(v, d)}°` : `${fmtN(v.lo, d)}–${fmtN(v.hi, d)}°`;
   }
 
   _untilOf(d) {
@@ -2891,7 +2902,7 @@ class KlimoThermostatCard extends KlimoBase {
       hit.setAttribute('aria-valuemin', String(min));
       hit.setAttribute('aria-valuemax', String(max));
       hit.setAttribute('aria-valuenow', String(v));
-      hit.setAttribute('aria-valuetext', fmtTemp(v));
+      hit.setAttribute('aria-valuetext', `${fmtN(v, stepDigits(m.step))}°`);
       hit.setAttribute('aria-label', tr(lang, which === 'lo' ? 'sliderLo' : which === 'hi' ? 'sliderHi' : 'slider'));
     };
     if (S === null || th.mode === 'none') {
@@ -2928,9 +2939,10 @@ class KlimoThermostatCard extends KlimoBase {
     el.mact.style.color = act.color;
     el.big.hidden = m.dual;
     el.dual.hidden = !m.dual;
+    const digits = stepDigits(m.step);
     if (m.dual) {
-      el.lo.textContent = fmt1(S.lo);
-      el.hi.textContent = fmt1(S.hi);
+      el.lo.textContent = fmtN(S.lo, digits);
+      el.hi.textContent = fmtN(S.hi, digits);
       el.lo.setAttribute('aria-pressed', String(s.sel === 'lo'));
       el.hi.setAttribute('aria-pressed', String(s.sel === 'hi'));
       el.lo.setAttribute('aria-label', tr(lang, 'pickLo', { v: fmtTemp(S.lo) }));
@@ -2938,10 +2950,9 @@ class KlimoThermostatCard extends KlimoBase {
       el.lo.disabled = ro;
       el.hi.disabled = ro;
     } else if (isNum(S)) {
-      const r = Math.round(S * 10) / 10;
-      const whole = Math.trunc(Math.abs(r));
-      el.int.textContent = `${r < 0 ? '−' : ''}${whole}`;
-      el.dec.textContent = `.${Math.round((Math.abs(r) - whole) * 10)}`;
+      const [whole, frac] = fmtN(S, digits).split('.');
+      el.int.textContent = whole;
+      el.dec.textContent = `.${frac}`;
       el.big.querySelector('.col').style.visibility = 'visible';
     } else {
       el.int.textContent = '—';

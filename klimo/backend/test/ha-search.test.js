@@ -394,3 +394,47 @@ test('discovery lists the roles a candidate can be switched to; a floor thermost
   assert.equal(floor.role, 'heater');
   assert.deepEqual(floor.possibleRoles, ['heater', 'trv']);
 });
+
+test('a pump on a relay is the plant’s: not offered as a heater or zone valve, first in the circuit pump picker', () => {
+  const { search, ha } = house();
+  const reg = (entity_id, area = 'garage') => ({ entity_id, device_id: null, area_id: area, platform: 'tuya', unique_id: entity_id, disabled_by: null, hidden_by: null, original_name: null, name: null, entity_category: null });
+  ha.set(state('switch.sirio_barrel_backyard_pump', 'off', { friendly_name: 'Sirio Barrel Backyard Pump' }));
+  ha.set(state('switch.kotelnia_nasos', 'off', { friendly_name: 'Циркуляційний насос' }));
+  ha.set(state('input_boolean.circulation', 'off', { friendly_name: 'Circulation' }));
+  ha.set(state('switch.garage_heater', 'off', { friendly_name: 'Garage heater' }));
+  ha.setRegistries({ ...ha.regs, entities: [...ha.regs.entities, ...['switch.sirio_barrel_backyard_pump', 'switch.kotelnia_nasos', 'input_boolean.circulation', 'switch.garage_heater'].map((id) => reg(id))] });
+  const PUMPS = ['switch.sirio_barrel_backyard_pump', 'switch.kotelnia_nasos', 'input_boolean.circulation'];
+  const hint = (id) => search.search({ q: id, wizard: 'any' }).find((e) => e.entityId === id)?.wizard ?? null;
+  for (const id of PUMPS) assert.deepEqual(hint(id).suggested, [], id);
+  assert.deepEqual(hint('switch.garage_heater').suggested, ['heater']);
+  // the heater and zone valve categories leave pumps out until one is searched for by name
+  for (const roles of [['heater'], ['floor_zone', 'floor_probe']]) {
+    const ids = search.search({ wizardRoles: roles, limit: 500 }).map((e) => e.entityId);
+    for (const id of PUMPS) assert.equal(ids.includes(id), false, `${roles}: ${id}`);
+  }
+  assert.ok(search.search({ q: 'sirio', wizardRoles: ['heater'] }).some((e) => e.entityId === 'switch.sirio_barrel_backyard_pump'), 'still possible on purpose');
+  // nor does area discovery tick it as the room's heater
+  assert.equal(search.discoverArea('garage').candidates.some((c) => PUMPS.includes(c.entityId)), false);
+  assert.ok(search.discoverArea('garage').candidates.some((c) => c.entityId === 'switch.garage_heater'));
+  // the circuit pump picker shows the pumps first
+  const pumps = search.search({ role: 'pump', limit: 500 }).map((e) => e.entityId);
+  assert.deepEqual(pumps.slice(0, 3).sort(), [...PUMPS].sort());
+  // and of those the free one before a pump that already drives a circuit (it cannot drive two)
+  const { search: s2, ha: ha2, config } = house();
+  ha2.set(state('switch.sirio_barrel_backyard_pump', 'off', { friendly_name: 'Sirio Barrel Backyard Pump' }));
+  ha2.set(state('switch.radiator_pump', 'on', { friendly_name: 'Radiator pump' }));
+  ha2.setRegistries({ ...ha2.regs, entities: [...ha2.regs.entities, reg('switch.sirio_barrel_backyard_pump'), reg('switch.radiator_pump', null)] });
+  config.uses.set('switch.radiator_pump', [{ type: 'pump', id: 'p_rad', label: 'Radiator pump' }]);
+  const ranked = s2.search({ role: 'pump', limit: 500 }).map((e) => e.entityId);
+  assert.ok(ranked.indexOf('switch.sirio_barrel_backyard_pump') < ranked.indexOf('switch.radiator_pump'), ranked.join(', '));
+  assert.ok(ranked.indexOf('switch.radiator_pump') < ranked.indexOf('switch.garage_heater') || !ranked.includes('switch.garage_heater'), 'a used pump is still a pump');
+});
+
+test('wizard search for a device group: temperature, humidity and combined sensors together, nothing else', () => {
+  const { search } = house();
+  const ids = search.search({ wizardRoles: ['temp_humidity', 'temperature', 'humidity'], limit: 500 }).map((e) => e.entityId);
+  for (const id of ['sensor.living_temperature', 'sensor.living_humidity', 'sensor.bedroom_temperature']) assert.ok(ids.includes(id), id);
+  assert.equal(ids.some((id) => id.startsWith('climate.') || id.startsWith('binary_sensor.') || id.startsWith('switch.')), false, ids.join(', '));
+  // a combined sensor leads with its temperature entity
+  assert.ok(ids.indexOf('sensor.living_temperature') < ids.indexOf('sensor.living_humidity'));
+});

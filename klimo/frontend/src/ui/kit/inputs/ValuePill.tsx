@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Popover } from '@mantine/core';
 import { Icon } from '../../basic/Icon';
 import { useUiText } from '../../UiTextContext';
+import { shownDecimals, withDecimals } from '../../basic/stepNumber';
 import { Stepper } from './steppers';
 import { TimeRangeInput } from './fields';
 import { useRoving } from '../internal/useRoving';
@@ -16,7 +17,15 @@ interface PillBase {
 
 type SelectPillProps = PillBase & { editor: { kind: 'select'; options: { value: string; label: string }[] }; value: string; onChange: (value: string) => void };
 type NumberPillProps = PillBase & {
-  editor: { kind: 'number'; min: number; max: number; step: number; unit?: string };
+  editor: {
+    kind: 'number';
+    min: number;
+    max: number;
+    step: number;
+    unit?: string;
+    /** How the popup stepper shows a value, when it is not a plain number with `unit` («68.0°F» for 20 °C). */
+    format?: (value: number) => string;
+  };
   value: number;
   onChange: (value: number) => void;
 };
@@ -31,8 +40,7 @@ const isRange = (p: ValuePillProps): p is RangePillProps => p.editor?.kind === '
 
 /** «3.5°», «66%», «90 min»: as many decimals as the step has, so 3.0 → 3.5 does not read «3 → 3.5». */
 function numberText(value: number, step: number, unit?: string): string {
-  const decimals = Number.isInteger(step) ? 0 : (String(step).split('.')[1]?.length ?? 1);
-  const n = value.toFixed(decimals).replace(/^-/, '−');
+  const n = value.toFixed(shownDecimals(value, step)).replace(/^-/, '−');
   if (!unit) return n;
   return unit === '°' || unit === '%' ? `${n}${unit}` : `${n} ${unit}`;
 }
@@ -42,10 +50,12 @@ function numberText(value: number, step: number, unit?: string): string {
  * stepper or a time range; changes apply immediately (the page autosaves).
  */
 export function ValuePill(props: ValuePillProps) {
-  const { text, ariaLabel } = props;
+  const { ariaLabel } = props;
+  // a number pill shows its value with the step's decimals, like the stepper it opens
+  const text = isNumber(props) ? withDecimals(props.text, props.value, shownDecimals(props.value, props.editor.step)) : props.text;
   const name = ariaLabel ? `${ariaLabel}: ${text}` : undefined;
   if (isSelect(props)) return <SelectPill {...props} name={name} />;
-  if (isNumber(props) || isRange(props)) return <EditorPill pill={props} name={name} />;
+  if (isNumber(props) || isRange(props)) return <EditorPill pill={props} text={text} name={name} />;
   return (
     <span className={s.valuePill} aria-label={name}>
       {text}
@@ -53,10 +63,10 @@ export function ValuePill(props: ValuePillProps) {
   );
 }
 
-function EditorPill({ pill, name }: { pill: NumberPillProps | RangePillProps; name?: string }) {
+function EditorPill({ pill, text, name }: { pill: NumberPillProps | RangePillProps; text: string; name?: string }) {
   const ut = useUiText();
   const [open, setOpen] = useState(false);
-  const { text, ariaLabel } = pill;
+  const { ariaLabel } = pill;
   return (
     <Popover opened={open} onChange={setOpen} position="bottom-end" offset={6} withinPortal trapFocus returnFocus shadow="md">
       <Popover.Target>
@@ -70,7 +80,7 @@ function EditorPill({ pill, name }: { pill: NumberPillProps | RangePillProps; na
           <Stepper
             variant="square"
             value={pill.value}
-            text={numberText(pill.value, pill.editor.step, pill.editor.unit)}
+            text={pill.editor.format ? pill.editor.format(pill.value) : numberText(pill.value, pill.editor.step, pill.editor.unit)}
             min={pill.editor.min}
             max={pill.editor.max}
             step={pill.editor.step}

@@ -169,9 +169,20 @@ export function indexPlant(cfg: EngineConfig, evals: readonly RoomEval[]): Plant
   return { cfg, source, circuits, circuit, rooms, room: new Map(rooms.map((r) => [r.id, r])), members, direct, fedCircuits, circuitPumps, manifoldPumps };
 }
 
+/** Manifolds a source's water passes: the ones it feeds and those of the circuits it feeds. */
+export function sourceManifolds(idx: PlantIndex, sourceId: Id): Id[] {
+  const ids = new Set<Id>();
+  for (const m of idx.cfg.manifolds) if ((m.sourceIds ?? []).includes(sourceId)) ids.add(m.id);
+  for (const c of idx.fedCircuits.get(sourceId) ?? []) if (c.manifoldId) ids.add(c.manifoldId);
+  return [...ids];
+}
+
 /** Every pump that moves water through a source's circuits (its circuits and their manifolds). */
 export function sourceHasPumps(idx: PlantIndex, sourceId: Id): boolean {
-  return (idx.fedCircuits.get(sourceId) ?? []).some((c) => (idx.circuitPumps.get(c.id)?.length ?? 0) > 0 || (!!c.manifoldId && (idx.manifoldPumps.get(c.manifoldId)?.length ?? 0) > 0));
+  return (
+    (idx.fedCircuits.get(sourceId) ?? []).some((c) => (idx.circuitPumps.get(c.id)?.length ?? 0) > 0) ||
+    sourceManifolds(idx, sourceId).some((m) => (idx.manifoldPumps.get(m)?.length ?? 0) > 0)
+  );
 }
 
 /* ── per-source facts used by eligibility ───────────────────────────────────────────────────────── */

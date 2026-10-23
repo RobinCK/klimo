@@ -76,7 +76,7 @@ export function PlantDiagram({ nodes, edges, columns, renderState, bandLabel, en
       ) : null}
 
       {layout.edges.map(({ edge, label }) =>
-        edge.label ? (
+        edge.label && label ? (
           <span
             key={`${edge.from}->${edge.to}:label`}
             className={s.edgeLabel}

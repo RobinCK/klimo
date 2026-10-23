@@ -59,7 +59,7 @@ They and the notifications start in English — rename anything, and pick the no
 1. **System → Sources → Add a source** for every heat pump, boiler, air conditioner or heater, with
    its gas or electricity meter if you have one.
 2. **Rooms → Add a room**: give it a name and a Home Assistant area — Klimo offers the radiator
-   valves, thermometers and window contacts of that area, and one search box finds anything else.
+   valves, thermometers and window contacts of that area by kind, and **Add a device** finds anything else.
    The radiator and floor circuits are set up once, with the first room that needs them.
 3. Check **Schedule** — which profile is in force when.
 
@@ -169,9 +169,9 @@ reverted, or saves into the profile — your choice.
 Four steps: the name, the Home Assistant area and what heats or cools the room; the devices; how to
 control it (how the sensors are combined, the tolerance, the window reaction, how the valves are
 driven); and a final check. On the devices step the area's radiator valves, thermometers and windows
-are already there, and one search box finds any other device — the area first — and adds it in the
-role it fits. When a device could be two things (a plug: a heater or a floor zone valve) it asks; a
-relay a source already switches is shown but cannot be added. A room with radiators or a floor joins
+are already there, one block per kind, and **Add a device** asks what a device is and then finds it in
+all of Home Assistant — the area first. Radiators with mechanical heads or hand valves need no device;
+a relay a source already switches cannot be added, and a circulation pump is not taken for a heater. A room with radiators or a floor joins
 the house circuit, which the first such room sets up. Targets come from the profiles; a device that
 belongs to another room is marked and can be moved here.
 
@@ -554,6 +554,9 @@ speed, the scenario, the outdoor temperature, opens windows and injects device f
 | `KLIMO_SIM_START` | the scenario's time | local start time, e.g. `2026-10-21T19:10` |
 | `KLIMO_SIM_SEED` | `42` | seed of the sensor noise, so runs are reproducible |
 | `KLIMO_SIM_WARMUP` | `1` | `0` skips the history warm-up |
+| `KLIMO_SIM_HA_DELAY` | `0` | seconds after start before the fake Home Assistant accepts Klimo (a start racing HA) |
+| `KLIMO_SIM_RECORDER_DELAY` | `0` | seconds after start while the recorder answers `unknown_command` (HA itself starting) |
+| `KLIMO_SIM_KLIMO_DOWNTIME` | `0` | minutes before the scenario's moment that Klimo was down: its own MQTT sensors are recorded as unavailable |
 
 The Lovelace cards can be developed without Home Assistant too: with the simulator running,
 `http://localhost:8099/api/dev/cards?layout=tablet&theme=dark` (or `layout=phone`) renders the real

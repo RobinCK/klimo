@@ -1,18 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AggregationMethod, ApiErrorIssue, CircuitDto, CircuitMode, DiscoveryCandidate, HaEntityDto, ProfileDto, TrvStrategy, WindowReaction, WizardDeviceRole } from '@api/model';
 import { AGGREGATION_METHODS, TRV_STRATEGIES } from '@api/model';
-import { useEntitySearch, useLayout } from '@data';
+import { useEntitySearch } from '@data';
 import {
+  AddDeviceDialog,
   AreaSelect,
   AutoGrid,
   Button,
   CheckboxRow,
   DeviceRow,
   EmptyState,
-  EntityFinder,
   EntityPicker,
   GuardList,
-  IconButton,
   KeyValueList,
   ProfileTile,
   QuickActionPill,
@@ -27,8 +26,6 @@ import {
   Text,
   TextField,
   ToggleCard,
-  type DeviceRowRole,
-  type EntityFinderChoice,
 } from '@ui';
 import { brand } from '@brand';
 import {
@@ -36,7 +33,11 @@ import {
   aggregationLabel,
   circuitLine,
   circuitModeWords,
+  DEVICE_GROUP_ORDER,
+  deviceGroupSearchRoles,
+  deviceGroupWords,
   entityRoomNote,
+  entityValueText,
   fmtDelta,
   fmtDur,
   fmtTemp,
@@ -44,12 +45,14 @@ import {
   HEATING_KIND_ORDER,
   heatingKindWords,
   integrationName,
+  roleInGroup,
+  sourceBlockText,
   t,
   toleranceHint,
   trvStrategiesHint,
   type CodeContext,
 } from '@i18n';
-import { candidateMeta, candidateValue, extraMeta, resultValue, ROLE_ICON, roleLabel, sectionWords, stepWords, wizardIssue } from './texts';
+import { candidateMeta, candidateValue, extraMeta, roleLabel, sectionWords, stepWords, wizardIssue } from './texts';
 import { SECTION_ROLES, sectionOf, type EmitterChoice, type ExtraDevice, type SectionKey, type Wizard } from './useWizard';
 
 function Issues({ w, only }: { w: Wizard; only?: (issue: ApiErrorIssue) => boolean }) {
@@ -104,7 +107,7 @@ export function StepName({ w }: { w: Wizard }) {
         hint={t('the heat pump, the boiler — switch off for rarely used rooms')}
         onChange={(on) => w.setDemand(on ? 'call' : 'piggyback')}
       />
-      <Text>{t('Next come the devices: what the area holds is offered, anything else is one search away.')}</Text>
+      <Text>{t('Next come the devices: what the area holds is offered by kind, anything else is added with «{add}».', { add: t('Add a device') })}</Text>
       <Issues w={w} only={(i) => i.path !== 'name' && i.path !== 'emitterKinds' && i.path !== 'demandPolicy'} />
     </Stack>
   );
@@ -112,11 +115,9 @@ export function StepName({ w }: { w: Wizard }) {
 
 /* ------------------------------------ step 2 ------------------------------------ */
 
-const SECTION_ORDER: readonly SectionKey[] = ['trv', 'temp', 'window', 'ac', 'heater', 'floor', 'dehum'];
 /** The device block a heating kind brings. */
 const KIND_SECTION: Partial<Record<EmitterChoice, SectionKey>> = { trv: 'trv', floor: 'floor', ac: 'ac', local: 'heater' };
-/** Blocks that are not about heating: opened with a chip, or by a device of theirs. */
-const EXTRA_KEYS: readonly SectionKey[] = ['window', 'dehum'];
+const SECTION_KIND = Object.fromEntries(Object.entries(KIND_SECTION).map(([kind, k]) => [k, kind])) as Partial<Record<SectionKey, EmitterChoice>>;
 
 /** Where a device-step problem is read: in its block, the radiator block, under the heat chips, or in the list at the end. */
 function issueHome(i: ApiErrorIssue): SectionKey | 'heat' | 'radiators' | null {
@@ -126,35 +127,6 @@ function issueHome(i: ApiErrorIssue): SectionKey | 'heat' | 'radiators' | null {
   if (i.path === 'devices' && i.code === 'needs_temperature') return 'temp';
   if (i.path === 'devices' && i.code === 'required' && typeof i.params?.role === 'string') return sectionOf(i.params.role as WizardDeviceRole);
   return null;
-}
-
-/** What a block's own search looks for. */
-const SECTION_SEARCH: Record<SectionKey, WizardDeviceRole> = {
-  trv: 'trv',
-  temp: 'temperature',
-  window: 'window',
-  ac: 'ac',
-  heater: 'heater',
-  floor: 'floor_zone',
-  dehum: 'dehumidifier',
-};
-
-const choice = (role: WizardDeviceRole): EntityFinderChoice => ({ value: role, label: roleLabel(role), icon: ROLE_ICON[role] });
-
-/** The roles a source's own climate or relay cannot take as well (the server refuses them too). */
-const DRIVEN: readonly WizardDeviceRole[] = ['trv', 'ac', 'heater', 'floor_zone'];
-
-/** A result a source already switches: shown, but it cannot become a room's device. */
-function sourceBlock(e: HaEntityDto): string | null {
-  const source = e.usedBy.find((u) => u.type === 'source');
-  if (!source || !(e.wizard?.suggested ?? []).every((r) => DRIVEN.includes(r))) return null;
-  return t('the source «{source}» switches it — it cannot be a room device too', { source: source.label });
-}
-
-/** The role a result takes in a block: the entity's own likeliest one that fits the block. */
-function roleIn(e: HaEntityDto, k: SectionKey): WizardDeviceRole {
-  const fits = (r: WizardDeviceRole) => SECTION_ROLES[k].includes(r);
-  return e.wizard?.suggested.find(fits) ?? e.wizard?.possible.find(fits) ?? SECTION_SEARCH[k];
 }
 
 /** A house circuit in one line: how it runs, its pump and the rooms already on it. */
@@ -268,18 +240,14 @@ function FloorCircuit({ w, ctx }: { w: Wizard; ctx: CodeContext }) {
   );
 }
 
-/** The radiator circuit the room goes on (only a choice when 0.1.0 left several). */
-function RadiatorCircuit({ w, ctx }: { w: Wizard; ctx: CodeContext }) {
+/** The radiator circuit the room goes on, in one line (a choice only when 0.1.0 left several). */
+function RadiatorCircuit({ w }: { w: Wizard }) {
   const c = w.radiatorCircuit;
   return (
     <Stack gap="xs">
-      {c ? (
-        <Text variant="caption">
-          {t('On «{circuit}»', { circuit: c.config.name })} · {circuitSummary(c, ctx).line}
-        </Text>
-      ) : (
-        <Text variant="caption">{t('A radiator circuit fed by every heat source of the house is created with the room.')}</Text>
-      )}
+      <Text variant="caption">
+        {c ? t('Joins the radiator circuit «{circuit}».', { circuit: c.config.name }) : t('A radiator circuit for the house is set up with the room.')}
+      </Text>
       {w.radiatorCircuits.length > 1 ? (
         <Select
           value={c?.config.id ?? ''}
@@ -293,25 +261,17 @@ function RadiatorCircuit({ w, ctx }: { w: Wizard; ctx: CodeContext }) {
   );
 }
 
-/** Radiators with ordinary valves: nothing to pick, the room switches the pump and the source. */
-function PlainRadiators({ w, ctx }: { w: Wizard; ctx: CodeContext }) {
-  const words = heatingKindWords('radiator_plain', brand.productName);
+/** Radiators with ordinary valves: nothing to pick, the room switches the pump and the source by its temperature. */
+function PlainRadiators({ w }: { w: Wizard }) {
   return (
-    <Section
-      variant="plain"
-      level={3}
-      title={words.title}
-      tag={t('no device needed')}
-      action={<IconButton icon="close" label={t('Remove «{section}»', { section: words.title })} size={36} variant="ghost" onClick={() => w.toggleKind('radiator_plain')} />}
-      inlineAction
-    >
+    <Section variant="plain" level={3} title={heatingKindWords('radiator_plain', brand.productName).title} tag={t('no device needed')}>
       <Stack gap="xs">
         <Text>
           {t('{product} switches the boiler or heat pump and the radiator pump on while it is colder here than the target. The valves stay as they are set by hand.', {
             product: brand.productName,
           })}
         </Text>
-        <RadiatorCircuit w={w} ctx={ctx} />
+        <RadiatorCircuit w={w} />
         <Issues w={w} only={(i) => issueHome(i) === 'radiators'} />
       </Stack>
     </Section>
@@ -325,27 +285,21 @@ interface SectionProps {
   extras: ExtraDevice[];
   ctx: CodeContext;
   rowIssue: (entityId: string, role: WizardDeviceRole) => string | undefined;
-  focus: boolean;
+  onAdd: (k: SectionKey) => void;
 }
 
-function DeviceSection({ w, k, cands, extras, ctx, rowIssue, focus }: SectionProps) {
+/** One kind of device: what the area offers (ticked or not), what was added by hand, and «+ Додати». */
+function DeviceSection({ w, k, cands, extras, ctx, rowIssue, onAdd }: SectionProps) {
   const words = sectionWords(k, w.floorZoned);
-  const [adding, setAdding] = useState(false);
-  const search = useEntitySearch(null, { wizard: SECTION_SEARCH[k], areaId: w.areaId, limit: 20 });
   const roomName = (id: string) => ctx.room?.(id) ?? id;
   const empty = !cands.length && !extras.length;
+  const kind = SECTION_KIND[k];
+  // a block the room cannot do without says how to fill it; the floor's own block says what it needs
+  const essential = k === 'temp' || (kind != null && k !== 'floor' && w.kinds.includes(kind));
   const devices = w.request.devices;
   const heads = devices.filter((d) => d.role === 'trv');
   const ownOffer = k === 'temp' && heads.length > 0 && !devices.some((d) => d.role === 'temperature' || d.role === 'temp_humidity');
-  // a floor that runs as a whole has no zone valve to pick (a floor probe still comes from the search)
-  const canPick = k !== 'floor' || w.floorZoned;
-  const kind = (Object.keys(KIND_SECTION) as EmitterChoice[]).find((x) => KIND_SECTION[x] === k);
-
-  const roleMenu = (entityId: string, current: WizardDeviceRole, possible: readonly WizardDeviceRole[]): DeviceRowRole => ({
-    value: current,
-    options: (possible.includes(current) ? possible : [current, ...possible]).map((r) => ({ value: r, label: roleLabel(r) })),
-    onChange: (v) => w.setRole(entityId, current, v as WizardDeviceRole),
-  });
+  const plain = w.kinds.includes('radiator_plain');
   // a head's own reading shows what the head reads now
   const headValue = (entityId: string): string | undefined => {
     const c = w.candidates.find((x) => x.entityId === entityId);
@@ -353,45 +307,37 @@ function DeviceSection({ w, k, cands, extras, ctx, rowIssue, focus }: SectionPro
     const v = c?.valueC ?? x?.valueC ?? null;
     return v != null ? fmtTemp(v) : undefined;
   };
-
-  const close =
-    k === 'temp' ? undefined : (
-      <IconButton
-        icon="close"
-        label={t('Remove «{section}»', { section: words.title })}
-        size={36}
-        variant="ghost"
-        onClick={() => (kind ? w.toggleKind(kind) : w.closeSection(k))}
-      />
-    );
-  const action =
-    !empty && canPick ? (
-      <Button variant="ghost" size="sm" icon={adding ? 'close' : 'plus'} onClick={() => setAdding((a) => !a)}>
-        {adding ? t('Close') : t('Add')}
-      </Button>
-    ) : empty
-      ? close
-      : undefined;
+  const add = t('Add');
 
   return (
-    <Section variant="plain" level={3} title={words.title} tag={words.tag} action={action} inlineAction>
+    <Section
+      variant="plain"
+      level={3}
+      title={words.title}
+      tag={words.tag}
+      action={
+        <Button variant="ghost" size="sm" icon="plus" ariaLabel={t('Add to «{section}»', { section: words.title })} onClick={() => onAdd(k)}>
+          {add}
+        </Button>
+      }
+      inlineAction
+    >
       <Stack gap="xs">
         {k === 'floor' ? <FloorCircuit w={w} ctx={ctx} /> : null}
         {cands.map((c) => {
           const used = w.inUse(c);
-          const role = w.roleOf(c);
+          const picked = w.picked(c);
           return (
             <DeviceRow
               key={c.entityId}
-              checked={w.picked(c)}
+              checked={picked}
               title={c.name}
-              meta={candidateMeta(c, roomName, used)}
-              value={candidateValue({ ...c, role })}
+              meta={candidateMeta({ ...c, role: w.roleOf(c) }, roomName, used)}
+              value={candidateValue({ ...c, role: w.roleOf(c) })}
               // a source cannot also be a room's own device; a pump can, if the user insists
-              disabled={used?.as === 'source' && !w.picked(c)}
+              disabled={used?.as === 'source' && !picked}
               onCheck={() => w.togglePick(c)}
-              role={roleMenu(c.entityId, role, c.possibleRoles ?? [c.role])}
-              error={w.picked(c) ? rowIssue(c.entityId, role) : undefined}
+              error={picked ? rowIssue(c.entityId, w.roleOf(c)) : undefined}
             />
           );
         })}
@@ -401,14 +347,30 @@ function DeviceSection({ w, k, cands, extras, ctx, rowIssue, focus }: SectionPro
             title={x.name}
             meta={extraMeta(x)}
             value={x.ownTemperature ? headValue(x.entityId) : x.valueC != null ? fmtTemp(x.valueC) : candidateValue({ role: x.role, state: x.state, valueC: null })}
-            role={x.ownTemperature ? undefined : roleMenu(x.entityId, x.role, x.roles)}
             onRemove={() => w.removeExtra(x.entityId, x.role)}
             error={rowIssue(x.entityId, x.role)}
           />
         ))}
-        {empty && !ownOffer && canPick ? <Text variant="caption">{words.hint}</Text> : null}
+        {empty && essential && !ownOffer ? (
+          <Text variant="caption">
+            {w.areaId
+              ? t('Nothing found — add it with «{top}» above or «+ {add}» here.', { top: t('Add a device'), add })
+              : t('Nothing here yet — add it with «{top}» above or «+ {add}» here.', { top: t('Add a device'), add })}
+          </Text>
+        ) : null}
+        {empty && k === 'floor' ? <Text variant="caption">{words.hint}</Text> : null}
+        {k === 'trv' && empty && w.kinds.includes('trv') ? (
+          // the head on most radiators is a mechanical one: it needs no device, only the other kind
+          <StatusBanner
+            tone="event"
+            text={t('Mechanical heads or hand valves? They need no device — choose ordinary valves and {product} heats by the room temperature.', {
+              product: brand.productName,
+            })}
+            action={{ label: t('Ordinary valves'), onClick: w.toOrdinaryValves }}
+          />
+        ) : null}
         {ownOffer ? (
-          // the quickest way for a room with only a thermostat; the search below stays the better one
+          // the quickest way for a room with only a thermostat; a sensor of its own stays the better one
           <Stack gap="xs">
             <Row gap="sm" wrap>
               {heads.map((h) => (
@@ -425,57 +387,78 @@ function DeviceSection({ w, k, cands, extras, ctx, rowIssue, focus }: SectionPro
             </Text>
           </Stack>
         ) : null}
-        {(empty || adding) && canPick ? (
-          <EntityFinder
-            search={search}
-            choices={(e) => [choice(roleIn(e, k))]}
-            blocked={sourceBlock}
-            note={(e) => entityRoomNote(e)}
-            onPick={(e, role) => {
-              w.addDevice(e, role as WizardDeviceRole);
-              setAdding(false);
-            }}
-            placeholder={words.find}
-            valueText={resultValue}
-            autoFocus={focus || adding}
-          />
-        ) : null}
-        {k === 'trv' && w.kinds.includes('trv') ? <RadiatorCircuit w={w} ctx={ctx} /> : null}
-        <Issues w={w} only={(i) => issueHome(i) === k || (k === 'trv' && issueHome(i) === 'radiators')} />
+        {k === 'trv' && w.kinds.includes('trv') && !plain ? <RadiatorCircuit w={w} /> : null}
+        <Issues w={w} only={(i) => issueHome(i) === k || (k === 'trv' && !plain && issueHome(i) === 'radiators')} />
       </Stack>
     </Section>
   );
 }
 
+/** «Додати пристрій»: what it is first, then the entity among all of Home Assistant (the area first). */
+function AddDevice({ w, group, open, onClose }: { w: Wizard; group: SectionKey; open: boolean; onClose: () => void }) {
+  const [k, setK] = useState<SectionKey>(group);
+  useEffect(() => {
+    if (open) setK(group);
+  }, [open, group]);
+  const search = useEntitySearch(null, { wizardRoles: deviceGroupSearchRoles(k, w.floorZoned), areaId: w.areaId, limit: 30 });
+  const note = (e: HaEntityDto) => {
+    const roles = w.request.devices.filter((d) => d.entityId === e.entityId).map((d) => roleLabel(d.role).toLowerCase());
+    return roles.length ? t('already added as {role}', { role: roles.join(', ') }) : entityRoomNote(e);
+  };
+  // a combined sensor already brings both readings: its other entity would be the same sensor twice
+  const together = (e: HaEntityDto) => {
+    const x = e.deviceId ? w.extras.find((y) => y.role === 'temp_humidity' && y.deviceId === e.deviceId && y.entityId !== e.entityId) : undefined;
+    const role = roleInGroup(e, k, w.floorZoned);
+    return x && (role === 'temperature' || role === 'humidity') ? t('already here: «{name}» brings both the temperature and the humidity', { name: x.name }) : null;
+  };
+  return (
+    <AddDeviceDialog<SectionKey>
+      open={open}
+      onClose={onClose}
+      title={t('Add a device')}
+      kinds={DEVICE_GROUP_ORDER.map((g) => ({ value: g, label: deviceGroupWords(g).what }))}
+      kind={k}
+      onKind={setK}
+      kindLabel={t('What it is')}
+      search={search}
+      placeholder={t('Name or entity id')}
+      help={w.areaName ? t('Searches all of Home Assistant; what is in «{area}» comes first.', { area: w.areaName }) : t('Searches all of Home Assistant by name or entity id.')}
+      note={note}
+      blocked={(e) => sourceBlockText(e, roleInGroup(e, k, w.floorZoned)) ?? together(e)}
+      valueText={entityValueText}
+      addLabel={t('Add')}
+      onAdd={(e) => {
+        w.addDevice(e, roleInGroup(e, k, w.floorZoned));
+        onClose();
+      }}
+    />
+  );
+}
+
 export function StepDevices({ w, ctx }: { w: Wizard; ctx: CodeContext }) {
-  const [focusKey, setFocusKey] = useState<SectionKey | null>(null);
-  const search = useEntitySearch(null, { wizard: 'any', areaId: w.areaId, limit: 30 });
-  // ready to type on a computer; a phone would throw its keyboard over the list
-  const typeAway = useLayout() !== 'phone';
+  const [adding, setAdding] = useState<SectionKey | null>(null);
+  const [group, setGroup] = useState<SectionKey>('temp');
   const devices = w.request.devices;
   const found = w.candidates.length;
-  const kindOpen = (k: SectionKey) => (Object.keys(KIND_SECTION) as EmitterChoice[]).some((x) => KIND_SECTION[x] === k && w.kinds.includes(x));
+  const kindOpen = (k: SectionKey) => {
+    const kind = SECTION_KIND[k];
+    return kind != null && w.kinds.includes(kind);
+  };
 
   const rowIssue = (entityId: string, role: WizardDeviceRole) => {
     const i = devices.findIndex((d) => d.entityId === entityId && d.role === role);
     const issue = i < 0 ? undefined : w.issues.find((x) => x.path === `devices.${i}` || x.path.startsWith(`devices.${i}.`));
     return issue ? wizardIssue(issue, w.request) : undefined;
   };
-  const blocked = (e: HaEntityDto) => sourceBlock(e);
-  const added = (e: HaEntityDto) => {
-    const roles = devices.filter((d) => d.entityId === e.entityId).map((d) => roleLabel(d.role));
-    return roles.length ? t('added as {role}', { role: roles.join(', ') }) : entityRoomNote(e);
-  };
 
-  const sections = SECTION_ORDER.map((k) => {
+  const sections = DEVICE_GROUP_ORDER.map((k) => {
     const cands = w.candidates.filter((c) => SECTION_ROLES[k].includes(w.roleOf(c)));
     const extras = w.extras.filter((x) => SECTION_ROLES[k].includes(x.role));
-    return { k, cands, extras, shown: k === 'temp' || cands.length > 0 || extras.length > 0 || w.opened.includes(k) || kindOpen(k) };
+    return { k, cands, extras, shown: k === 'temp' || cands.length > 0 || extras.length > 0 || kindOpen(k) };
   });
   const plain = w.kinds.includes('radiator_plain');
   // until something heats or cools, the kinds are the question of the step
   const asksHeat = !w.kinds.length;
-  const extraChips = EXTRA_KEYS.filter((k) => !sections.find((s) => s.k === k)?.shown);
   const shownKeys = new Set(sections.filter((s) => s.shown).map((s) => s.k));
   const placed = (i: ApiErrorIssue) => {
     const home = issueHome(i);
@@ -483,31 +466,16 @@ export function StepDevices({ w, ctx }: { w: Wizard; ctx: CodeContext }) {
     if (home === 'radiators') return plain || shownKeys.has('trv');
     return home !== null && shownKeys.has(home);
   };
-  const kindChip = (k: EmitterChoice) => (
-    <QuickActionPill
-      key={k}
-      icon={HEATING_KIND_ICON[k]}
-      label={heatingKindWords(k, brand.productName).title}
-      onClick={() => {
-        const sec = KIND_SECTION[k];
-        if (sec) setFocusKey(sec);
-        w.toggleKind(k);
-      }}
-    />
-  );
-  const chip = (k: SectionKey) => (
-    <QuickActionPill
-      key={k}
-      icon="plus"
-      label={sectionWords(k).chip}
-      onClick={() => {
-        setFocusKey(k);
-        w.openSection(k);
-      }}
-    />
-  );
+  const open = (k: SectionKey) => {
+    setGroup(k);
+    setAdding(k);
+  };
+  // the top button starts with the first block the room still needs
+  const firstNeeded = sections.find((s) => s.shown && s.k !== 'floor' && !s.cands.length && !s.extras.length && (s.k === 'temp' || kindOpen(s.k)))?.k ?? 'temp';
 
-  const banner = !w.areaId ? null : w.discovering ? (
+  const banner = !w.areaId ? (
+    <StatusBanner tone="event" text={t('No area chosen — add the devices with «{top}».', { top: t('Add a device') })} />
+  ) : w.discovering ? (
     <StatusBanner tone="event" icon="search" text={t('Looking for devices in «{area}»…', { area: w.areaName ?? '' })} />
   ) : found ? (
     <StatusBanner
@@ -523,52 +491,35 @@ export function StepDevices({ w, ctx }: { w: Wizard; ctx: CodeContext }) {
       }
     />
   ) : (
-    <StatusBanner tone="event" text={t('Nothing found in «{area}» — find the devices with the search.', { area: w.areaName ?? '' })} />
+    <StatusBanner tone="event" text={t('Nothing found in «{area}» — add the devices with «{top}».', { area: w.areaName ?? '', top: t('Add a device') })} />
   );
 
   return (
     <Stack gap="lg">
-      <EntityFinder
-        search={search}
-        choices={(e) => (e.wizard?.suggested ?? []).map(choice)}
-        onPick={(e, role) => w.addDevice(e, role as WizardDeviceRole)}
-        placeholder={t('Add a device — name or entity id')}
-        ariaLabel={t('Add a device')}
-        valueText={resultValue}
-        note={added}
-        blocked={blocked}
-        autoFocus={typeAway && !focusKey}
-        help={
-          w.areaName
-            ? t('Searches all of Home Assistant; what is in «{area}» comes first.', { area: w.areaName })
-            : t('Searches all of Home Assistant: thermostats, valves, sensors, plugs.')
-        }
-      />
       {banner}
-      {plain ? <PlainRadiators w={w} ctx={ctx} /> : null}
+      <Button variant="secondary" size="lg" icon="plus" fullWidth onClick={() => open(firstNeeded)}>
+        {t('Add a device')}
+      </Button>
+      {plain ? <PlainRadiators w={w} /> : null}
       {sections
         .filter((s) => s.shown)
         .map((s) => (
-          <DeviceSection key={s.k} w={w} k={s.k} cands={s.cands} extras={s.extras} ctx={ctx} rowIssue={rowIssue} focus={focusKey === s.k} />
+          <DeviceSection key={s.k} w={w} k={s.k} cands={s.cands} extras={s.extras} ctx={ctx} rowIssue={rowIssue} onAdd={open} />
         ))}
       {asksHeat ? (
         <Section variant="plain" level={3} title={t('What heats or cools the room?')}>
           <Stack gap="sm">
             <Row gap="sm" wrap>
-              {HEATING_KIND_ORDER.map(kindChip)}
+              {HEATING_KIND_ORDER.map((k) => (
+                <QuickActionPill key={k} icon={HEATING_KIND_ICON[k]} label={heatingKindWords(k, brand.productName).title} onClick={() => w.toggleKind(k)} />
+              ))}
             </Row>
             <Issues w={w} only={(i) => issueHome(i) === 'heat'} />
           </Stack>
         </Section>
       ) : null}
-      {extraChips.length ? (
-        <Section variant="plain" level={3} title={t('Also in this room?')}>
-          <Row gap="sm" wrap>
-            {extraChips.map(chip)}
-          </Row>
-        </Section>
-      ) : null}
       <Issues w={w} only={(i) => !placed(i) && (!/^devices\.\d+/.test(i.path) || rowIssueHidden(w, i.path))} />
+      <AddDevice w={w} group={group} open={adding != null} onClose={() => setAdding(null)} />
     </Stack>
   );
 }
@@ -722,7 +673,7 @@ function devicesLine(w: Wizard): string {
   const n = (roles: WizardDeviceRole[]) => d.filter((x) => roles.includes(x.role)).length;
   const parts: string[] = [];
   if (n(['trv'])) parts.push(t('{count} valves', { count: n(['trv']) }));
-  if (n(['temperature', 'temp_humidity'])) parts.push(t('{count} sensors', { count: n(['temperature', 'temp_humidity']) }));
+  if (n(['temperature', 'temp_humidity', 'humidity'])) parts.push(t('{count} sensors', { count: n(['temperature', 'temp_humidity', 'humidity']) }));
   if (n(['window', 'door'])) parts.push(t('{count} windows', { count: n(['window', 'door']) }));
   if (n(['ac'])) parts.push(t('air conditioner'));
   if (n(['heater'])) parts.push(t('heater'));

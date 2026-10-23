@@ -59,6 +59,7 @@ export { Stepper, TimeStepper, type StepperProps, type TimeStepperProps } from '
 export { ValuePill, type ValuePillProps } from './inputs/ValuePill';
 export { EntityMultiPicker, EntityPicker, type EntityMultiPickerProps, type EntityPickerProps } from './inputs/EntityPicker';
 export { EntityFinder, type EntityFinderChoice, type EntityFinderProps } from './inputs/EntityFinder';
+export { AddDeviceDialog, type AddDeviceDialogProps } from './inputs/AddDeviceDialog';
 export {
   ColorSwatchPicker,
   DayOfWeekToggle,

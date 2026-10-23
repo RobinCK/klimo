@@ -1,9 +1,10 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Inject, Param, Patch, Post, Query } from '@nestjs/common';
 import { AdminOnly } from '../common/admin.guard';
 import { CurrentActor } from '../common/user.middleware';
+import { validationError } from '../common/http';
 import { parse } from '../common/validate';
 import { circuitModeDefaults } from '../shared/defaults';
-import type { Actor, Circuit, CircuitDto, IConfigStore, Id, IReadModels, IRoomEdit, Manifold, Pump } from '../shared/model';
+import type { Actor, Circuit, CircuitDto, IConfigStore, Id, IReadModels, IRoomEdit, Manifold, ManifoldPumpRequest, Pump } from '../shared/model';
 import { CONFIG_STORE, READ_MODELS, ROOM_EDIT } from '../tokens';
 import {
   circuitCreateRequest,
@@ -150,24 +151,64 @@ export class PlantController {
     return found(this.config.get('manifolds', id), 'Manifold');
   }
 
+  /** With `circuitIds` the circuits on it, with `pump` its primary pump — saved together. */
   @Post('manifolds')
   @AdminOnly()
   createManifold(@Body() body: unknown, @CurrentActor() actor: Actor): Promise<Manifold> {
-    return this.config.create('manifolds', parse(body, manifoldCreateRequest) as Omit<Manifold, 'id'>, actor);
+    const { circuitIds, pump, ...req } = parse(body, manifoldCreateRequest);
+    return this.config.transaction(async (tx) => {
+      const m = await tx.create('manifolds', { ...req, sourceIds: req.sourceIds ?? [] } as Omit<Manifold, 'id'>, actor);
+      await this.attach(tx, m.id, circuitIds, pump, actor);
+      return found(tx.get('manifolds', m.id), 'Manifold');
+    });
   }
 
+  /** `circuitIds` lists every circuit on it afterwards; `pump: null` removes its primary pump. */
   @Patch('manifolds/:id')
   @AdminOnly()
   patchManifold(@Param('id') id: Id, @Body() body: unknown, @CurrentActor() actor: Actor): Promise<Manifold> {
-    return this.config.update('manifolds', id, parse(body, manifoldPatch), actor);
+    const { circuitIds, pump, ...req } = parse(body, manifoldPatch);
+    return this.config.transaction(async (tx) => {
+      found(tx.get('manifolds', id), 'Manifold');
+      if (Object.keys(req).length) await tx.update('manifolds', id, req, actor);
+      await this.attach(tx, id, circuitIds, pump, actor);
+      return found(tx.get('manifolds', id), 'Manifold');
+    });
   }
 
-  /** Its circuits stay (without a manifold); its primary pumps go. */
+  /** Its circuits stay with their sources, fed directly; its primary pumps are switched off and go. */
   @Delete('manifolds/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @AdminOnly()
   async removeManifold(@Param('id') id: Id, @CurrentActor() actor: Actor): Promise<void> {
     await this.config.remove('manifolds', id, actor);
+  }
+
+  private async attach(tx: IConfigStore, manifoldId: Id, circuitIds: Id[] | undefined, pump: ManifoldPumpRequest | null | undefined, actor: Actor): Promise<void> {
+    if (circuitIds) {
+      const circuits = tx.list('circuits');
+      const missing = circuitIds.map((cid, i) => ({ cid, i })).filter(({ cid }) => !circuits.some((c) => c.id === cid));
+      if (missing.length) throw validationError(missing.map(({ i }) => ({ path: `circuitIds.${i}`, code: 'not_found' })));
+      for (const c of circuits) {
+        const on = circuitIds.includes(c.id);
+        if (on && c.manifoldId !== manifoldId) await tx.update('circuits', c.id, { manifoldId }, actor);
+        else if (!on && c.manifoldId === manifoldId) await tx.update('circuits', c.id, { manifoldId: null }, actor);
+      }
+    }
+    if (pump === undefined) return;
+    const primary = tx.list('pumps').filter((p) => p.manifoldId === manifoldId);
+    if (pump === null) {
+      for (const p of primary) await tx.remove('pumps', p.id, actor);
+      return;
+    }
+    const fields = { entityId: pump.entityId, runOnHeatMin: pump.runOnHeatMin, ...(pump.runOnCoolMin !== undefined ? { runOnCoolMin: pump.runOnCoolMin } : {}), ...(pump.name ? { name: pump.name } : {}) };
+    if (primary.length) {
+      await tx.update('pumps', primary[0].id, fields, actor);
+      return;
+    }
+    const name = pump.name ?? found(tx.get('manifolds', manifoldId), 'Manifold').name;
+    const value: Omit<Pump, 'id' | 'order'> = { name, circuitId: null, manifoldId, entityId: pump.entityId, rule: 'source', runOnHeatMin: pump.runOnHeatMin, runOnCoolMin: pump.runOnCoolMin ?? 0, minOnSec: 60, exercise: true, speed: null, enabled: true };
+    await tx.create('pumps', value as Omit<Pump, 'id'>, actor);
   }
 
   private circuit(id: Id): CircuitDto {

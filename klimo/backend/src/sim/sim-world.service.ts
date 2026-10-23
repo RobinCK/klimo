@@ -106,6 +106,7 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
   private rhHourly = Object.fromEntries(ROOM_KEYS.map((k) => [k, [] as [EpochMs, number][]])) as Record<RoomKey, [EpochMs, number][]>;
   private loop: { cancel(): void } | null = null;
   private wsTimer: NodeJS.Timeout | null = null;
+  private haTimer: NodeJS.Timeout | null = null;
   private globalsAt = 0;
   private compactedAt = 0;
   private readonly meters = new SimMeters();
@@ -136,7 +137,16 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
   }
 
   onApplicationBootstrap(): void {
-    this.ha.connect();
+    // an add-on start racing Home Assistant: its WebSocket, or its recorder, answers only after a while
+    this.ha.delayRecorder(env.sim.recorderDelayMs);
+    if (env.sim.haDelayMs > 0) {
+      this.log.log(`Home Assistant answers in ${Math.round(env.sim.haDelayMs / 1000)} s`);
+      this.haTimer = setTimeout(() => {
+        this.haTimer = null;
+        this.ha.connect();
+      }, env.sim.haDelayMs);
+      this.haTimer.unref();
+    } else this.ha.connect();
     void this.announceZigbee();
     this.simClock.start();
     this.startLoop();
@@ -149,6 +159,7 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
   onModuleDestroy(): void {
     this.loop?.cancel();
     if (this.wsTimer) clearInterval(this.wsTimer);
+    if (this.haTimer) clearTimeout(this.haTimer);
   }
 
   /** The virtual clock goes last: other modules may still use its timers while they shut down. */
@@ -520,7 +531,7 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
             if (spans.length) await this.spans.apply(spans);
           }
           if (result.houseProfile?.activeProfileId) prevHouse = result.houseProfile;
-          this.recordKlimoSensors(cfgAt, result.rooms, t);
+          this.recordKlimoSensors(cfgAt, result.rooms, t, t >= t0 - env.sim.klimoDowntimeMin * MIN);
         } catch (e) {
           engineFailed = true;
           this.log.warn(`engine core failed during the warm-up (${errorText(e)}); the thermostat takes over`);
@@ -614,20 +625,35 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
     });
   }
 
-  /** Klimo's own temperature and target sensors would have been recorded by HA: fill their history. */
-  private recordKlimoSensors(cfg: EngineConfig, rooms: RoomState[], t: EpochMs): void {
+  /**
+   * Klimo's own sensors as HA would have recorded them, with the attributes their discovery templates give
+   * (the target's band and source). While Klimo was down (`down`) its entities were unavailable.
+   */
+  private recordKlimoSensors(cfg: EngineConfig, rooms: RoomState[], t: EpochMs, down = false): void {
     for (const r of rooms) {
       const slug = cfg.rooms.find((x) => x.id === r.roomId)?.slug;
       if (!slug) continue;
-      const rec = (id: string, v: number | null, unit: string, dc: string) => {
-        if (v === null) return;
+      const object = slug.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+      const rec = (id: string, v: number | null, attrs: Record<string, unknown>, digits = 1) => {
+        if (v === null && !down) return;
         this.ha.recorder.markMeasurement(id);
-        this.ha.recorder.record(id, v.toFixed(1), { unit_of_measurement: unit, device_class: dc, state_class: 'measurement' }, t);
+        if (down) this.ha.recorder.record(id, 'unavailable', null, t);
+        else this.ha.recorder.record(id, (v as number).toFixed(digits), { state_class: 'measurement', ...attrs }, t);
       };
-      rec(`sensor.klimo_${slug}_temperature`, r.tempC, '°C', 'temperature');
-      rec(`sensor.klimo_${slug}_target`, r.target.displayC ?? r.target.heatC ?? r.target.coolC, '°C', 'temperature');
-      rec(`sensor.klimo_${slug}_humidity`, r.humidity.valuePct, '%', 'humidity');
-      this.ha.recorder.record(`binary_sensor.klimo_${slug}_heat_demand`, r.demand.mode === 'heat' ? 'on' : 'off', null, t);
+      const tg = r.target;
+      const dual = tg.mode === 'dual';
+      rec(`sensor.klimo_${object}_temperature`, r.tempC, { unit_of_measurement: '°C', device_class: 'temperature' });
+      rec(`sensor.klimo_${object}_target`, tg.displayC ?? tg.heatC ?? tg.coolC, {
+        unit_of_measurement: '°C',
+        device_class: 'temperature',
+        lo: dual ? tg.heatC : null,
+        hi: dual ? tg.coolC : null,
+        mode: tg.mode,
+        source: tg.display,
+        until: tg.until,
+      });
+      rec(`sensor.klimo_${object}_humidity`, r.humidity.valuePct, { unit_of_measurement: '%', device_class: 'humidity' }, 0);
+      this.ha.recorder.record(`binary_sensor.klimo_${object}_heat_demand`, down ? 'unavailable' : r.demand.mode === 'heat' ? 'on' : 'off', null, t);
     }
   }
 

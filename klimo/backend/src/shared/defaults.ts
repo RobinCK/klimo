@@ -491,10 +491,18 @@ export const WIZARD_DEFAULTS = {
   storeAboveTargetC: 1.5,
 } as const;
 
+/** The roles of a room source's own emitter: an AC tops up a room that has other heating, otherwise it is the room's heating. */
+export function roomSourceRoles(s: Pick<SourceConfig, 'kind' | 'capabilities'>, heatElsewhere: boolean): Emitter['roles'] {
+  return {
+    heat: s.capabilities.heat ? (s.kind === 'ac' && heatElsewhere ? WIZARD_DEFAULTS.ac.roles.heat : 'primary') : null,
+    cool: s.capabilities.cool ? 'primary' : null,
+  };
+}
+
 /* ── hydronics ────────────────────────────────────────────────────────────────────────────────── */
 
 export function DEFAULT_MANIFOLD(): Manifold {
-  return { id: '', name: '', supplySensorEntityId: null, returnSensorEntityId: null, order: 0 };
+  return { id: '', name: '', supplySensorEntityId: null, returnSensorEntityId: null, sourceIds: [], order: 0 };
 }
 
 export function DEFAULT_CIRCUIT(): Circuit {

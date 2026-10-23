@@ -75,9 +75,16 @@ export function fmtPct(v: number | null | undefined, decimals = 0): string {
   return v == null || !Number.isFinite(v) ? '—' : `${fmtNum(v, decimals)}%`;
 }
 
-export function fmtKw(kw: number | null | undefined): string {
+/** «2.5 kW», «24 kW»; `decimals` fixes the digits (a 0.5 kW stepper: «10.5 kW», «11.0 kW»). */
+export function fmtKw(kw: number | null | undefined, decimals?: number): string {
   if (kw == null || !Number.isFinite(kw)) return '—';
-  return t('{v} kW', { v: fmtNum(kw, kw >= 10 ? 0 : 1) });
+  return t('{v} kW', { v: fmtNum(kw, decimals ?? (kw >= 10 ? 0 : 1)) });
+}
+
+/** «120 W». */
+export function fmtW(w: number | null | undefined): string {
+  if (w == null || !Number.isFinite(w)) return '—';
+  return t('{v} W', { v: fmtNum(w, 0) });
 }
 
 export function fmtKwh(kwh: number | null | undefined): string {

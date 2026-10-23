@@ -134,7 +134,7 @@ export function effectText(e: RuleEffect, d: SystemData, budgetKw: number | null
     case 'disable_carrier':
       return t('Sources on {carrier} are off', { carrier: energyCarrierLabel(e.carrier) });
     case 'power_cap':
-      return e.kw === 'budget' ? t('At most {kw} (the blackout budget)', { kw: fmtKw(budgetKw) }) : t('At most {kw}', { kw: fmtKw(e.kw) });
+      return e.kw === 'budget' ? t('At most {kw} (the blackout budget)', { kw: fmtKw(budgetKw, 1) }) : t('At most {kw}', { kw: fmtKw(e.kw, 1) });
     case 'preheat_to_next_slot':
       return t('{list} warms the house up to the next schedule slot', { list: names(e.sourceIds) || '—' });
     case 'source_requires':
@@ -368,7 +368,7 @@ function EffectEditor({
               text={fmtDelta(e.deltaC, { sign: true })}
               min={-5}
               max={5}
-              step={0.5}
+              step={0.1}
               onChange={(deltaC) => onChange({ ...e, deltaC })}
               ariaDec={t('Lower')}
               ariaInc={t('Higher')}
@@ -434,7 +434,7 @@ function EffectEditor({
                 variant="compact"
                 label={t('At most')}
                 value={e.kw}
-                text={fmtKw(e.kw)}
+                text={fmtKw(e.kw, 1)}
                 min={0.5}
                 max={20}
                 step={0.5}

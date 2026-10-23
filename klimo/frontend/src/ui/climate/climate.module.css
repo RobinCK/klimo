@@ -280,6 +280,54 @@
   white-space: nowrap;
 }
 
+/* digits keep their width, so «+» does not move under the pointer */
+.stepValue[role='spinbutton'] {
+  font-variant-numeric: tabular-nums;
+  border-radius: var(--ui-radius-sm);
+}
+
+.stepValue[data-typeable] {
+  cursor: text;
+}
+
+@media (hover: hover) {
+  .stepValue[data-typeable]:hover {
+    background: var(--ui-surface-2);
+  }
+}
+
+/* the value while a number is typed into it */
+.stepValue[data-typing] {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.15em;
+}
+
+.stepInput {
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  border-bottom: 2px solid var(--ui-text-1);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: center;
+  outline: none;
+}
+
+.stepInput[aria-invalid='true'] {
+  border-bottom-color: var(--ui-tone-err-fg);
+  color: var(--ui-tone-err-fg);
+}
+
+.stepUnit {
+  color: var(--ui-text-2);
+}
+
 /* a pending value is underlined until it is sent */
 .stepper[data-editing] .stepValue {
   text-decoration: underline;

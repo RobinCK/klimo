@@ -34,8 +34,8 @@ export interface PlacedEdge {
   path: string;
   /** Filled arrowhead triangle. */
   head: string;
-  /** Centre of the label box (above the last horizontal run) and its usable width. */
-  label: { x: number; y: number; w: number };
+  /** Centre of the label box (above the last horizontal run) and its usable width; null when arrows into one node sit too close for it. */
+  label: { x: number; y: number; w: number } | null;
 }
 
 export interface PlantLayout {
@@ -118,12 +118,13 @@ export function layoutPlant(
   });
   const at = new Map(placed.map((p) => [p.node.key, p]));
 
+  const fan = fanIn(edges, at);
   const placedEdges: PlacedEdge[] = [];
   for (const e of edges) {
     const a = at.get(e.from);
     const b = at.get(e.to);
     if (!a || !b || a === b) continue;
-    placedEdges.push(routeEdge(e, a, b));
+    placedEdges.push(routeEdge(e, a, b, fan.arrive.get(e), fan.lane.get(a.node.key) ?? 0));
   }
 
   const energy = withEnergy ? { x: PAD, y: contentBottom + PAD, w: width - 2 * PAD } : null;
@@ -148,7 +149,44 @@ function joinY(self: PlacedNode, other: PlacedNode): number {
   return mid(self);
 }
 
-function routeEdge(edge: SchemaEdge, a: PlacedNode, b: PlacedNode): PlacedEdge {
+/** Arrows closer than this into one node leave their labels out (the source cards say the same). */
+const LABEL_SPACING = 28;
+const LANE = 12;
+
+/**
+ * Several arrows into the same side of one node (two sources feeding a circuit directly) would draw over
+ * each other and stack their labels: they arrive spread over the node's height instead, and each source
+ * turns in its own lane of the gap so its arrows can be followed.
+ */
+function fanIn(edges: readonly SchemaEdge[], at: Map<string, PlacedNode>): { arrive: Map<SchemaEdge, { y: number; quiet: boolean }>; lane: Map<string, number> } {
+  const groups = new Map<string, { edge: SchemaEdge; a: PlacedNode; b: PlacedNode }[]>();
+  for (const edge of edges) {
+    const a = at.get(edge.from);
+    const b = at.get(edge.to);
+    if (!a || !b || a.x === b.x) continue;
+    const key = `${edge.to}|${b.x > a.x ? 'l' : 'r'}|${Math.round(joinY(b, a))}`;
+    groups.set(key, [...(groups.get(key) ?? []), { edge, a, b }]);
+  }
+  const arrive = new Map<SchemaEdge, { y: number; quiet: boolean }>();
+  const fanned = new Map<string, PlacedNode>();
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    list.sort((p, q) => mid(p.a) - mid(q.a) || p.a.x - q.a.x);
+    const b = list[0].b;
+    const step = b.h / (list.length + 1);
+    list.forEach(({ edge, a }, i) => {
+      arrive.set(edge, { y: b.y + step * (i + 1), quiet: step < LABEL_SPACING });
+      fanned.set(a.node.key, a);
+    });
+  }
+  const lane = new Map<string, number>();
+  const sources = [...fanned.values()].sort((p, q) => mid(p) - mid(q));
+  const width = Math.min(LANE, (GAP - 16) / Math.max(1, sources.length - 1));
+  sources.forEach((a, i) => lane.set(a.node.key, (i - (sources.length - 1) / 2) * width));
+  return { arrive, lane };
+}
+
+function routeEdge(edge: SchemaEdge, a: PlacedNode, b: PlacedNode, arrive?: { y: number; quiet: boolean }, lane = 0): PlacedEdge {
   const f = (v: number) => Number(v.toFixed(1));
   if (a.x === b.x) {
     // same column: a short vertical arrow
@@ -166,7 +204,7 @@ function routeEdge(edge: SchemaEdge, a: PlacedNode, b: PlacedNode): PlacedEdge {
   }
   const right = b.x > a.x;
   const sy = joinY(a, b);
-  const ey = joinY(b, a);
+  const ey = arrive?.y ?? joinY(b, a);
   const sx = right ? a.x + a.w : a.x;
   const ex = right ? b.x - 1 : b.x + b.w + 1;
   const dir = right ? 1 : -1;
@@ -176,12 +214,12 @@ function routeEdge(edge: SchemaEdge, a: PlacedNode, b: PlacedNode): PlacedEdge {
   if (Math.abs(sy - ey) < 0.5) {
     path = `M${f(sx)} ${f(sy)}H${f(lineEnd)}`;
   } else {
-    // turn in the middle of the first gap so the vertical run never crosses a node
-    const turn = sx + dir * (GAP / 2);
+    // turn in the middle of the first gap (or the source's lane in it) so the vertical run never crosses a node
+    const turn = sx + dir * (GAP / 2 + lane);
     path = `M${f(sx)} ${f(sy)}H${f(turn)}V${f(ey)}H${f(lineEnd)}`;
     runFrom = turn;
   }
   const head = `M${f(ex - dir * 8)} ${f(ey - 4.5)}L${f(ex)} ${f(ey)}L${f(ex - dir * 8)} ${f(ey + 4.5)}Z`;
   const w = Math.max(48, Math.abs(ex - runFrom) - 8);
-  return { edge, path, head, label: { x: (runFrom + ex) / 2, y: ey, w } };
+  return { edge, path, head, label: arrive?.quiet ? null : { x: (runFrom + ex) / 2, y: ey, w } };
 }

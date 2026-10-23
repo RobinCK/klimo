@@ -283,6 +283,9 @@ textarea.input {
   cursor: pointer;
   touch-action: manipulation;
   user-select: none;
+  -webkit-user-select: none;
+  /* held for a repeat, a phone shows no callout */
+  -webkit-touch-callout: none;
   transition: background-color var(--ui-motion) ease-out;
 }
 
@@ -303,12 +306,56 @@ textarea.input {
   text-align: center;
   font-size: 22px;
   font-weight: 500;
+  /* digits keep their width, so «+» does not move under a held finger */
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   border-radius: var(--ui-radius-sm);
 }
 
 .stepValue:focus-visible {
   outline-offset: 2px;
+}
+
+.stepValue[data-typeable] {
+  cursor: text;
+}
+
+@media (hover: hover) {
+  .stepValue[data-typeable]:hover {
+    background: var(--ui-surface-3);
+  }
+}
+
+/* the value while a number is typed into it */
+.stepValue[data-typing] {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.25em;
+}
+
+.stepInput {
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  border-bottom: 2px solid var(--ui-text-1);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: center;
+  outline: none;
+}
+
+.stepInput[aria-invalid='true'] {
+  border-bottom-color: var(--ui-tone-err-fg);
+  color: var(--ui-tone-err-fg);
+}
+
+.stepUnit {
+  color: var(--ui-text-2);
 }
 
 .stepper[data-disabled] .stepValue {
@@ -656,16 +703,21 @@ button.valuePill[aria-expanded='true'] {
   padding: 4px;
   border-radius: var(--ui-radius-xl);
   border: 1px solid var(--ui-border-strong);
+  /* opaque: what lies under the list never shows through */
   background: var(--ui-surface-elevated);
   box-shadow: var(--ui-shadow-elevated);
   max-height: 360px;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .option.option {
+  /* a row is as tall as its text: never squeezed into the next one */
+  flex: none;
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
   min-height: 52px;
   padding: 6px 10px;
   border-radius: var(--ui-radius-md);

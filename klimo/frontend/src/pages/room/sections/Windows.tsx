@@ -109,7 +109,7 @@ function Body(p: SectionProps) {
           value={
             <SettingPill
               readOnly={!p.canEdit}
-              text={fmtDurSec(w.openDelaySec)}
+              text={t('{s} s', { s: w.openDelaySec })}
               ariaLabel={t('React if open longer than')}
               editor={{ kind: 'number', min: 0, max: 300, step: 10, unit: t('s') }}
               value={w.openDelaySec}

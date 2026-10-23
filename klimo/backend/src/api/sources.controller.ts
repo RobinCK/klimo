@@ -6,18 +6,21 @@ import { uuid } from '../common/ids';
 import { errorText } from '../common/logger';
 import { CurrentActor } from '../common/user.middleware';
 import { parse } from '../common/validate';
-import { adapterDefaults, deepClone, isPlainObject } from '../shared/defaults';
+import { adapterDefaults, deepClone, DEFAULT_EMITTER, isPlainObject, roomSourceRoles, WIZARD_DEFAULTS } from '../shared/defaults';
 import type {
   Actor,
   BindingValidationResult,
   ClockPort,
   ConfirmSpec,
+  Emitter,
+  EmitterRole,
   IConfigStore,
   Id,
   IJournal,
   IOverrideStore,
   IReadModels,
   ISystemPreview,
+  Mode,
   Override,
   OverrideValue,
   SourceAdapter,
@@ -88,6 +91,46 @@ export function unboundAdapter(a: SourceAdapter): SourceAdapter {
 }
 
 /**
+ * A room source heats or cools its room through a direct emitter there: the engine serves a room only by
+ * its emitters. Created with the source, moved with its room (taking that room's roles); a mode the source
+ * no longer does is taken off it, a mode it newly does (`before`: its capabilities until now) is added. An
+ * AC tops up a room that has other heating, otherwise it is the room's heating.
+ */
+export async function roomEmitter(tx: IConfigStore, sourceId: Id, actor: Actor, before?: SourceConfig['capabilities']): Promise<void> {
+  const s = tx.get('sources', sourceId);
+  if (!s || s.scope !== 'room' || !s.roomId) return;
+  const roomId = s.roomId;
+  const emitters = tx.list('emitters');
+  const own = emitters.filter((e) => e.kind === 'direct' && e.sourceId === sourceId);
+  const fresh = roomSourceRoles(s, emitters.some((e) => e.roomId === roomId && e.sourceId !== sourceId && e.enabled && e.roles.heat !== null));
+  const role = (mode: Mode, now: EmitterRole | null, added: boolean): EmitterRole | null => {
+    if (!s.capabilities[mode]) return null;
+    return now ?? (added ? fresh[mode] : null);
+  };
+  const assistOf = (roles: Emitter['roles'], now: Emitter['assist']) =>
+    roles.heat === 'assist' || roles.cool === 'assist' ? (now ?? { deficitC: WIZARD_DEFAULTS.ac.assistDeficitC }) : now;
+  if (!own.length) {
+    const roles = { heat: role('heat', null, true), cool: role('cool', null, true) };
+    const order = emitters.filter((e) => e.roomId === roomId).reduce((n, e) => Math.max(n, e.order + 1), 0);
+    const value: Omit<Emitter, 'id'> = { ...DEFAULT_EMITTER(), roomId, kind: 'direct', name: s.name, order, sourceId, roles, assist: assistOf(roles, null) };
+    await tx.create('emitters', value, actor);
+    return;
+  }
+  for (const e of own) {
+    // in another room it starts over with that room's roles
+    const moved = e.roomId !== roomId;
+    const added = (mode: Mode) => moved || (!!before && !before[mode]);
+    const roles = { heat: role('heat', moved ? null : e.roles.heat, added('heat')), cool: role('cool', moved ? null : e.roles.cool, added('cool')) };
+    const patch: Partial<Emitter> = {};
+    if (moved) patch.roomId = roomId;
+    if (roles.heat !== e.roles.heat || roles.cool !== e.roles.cool) patch.roles = roles;
+    const assist = assistOf(roles, e.assist);
+    if (assist !== e.assist) patch.assist = assist;
+    if (Object.keys(patch).length) await tx.update('emitters', e.id, patch, actor);
+  }
+}
+
+/**
  * Climate sources: the list and detail, create from a template, bindings, duplicates (optionally
  * linked to a template source), the 2-minute test and time-boxed locks («Вимкнути на час…»).
  */
@@ -132,7 +175,11 @@ export class SourcesController {
       roomId,
     };
     if (req.adapterType) value.adapter = adapterDefaults(req.adapterType);
-    const created = await this.config.create('sources', value as Omit<SourceConfig, 'id'>, actor);
+    const created = await this.config.transaction(async (tx) => {
+      const s = await tx.create('sources', value as Omit<SourceConfig, 'id'>, actor);
+      await roomEmitter(tx, s.id, actor);
+      return s;
+    });
     return this.dto(created.id);
   }
 
@@ -164,7 +211,11 @@ export class SourcesController {
     const current = found(this.config.get('sources', id), 'Source');
     // an adapter patch without `type` edits the bindings of the adapter the source already has
     const raw = isPlainObject(body) && isPlainObject(body.adapter) && body.adapter.type === undefined ? { ...body, adapter: { ...body.adapter, type: current.adapter.type } } : body;
-    await this.config.update('sources', id, parse(raw, sourcePatch) as Partial<SourceConfig>, actor);
+    const req = parse(raw, sourcePatch) as Partial<SourceConfig>;
+    await this.config.transaction(async (tx) => {
+      await tx.update('sources', id, req, actor);
+      await roomEmitter(tx, id, actor, current.capabilities);
+    });
     return this.dto(id);
   }
 
@@ -201,7 +252,11 @@ export class SourcesController {
       linkedTo: req.linked ? source.linkedTo ?? source.id : null,
       ownFields: [],
     };
-    const created = await this.config.create('sources', copy as Omit<SourceConfig, 'id'>, actor);
+    const created = await this.config.transaction(async (tx) => {
+      const s = await tx.create('sources', copy as Omit<SourceConfig, 'id'>, actor);
+      await roomEmitter(tx, s.id, actor);
+      return s;
+    });
     return this.dto(created.id);
   }
 

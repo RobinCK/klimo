@@ -4,11 +4,9 @@
  */
 import type { ApiErrorIssue, CreateRoomRequest, CreateRoomStep, DiscoveryCandidate } from '@api/model';
 import {
-  DEVICE_ROLE_ICON,
   deviceGroupWords,
   deviceRoleLabel,
   deviceValueText,
-  entityValueText,
   fmtKw,
   fmtTemp,
   heatingIssueText,
@@ -26,9 +24,10 @@ const FEATURE: Partial<Record<DiscoveryCandidate['features'][number], () => stri
   valve_position: () => t('valve position ✓'),
 };
 
-/** «SONOFF TRVZB · зовн. датчик ✓ · замок ✓ · LQI 115». */
+/** «SONOFF TRVZB · зовн. датчик ✓ · замок ✓ · LQI 115» (a combined sensor says it is one). */
 export function candidateMeta(c: DiscoveryCandidate, roomName: (id: string) => string, used?: DeviceInUse | null): string {
   const parts: string[] = [];
+  if (c.role === 'temp_humidity') parts.push(deviceRoleLabel(c.role));
   if (used) parts.push(used.as === 'source' ? t('already works as the source «{name}»', { name: used.name }) : t('already works as a pump'));
   if (c.model) parts.push(c.model);
   for (const f of c.features) {
@@ -44,16 +43,15 @@ export function candidateMeta(c: DiscoveryCandidate, roomName: (id: string) => s
 /** «climate.office_thermostat · Office · now in «Bedroom» — will be moved». */
 export function extraMeta(x: ExtraDevice): string {
   if (x.ownTemperature) return t('its own reading — near the radiator it reads warmer than the room');
-  const parts = [x.entityId];
+  // a combined sensor is one row for two readings: say so, or its humidity gets added a second time
+  const parts = x.role === 'temp_humidity' ? [deviceRoleLabel(x.role), x.entityId] : [x.entityId];
   if (x.areaName) parts.push(x.areaName);
   if (x.fromRoom) parts.push(t('now in «{room}» — will be moved', { room: x.fromRoom }));
   return parts.join(' · ');
 }
 
-/** What a device is, on chips and in «Use as…». */
+/** What a device is («already added as …»). */
 export const roleLabel = deviceRoleLabel;
-export const ROLE_ICON = DEVICE_ROLE_ICON;
-export const resultValue = entityValueText;
 export const candidateValue = deviceValueText;
 
 /** A device block of the wizard: the shared words, with the zone valve said only where the floor has zones. */
@@ -85,9 +83,14 @@ export function wizardIssue(issue: ApiErrorIssue, req: CreateRoomRequest): strin
   if (path === 'demandPolicy' && issue.code === 'needs_call') return heatingIssueText(issue) ?? issueText(issue);
   if (path === 'haAreaId' && issue.code === 'not_found') return t('This area no longer exists in Home Assistant.');
   if (path === 'devices') {
-    if (issue.code === 'needs_temperature') return t('Add a temperature sensor, or a radiator valve that measures the room.');
+    if (issue.code === 'needs_temperature') {
+      return req.emitterKinds.includes('trv')
+        ? t('Add a temperature sensor, or a radiator valve that measures the room.')
+        : t('Add a temperature sensor: the room is heated by what it reads.');
+    }
     if (issue.code === 'required') {
-      if (p.role === 'trv') return t('Pick at least one radiator valve.');
+      // the block says it right above: mechanical heads are ordinary valves
+      if (p.role === 'trv') return t('Add a smart head or a thermostat.');
       if (p.role === 'ac') return t('Pick the air conditioner.');
       if (p.role === 'heater') return t('Pick the heater.');
     }

@@ -347,7 +347,7 @@ function ValueStep({
 }) {
   // presses of the stepper are gathered and saved once
   const v = useAutosave(value, async (x: number) => onChange(x));
-  return <ValuePill text={fmtTemp(v.value)} ariaLabel={label} editor={{ kind: 'number', min, max, step }} value={v.value} onChange={(x: number) => v.set(x)} />;
+  return <ValuePill text={fmtTemp(v.value)} ariaLabel={label} editor={{ kind: 'number', min, max, step, format: (x) => fmtTemp(x) }} value={v.value} onChange={(x: number) => v.set(x)} />;
 }
 
 /* ---------------- activation rules ---------------- */

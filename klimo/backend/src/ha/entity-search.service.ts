@@ -64,6 +64,8 @@ const KIND_WORD = 30;
 const OUTDOOR_FIRST = 20;
 /** Circuit pump picker: relays that say they run a pump come first. */
 const PUMP_FIRST = 20;
+/** …and of those, a free one before a pump that already drives a circuit or belongs to a source. */
+const PUMP_TAKEN = 5;
 /** Devices «Не використовуються в Klimo» lists only what is clearly a climate device. */
 const UNASSIGNED_CONFIDENCE = 0.5;
 
@@ -141,6 +143,7 @@ export class EntitySearchService implements IEntitySearch {
       if (q.nearAreaId && r.areaId === q.nearAreaId) score += NEAR_AREA;
       if (q.role === 'outdoor' && isOutdoorSensor(f)) score += OUTDOOR_FIRST;
       if (q.role === 'pump' && looksLikePump(f, this.registry.deviceName(r.device))) score += PUMP_FIRST;
+      if (q.role === 'pump' && referenced.has(r.entityId) && this.config.usages({ type: 'entity', id: r.entityId }).some((u) => u.type === 'pump' || u.type === 'source')) score -= PUMP_TAKEN;
       if (wizard && want) score += want.has(wizard.suggested[0]) ? ROLE_FIRST : wizard.suggested.some((x) => want.has(x)) ? ROLE_ALSO : 0;
       if (wizard && f.deviceClass && searchKey(f.deviceClass).split(' ').every((w) => words.has(w))) score += KIND_WORD;
       if (wizard && referenced.has(r.entityId)) {

@@ -140,7 +140,12 @@
 }
 
 .head[data-inline] .headMain {
-  flex: 1 1 auto;
+  flex: 1 1 0;
+}
+
+/* beside the title the small action keeps its width: a long title wraps instead of pushing it out */
+.head[data-inline] .headAction {
+  flex: none;
 }
 
 /* keeps its width beside the title; alone on a narrow screen it wraps instead of overflowing */

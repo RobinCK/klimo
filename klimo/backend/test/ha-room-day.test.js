@@ -255,8 +255,12 @@ test('raw sensors not recorded (excluded from the recorder): Klimo’s own senso
   };
   const day = await history.roomDay('r_office', DATE);
   assert.equal(day.source, 'klimo_entity');
-  assert.deepEqual(day.series.slice(0, 2), [[MIDNIGHT, 20.2], [at(6), 20.6]]);
+  const v = (t) => day.series.filter(([x]) => x <= t).at(-1)[1];
+  assert.equal(v(MIDNIGHT), 20.2);
+  assert.equal(v(at(5, 55)), 20.2);
+  assert.equal(v(at(6)), 20.6);
   assert.deepEqual(day.series.at(-1), [NOW, 20.6]);
+  assert.deepEqual(day.stats.max, { c: 20.6, at: at(6) });
   assert.ok(day.diag.entities.some((e) => e.entityId === 'sensor.klimo_office_temperature_2' && e.role === 'klimo_temperature' && e.numeric === 2));
 });
 
@@ -348,4 +352,19 @@ test('the trend after a restart: the room sensors first, Klimo’s sensor for a 
   assert.deepEqual(got.r_office.at(-1), [NOW, 20.3]);
   assert.equal(got.r_office.length, 61);
   assert.deepEqual(got.r_bed.at(-1), [NOW, 18.5], 'the bedroom sensor is not recorded: Klimo’s sensor');
+});
+
+test('a target held by hand until 23:30 is drawn ahead until then, the schedule after it', async () => {
+  const { ha, config, history, bus } = fakeSetup();
+  office(config);
+  ha.historyFn = (ids) => haAnswer({ entity_ids: ids, no_attributes: ids.length > 1, minimal_response: ids.length > 1 });
+  const target = { displayC: 20.5, heatC: 20.5, coolC: null, mode: 'heat', layer: 'manual', display: 'manual', until: at(23, 30) };
+  bus.emit('engine.tick', { at: NOW - MIN, result: { rooms: [{ roomId: 'r_office', tempC: 20.4, humidity: { valuePct: null }, target }], memory: { rooms: {} } } });
+  const day = await history.roomDay('r_office', DATE);
+  const ahead = day.targetSegments.filter((s) => s.future);
+  assert.deepEqual(ahead, [
+    { from: NOW, to: at(23, 30), heatC: 20.5, coolC: null, future: true, kind: 'manual' },
+    { from: at(23, 30), to: MIDNIGHT + 24 * HOUR, heatC: 19, coolC: null, future: true, kind: 'schedule' },
+  ]);
+  assert.equal(day.diag.targetSource, 'mixed', 'recorded until Klimo stopped, the plan for the gap');
 });

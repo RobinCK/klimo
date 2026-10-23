@@ -67,6 +67,7 @@ import {
   indexPlant,
   selectSources,
   sourceHasPumps,
+  sourceManifolds,
   stepOutdoorLimit,
   type CircuitPlan,
   type ConditionItemResult,
@@ -448,7 +449,10 @@ function shedPhase(t: Tick, en: EnergyCtx, plan: Plan, shedOrder: readonly Id[])
 /** A pump of the source's circuits has run for its pre-run time (water moves through the boiler). */
 function pumpReady(t: Tick, s: SourceConfig): boolean {
   const preMs = (s.hydronic?.preRunSec ?? 0) * SEC;
-  const pumps = (t.idx.fedCircuits.get(s.id) ?? []).flatMap((c) => [...(t.idx.circuitPumps.get(c.id) ?? []), ...(c.manifoldId ? (t.idx.manifoldPumps.get(c.manifoldId) ?? []) : [])]);
+  const pumps = [
+    ...(t.idx.fedCircuits.get(s.id) ?? []).flatMap((c) => t.idx.circuitPumps.get(c.id) ?? []),
+    ...sourceManifolds(t.idx, s.id).flatMap((m) => t.idx.manifoldPumps.get(m) ?? []),
+  ];
   return pumps.some((p) => {
     const pm = t.memory.pumps[p.id];
     return !!pm && pm.on && pm.onSince !== null && t.now - pm.onSince >= preMs;
@@ -662,8 +666,17 @@ function pumpPhase(t: Tick, en: EnergyCtx, facts: CircuitFacts, sel: Selection, 
     const testMode = m.mode ?? test?.mode ?? null;
     if (test?.active && (m.on || guards.prerunning.has(s.id))) for (const c of fed) if (!isHeatCool(testMode) || c.capabilities[testMode]) force(c, 'test', s.id);
   }
+  // a primary pump runs while a source of its manifold runs and moves the water of one starting through it
   const manifoldFeedOn = new Map<Id, boolean>();
-  for (const c of idx.circuits) if (c.manifoldId) manifoldFeedOn.set(c.manifoldId, (manifoldFeedOn.get(c.manifoldId) ?? false) || c.sourceIds.some((id) => t.mem[id]?.on));
+  const manifoldForced = new Map<Id, NonNullable<CircuitFlow['forced']>>();
+  for (const s of cfg.sources) {
+    const prerun = guards.prerunning.has(s.id);
+    if (!t.mem[s.id]?.on && !prerun) continue;
+    for (const m of sourceManifolds(idx, s.id)) {
+      if (t.mem[s.id]?.on) manifoldFeedOn.set(m, true);
+      else if (!manifoldForced.has(m)) manifoldForced.set(m, { reason: 'prerun', sourceId: s.id });
+    }
+  }
 
   const input: PumpStepInput = {
     cfg,
@@ -675,6 +688,7 @@ function pumpPhase(t: Tick, en: EnergyCtx, facts: CircuitFacts, sel: Selection, 
     circuitPumps: idx.circuitPumps,
     manifoldPumps: idx.manifoldPumps,
     manifoldFeedOn,
+    manifoldForced,
     phase: en.phase,
     overlay: t.ctx.overlay,
     ledger: t.ledger,
@@ -1099,7 +1113,8 @@ export const plantStep: PlantStepFn = (cfg, evals, ctx, inputs, memory, ledger) 
     manifoldPumps: [...idx.manifoldPumps.values()].flat().map((p) => pumpStates.get(p.id)).filter((p): p is PumpState => !!p),
     manifolds: cfg.manifolds.map((mf) => {
       const modes = idx.circuits.filter((c) => c.manifoldId === mf.id).map((c) => facts.mode.get(c.id));
-      const tone: Tone = modes.includes('heat') ? 'heat' : modes.includes('cool') ? 'cool' : 'idle';
+      const fed = (mode: Mode) => modes.includes(mode) || (mf.sourceIds ?? []).some((id) => runningIn(t, id, mode));
+      const tone: Tone = fed('heat') ? 'heat' : fed('cool') ? 'cool' : 'idle';
       return { manifoldId: mf.id, supplyC: numOf(snapOf(inputs, mf.supplySensorEntityId)), returnC: numOf(snapOf(inputs, mf.returnSensorEntityId)), tone };
     }),
     lead: {

@@ -221,7 +221,7 @@ function Body(p: SectionProps) {
             readOnly={!p.canEdit}
             text={fmtDelta(temp.value.outlier.thresholdC)}
             ariaLabel={t('Outlier threshold')}
-            editor={{ kind: 'number', min: 0.5, max: 3, step: 0.1, unit: '°' }}
+            editor={{ kind: 'number', min: 0.5, max: 3, step: 0.1, unit: '°', format: (x) => fmtDelta(x) }}
             value={temp.value.outlier.thresholdC}
             onChange={(v: number) => temp.set((x) => ({ ...x, outlier: { ...x.outlier, thresholdC: v } }))}
           />

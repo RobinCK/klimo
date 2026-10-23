@@ -69,7 +69,7 @@ function SmartBody(p: SectionProps) {
             <ValuePill
               text={fmtTemp(roomFrost)}
               ariaLabel={t('Frost protection')}
-              editor={{ kind: 'number', min: houseFrost, max: 12, step: 0.5, unit: '°' }}
+              editor={{ kind: 'number', min: houseFrost, max: 12, step: 0.5, unit: '°', format: (x) => fmtTemp(x) }}
               value={roomFrost}
               onChange={(v: number) => frost.set(v <= houseFrost ? null : v)}
             />

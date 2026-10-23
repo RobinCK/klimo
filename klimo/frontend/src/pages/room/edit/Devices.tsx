@@ -1,34 +1,22 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { HaEntityDto, RoomBinding, WizardDeviceRole } from '@api/model';
 import { api } from '@api/endpoints';
-import { useEntitySearch, useLayout } from '@data';
-import {
-  AutoGrid,
-  Button,
-  ConfirmDialog,
-  DeviceRow,
-  EntityFinder,
-  QuickActionPill,
-  Row,
-  Section,
-  Stack,
-  StatusBanner,
-  Text,
-  type DeviceRowAction,
-  type EntityFinderChoice,
-} from '@ui';
+import { useEntitySearch } from '@data';
+import { AddDeviceDialog, AutoGrid, Button, ConfirmDialog, DeviceRow, EntityFinder, Section, Stack, StatusBanner, Text, type DeviceRowAction } from '@ui';
 import { brand } from '@brand';
 import {
-  DEVICE_GROUP_ROLES,
-  DEVICE_GROUP_SEARCH,
+  DEVICE_GROUP_ORDER,
   DEVICE_ROLE_ICON,
   deviceGroupOf,
+  deviceGroupSearchRoles,
   deviceGroupWords,
   deviceRoleLabel,
   entityValueText,
   fmtPct,
   fmtTemp,
   releaseWords,
+  roleInGroup,
+  sourceBlockText,
   t,
   type DeviceGroup,
 } from '@i18n';
@@ -37,26 +25,8 @@ import type { EditState, PendingKind, useRoomWrite } from './shared';
 
 type Write = ReturnType<typeof useRoomWrite>;
 
-const ORDER: readonly DeviceGroup[] = ['trv', 'temp', 'window', 'ac', 'heater', 'floor', 'dehum'];
 /** The heating kind a device block belongs to (it waits for its first device while the kind is being ticked). */
 const GROUP_KIND: Partial<Record<DeviceGroup, NonNullable<PendingKind>>> = { trv: 'trv', ac: 'ac', heater: 'local', floor: 'floor' };
-
-const choice = (role: WizardDeviceRole): EntityFinderChoice => ({ value: role, label: deviceRoleLabel(role), icon: DEVICE_ROLE_ICON[role] });
-
-/** The roles a source's own climate or relay cannot take as well (the server refuses them too). */
-const DRIVEN: readonly WizardDeviceRole[] = ['trv', 'ac', 'heater', 'floor_zone'];
-
-function sourceBlock(e: HaEntityDto): string | null {
-  const source = e.usedBy.find((u) => u.type === 'source');
-  if (!source || !(e.wizard?.suggested ?? []).every((r) => DRIVEN.includes(r))) return null;
-  return t('the source «{source}» switches it — it cannot be a room device too', { source: source.label });
-}
-
-/** The role a result takes in a block: the entity's own likeliest one that fits the block. */
-function roleIn(e: HaEntityDto, k: DeviceGroup): WizardDeviceRole {
-  const fits = (r: WizardDeviceRole) => DEVICE_GROUP_ROLES[k].includes(r);
-  return e.wizard?.suggested.find(fits) ?? e.wizard?.possible.find(fits) ?? DEVICE_GROUP_SEARCH[k];
-}
 
 function splitKey(key: string): [string, string] {
   const i = key.indexOf(':');
@@ -102,40 +72,21 @@ interface GroupProps {
   edit: EditState;
   write: Write;
   onRemove: (b: RoomBinding) => void;
-  onClose?: () => void;
+  onAdd: (k: DeviceGroup) => void;
 }
 
-/** One block of devices: each with «Замінити» and «Прибрати», and «+ Додати» with the block's own search. */
-function DeviceBlock({ p, k, list, edit, write, onRemove, onClose }: GroupProps) {
+/** One block of devices: each with «Замінити» and «Прибрати», and «+ Додати» opening «Додати пристрій» for this block. */
+function DeviceBlock({ p, k, list, edit, write, onRemove, onAdd }: GroupProps) {
   const { room } = p;
   const id = room.config.id;
   const words = deviceGroupWords(k);
   const kind = GROUP_KIND[k];
   const waiting = kind != null && edit.pending === kind;
   const zoned = room.heating.floor?.circuit?.mode === 'zoned';
-  // a floor that runs as a whole has no zone valve of a room to add (a floor probe comes from the search above)
-  const canPick = p.canEdit && (k !== 'floor' || zoned);
-  const [adding, setAdding] = useState(false);
   const [replacing, setReplacing] = useState<string | null>(null);
-  const search = useEntitySearch(null, { wizard: DEVICE_GROUP_SEARCH[k], roomId: id, limit: 20 });
-  const replaceSearch = useEntitySearch(null, { wizard: list.find((b) => b.key === replacing)?.role ?? DEVICE_GROUP_SEARCH[k], roomId: id, limit: 20 });
+  const replaceSearch = useEntitySearch(null, { wizard: list.find((b) => b.key === replacing)?.role ?? 'any', roomId: id, limit: 20 });
   const mixed = new Set(list.map((b) => b.role)).size > 1 || k === 'floor' || k === 'window';
-  // an empty block that is the reason it is shown (the room's temperature, a kind being ticked, a block
-  // just opened) offers its search at once; a block that may well stay empty (windows) waits for «+ Додати»
-  const autoOpen = canPick && !list.length && (k === 'temp' || waiting || onClose != null);
-  const finderOpen = canPick && (adding || autoOpen);
 
-  const add = (e: HaEntityDto, role: WizardDeviceRole) => {
-    setAdding(false);
-    void write
-      .run(
-        () => api.rooms.bindings.add(id, { role, entityId: e.entityId, name: pickedName(e, role), move: otherRoom(e, id) ? true : undefined }),
-        t('«{name}» is added as {role}.', { name: pickedName(e, role), role: deviceRoleLabel(role).toLowerCase() }),
-      )
-      .then((r) => {
-        if (r && waiting) edit.setPending(null);
-      });
-  };
   const replace = (b: RoomBinding, e: HaEntityDto) => {
     setReplacing(null);
     void write.run(
@@ -144,13 +95,9 @@ function DeviceBlock({ p, k, list, edit, write, onRemove, onClose }: GroupProps)
     );
   };
 
-  const action = canPick && !autoOpen ? (
-    <Button variant="ghost" size="sm" icon={adding ? 'close' : 'plus'} onClick={() => setAdding((a) => !a)}>
-      {adding ? t('Close') : t('Add')}
-    </Button>
-  ) : onClose && !list.length ? (
-    <Button variant="ghost" size="sm" icon="close" onClick={onClose}>
-      {t('Close')}
+  const action = p.canEdit ? (
+    <Button variant="ghost" size="sm" icon="plus" ariaLabel={t('Add to «{section}»', { section: words.title })} onClick={() => onAdd(k)}>
+      {t('Add')}
     </Button>
   ) : undefined;
 
@@ -198,8 +145,8 @@ function DeviceBlock({ p, k, list, edit, write, onRemove, onClose }: GroupProps)
                 <Stack gap="xs">
                   <EntityFinder
                     search={replaceSearch}
-                    choices={() => [choice(b.role)]}
-                    blocked={(e) => (e.entityId === b.entityId ? t('this is the one now') : sourceBlock(e))}
+                    choices={() => [{ value: b.role, label: deviceRoleLabel(b.role), icon: DEVICE_ROLE_ICON[b.role] }]}
+                    blocked={(e) => (e.entityId === b.entityId ? t('this is the one now') : sourceBlockText(e, b.role))}
                     note={(e) => {
                       const other = otherRoom(e, id);
                       return other ? t('now in «{room}» — will be moved', { room: other }) : null;
@@ -221,29 +168,66 @@ function DeviceBlock({ p, k, list, edit, write, onRemove, onClose }: GroupProps)
         {k === 'temp' && room.heating.temperature === 'trvs' ? (
           <Text variant="caption">{t('No sensor of its own — the heads’ own readings stand in. A sensor away from the radiator measures the room better.')}</Text>
         ) : null}
-        {finderOpen ? (
-          <EntityFinder
-            search={search}
-            choices={(e) => [choice(roleIn(e, k))]}
-            blocked={sourceBlock}
-            note={(e) => {
-              const other = otherRoom(e, id);
-              return other ? t('now in «{room}» — will be moved', { room: other }) : null;
-            }}
-            onPick={(e, role) => add(e, role as WizardDeviceRole)}
-            placeholder={words.find}
-            valueText={entityValueText}
-            autoFocus={waiting || adding}
-          />
-        ) : null}
       </Stack>
     </Section>
   );
 }
 
+/** «Додати пристрій» of room settings: the same dialog as the wizard's, the device bound at once. */
+function AddBinding({ p, group, open, onClose, write, edit }: { p: SectionProps; group: DeviceGroup; open: boolean; onClose: () => void; write: Write; edit: EditState }) {
+  const { room } = p;
+  const id = room.config.id;
+  const zoned = room.heating.floor?.circuit?.mode === 'zoned';
+  const [k, setK] = useState<DeviceGroup>(group);
+  useEffect(() => {
+    if (open) setK(group);
+  }, [open, group]);
+  const search = useEntitySearch(null, { wizardRoles: deviceGroupSearchRoles(k, zoned), roomId: id, limit: 30 });
+  const note = (e: HaEntityDto) => {
+    const own = room.heating.bindings.filter((b) => b.entityId === e.entityId);
+    if (own.length) return t('already here as {role}', { role: own.map((b) => deviceRoleLabel(b.role).toLowerCase()).join(', ') });
+    const other = otherRoom(e, id);
+    return other ? t('now in «{room}» — will be moved', { room: other }) : null;
+  };
+  const add = (e: HaEntityDto) => {
+    const role = roleInGroup(e, k, zoned);
+    const kind = GROUP_KIND[deviceGroupOf(role)];
+    return write
+      .run(
+        () => api.rooms.bindings.add(id, { role, entityId: e.entityId, name: pickedName(e, role), move: otherRoom(e, id) ? true : undefined }),
+        t('«{name}» is added as {role}.', { name: pickedName(e, role), role: deviceRoleLabel(role).toLowerCase() }),
+      )
+      .then((r) => {
+        if (!r) return;
+        if (kind != null && edit.pending === kind) edit.setPending(null);
+        onClose();
+      });
+  };
+  return (
+    <AddDeviceDialog<DeviceGroup>
+      open={open}
+      onClose={onClose}
+      title={t('Add a device')}
+      kinds={DEVICE_GROUP_ORDER.map((g) => ({ value: g, label: deviceGroupWords(g).what }))}
+      kind={k}
+      onKind={setK}
+      kindLabel={t('What it is')}
+      search={search}
+      placeholder={t('Name or entity id')}
+      help={t('Searches all of Home Assistant; the room’s area comes first.')}
+      note={note}
+      blocked={(e) => sourceBlockText(e, roleInGroup(e, k, zoned))}
+      valueText={entityValueText}
+      addLabel={t('Add')}
+      onAdd={add}
+      busy={write.pending}
+    />
+  );
+}
+
 /**
- * Every device of the room, in the wizard's blocks: one search on top adds anything (its role is
- * guessed, a second choice offered when unsure), each device can be replaced by another entity or
+ * Every device of the room, in the wizard's blocks: «Додати пристрій» on top and «+ Додати» in a block
+ * add one (what it is first, then the entity), each device can be replaced by another entity or
  * removed — the confirmation says what happens to it (a head gets its own setpoint back, a heater
  * is switched off).
  */
@@ -251,14 +235,13 @@ export function RoomDevices({ p, edit, write }: { p: SectionProps; edit: EditSta
   const { room } = p;
   const id = room.config.id;
   const h = room.heating;
-  const phone = useLayout() === 'phone';
   const [removing, setRemoving] = useState<RoomBinding | null>(null);
-  const [opened, setOpened] = useState<DeviceGroup[]>([]);
-  const search = useEntitySearch(null, { wizard: 'any', roomId: id, limit: 30 });
+  const [adding, setAdding] = useState(false);
+  const [group, setGroup] = useState<DeviceGroup>('temp');
   const byGroup = (k: DeviceGroup) => h.bindings.filter((b) => deviceGroupOf(b.role) === k);
   const kinds = h.kinds;
   const shown = (k: DeviceGroup): boolean => {
-    if (byGroup(k).length || opened.includes(k)) return true;
+    if (byGroup(k).length) return true;
     switch (k) {
       case 'temp':
       case 'window':
@@ -276,18 +259,12 @@ export function RoomDevices({ p, edit, write }: { p: SectionProps; edit: EditSta
     }
   };
   const heads = byGroup('trv');
-
-  const add = (e: HaEntityDto, role: WizardDeviceRole) =>
-    void write.run(
-      () => api.rooms.bindings.add(id, { role, entityId: e.entityId, name: pickedName(e, role), move: otherRoom(e, id) ? true : undefined }),
-      t('«{name}» is added as {role}.', { name: pickedName(e, role), role: deviceRoleLabel(role).toLowerCase() }),
-    );
-  const already = (e: HaEntityDto) => {
-    const own = h.bindings.filter((b) => b.entityId === e.entityId);
-    if (own.length) return t('already here as {role}', { role: own.map((b) => deviceRoleLabel(b.role).toLowerCase()).join(', ') });
-    const other = otherRoom(e, id);
-    return other ? t('now in «{room}» — will be moved', { room: other }) : null;
+  const open = (k: DeviceGroup) => {
+    setGroup(k);
+    setAdding(true);
   };
+  // the top button starts with what the room still lacks: a head being ticked, else its temperature
+  const firstNeeded: DeviceGroup = edit.pending === 'trv' ? 'trv' : edit.pending === 'ac' ? 'ac' : edit.pending === 'local' ? 'heater' : 'temp';
 
   const consequences = (b: RoomBinding): string[] => {
     const out = [releaseWords(b, room.config.trv.releaseSetpointC)];
@@ -305,47 +282,20 @@ export function RoomDevices({ p, edit, write }: { p: SectionProps; edit: EditSta
     void write
       .run(() => api.rooms.bindings.remove(id, b.key, { force: b.lastTemperature }), t('«{name}» is removed from the room.', { name: nameOf(b) }))
       .finally(() => setRemoving(null));
-  const chips = (['dehum'] as const).filter((k) => !shown(k));
-
   return (
     <Stack gap="lg">
       {p.canEdit ? (
-        <EntityFinder
-          search={search}
-          choices={(e) => (e.wizard?.suggested ?? []).map(choice)}
-          onPick={(e, role) => add(e, role as WizardDeviceRole)}
-          placeholder={t('Add a device — name or entity id')}
-          ariaLabel={t('Add a device to the room')}
-          valueText={entityValueText}
-          note={already}
-          blocked={sourceBlock}
-          help={phone ? undefined : t('Searches all of Home Assistant; the room’s area comes first. A click adds the device in the role shown.')}
-        />
+        <Button variant="secondary" size="lg" icon="plus" fullWidth onClick={() => open(firstNeeded)}>
+          {t('Add a device')}
+        </Button>
       ) : null}
       {/* two columns on a wide screen keep a room with many sensors within reach */}
       <AutoGrid min={440} gap="xl">
-        {ORDER.filter(shown).map((k) => (
-          <DeviceBlock
-            key={k}
-            p={p}
-            k={k}
-            list={byGroup(k)}
-            edit={edit}
-            write={write}
-            onRemove={setRemoving}
-            onClose={opened.includes(k) ? () => setOpened((o) => o.filter((x) => x !== k)) : undefined}
-          />
+        {DEVICE_GROUP_ORDER.filter(shown).map((k) => (
+          <DeviceBlock key={k} p={p} k={k} list={byGroup(k)} edit={edit} write={write} onRemove={setRemoving} onAdd={open} />
         ))}
       </AutoGrid>
-      {chips.length && p.canEdit ? (
-        <Section variant="plain" level={3} title={t('Also in this room?')}>
-          <Row gap="sm" wrap>
-            {chips.map((k) => (
-              <QuickActionPill key={k} icon="plus" label={deviceGroupWords(k).chip} onClick={() => setOpened((o) => [...o, k])} />
-            ))}
-          </Row>
-        </Section>
-      ) : null}
+      {p.canEdit ? <AddBinding p={p} group={group} open={adding} onClose={() => setAdding(false)} write={write} edit={edit} /> : null}
       <ConfirmDialog
         open={removing != null}
         title={removing ? t('Remove «{name}» from the room?', { name: nameOf(removing) }) : ''}

@@ -32,11 +32,11 @@ export const HEATING_KIND_ICON: Record<RoomHeatingKind, IconName> = {
 export function heatingKindWords(k: RoomHeatingKind, product: string): { title: string; hint: string } {
   switch (k) {
     case 'trv':
-      return { title: t('Radiators with smart heads'), hint: t('{product} turns each head to the room’s target.', { product }) };
+      return { title: t('Radiators with smart heads'), hint: t('Zigbee or Wi-Fi heads and thermostats: {product} turns each one to the room’s target.', { product }) };
     case 'radiator_plain':
       return {
         title: t('Radiators with ordinary valves'),
-        hint: t('Mechanical or manual valves: {product} switches the boiler or heat pump and the radiator pump on while the room is colder than its target.', { product }),
+        hint: t('Hand valves or mechanical thermostatic heads, no device needed: {product} switches the boiler or heat pump and the radiator pump by the room temperature.', { product }),
       };
     case 'floor':
       return { title: t('Underfloor heating'), hint: t('The room joins the house floor circuit; a zone valve of its own only if the floor is split into zones.') };
@@ -82,6 +82,8 @@ export function circuitLine(pumpNames: readonly string[], otherRooms: readonly s
 /** The blocks devices are listed in (the wizard's device step and room settings). */
 export type DeviceGroup = 'trv' | 'temp' | 'window' | 'ac' | 'heater' | 'floor' | 'dehum';
 
+export const DEVICE_GROUP_ORDER: readonly DeviceGroup[] = ['trv', 'temp', 'window', 'ac', 'heater', 'floor', 'dehum'];
+
 export const DEVICE_GROUP_ROLES: Record<DeviceGroup, readonly WizardDeviceRole[]> = {
   trv: ['trv'],
   temp: ['temp_humidity', 'temperature', 'humidity'],
@@ -107,6 +109,24 @@ export const DEVICE_GROUP_SEARCH: Record<DeviceGroup, WizardDeviceRole> = {
   dehum: 'dehumidifier',
 };
 
+/** What «Додати пристрій» searches for in a block: a floor that runs as a whole takes a floor probe only. */
+export function deviceGroupSearchRoles(k: DeviceGroup, floorZoned = true): WizardDeviceRole[] {
+  return k === 'floor' && !floorZoned ? ['floor_probe'] : [...DEVICE_GROUP_ROLES[k]];
+}
+
+/** The role a found entity takes in a block: its own likeliest one that fits, else the block's own. */
+export function roleInGroup(e: HaEntityDto, k: DeviceGroup, floorZoned = true): WizardDeviceRole {
+  const fits = (r: WizardDeviceRole) => deviceGroupSearchRoles(k, floorZoned).includes(r);
+  return e.wizard?.suggested.find(fits) ?? e.wizard?.possible.find(fits) ?? (k === 'floor' && !floorZoned ? 'floor_probe' : DEVICE_GROUP_SEARCH[k]);
+}
+
+/** A source's own climate or relay cannot be a room's head, AC, heater or zone valve too (the server refuses it). */
+export function sourceBlockText(e: HaEntityDto, role: WizardDeviceRole): string | null {
+  const source = e.usedBy.find((u) => u.type === 'source');
+  if (!source || !(['trv', 'ac', 'heater', 'floor_zone'] as WizardDeviceRole[]).includes(role)) return null;
+  return t('the source «{source}» switches it — it cannot be a room device too', { source: source.label });
+}
+
 export const DEVICE_ROLE_ICON: Record<WizardDeviceRole, IconName> = {
   trv: 'radiator',
   temperature: 'thermometer',
@@ -126,64 +146,57 @@ export function deviceRoleLabel(role: WizardDeviceRole): string {
   return wizardDeviceRoleLabel(role);
 }
 
-/** A device block: its title, the quiet tag beside it, what helps when it is empty, its search and its chip. */
-export function deviceGroupWords(k: DeviceGroup): { title: string; tag: string; hint: string; find: string; chip: string } {
+/** A device block: its title, the quiet tag beside it, what belongs in it and what it is called in «Що це» of «Додати пристрій». */
+export function deviceGroupWords(k: DeviceGroup): { title: string; tag: string; hint: string; what: string } {
   switch (k) {
     case 'trv':
       return {
-        title: t('Radiator heads'),
-        tag: t('a head or a thermostat'),
-        hint: t('The thermostatic head on the radiator, or the thermostat that drives it.'),
-        find: t('Find a radiator valve or a thermostat'),
-        chip: t('Radiator valve'),
+        title: t('Smart radiator heads'),
+        tag: t('a smart head or a thermostat'),
+        hint: t('A Zigbee or Wi-Fi head on the radiator, or the thermostat that drives it.'),
+        what: t('Smart radiator head or thermostat'),
       };
     case 'temp':
       return {
         title: t('Temperature and humidity'),
         tag: t('for the calculation'),
         hint: t('A sensor away from the radiator and the window measures the room best.'),
-        find: t('Find a temperature sensor'),
-        chip: t('Temperature sensor'),
+        what: t('Temperature or humidity sensor'),
       };
     case 'window':
       return {
         title: t('Windows and doors'),
         tag: t('optional'),
         hint: t('A contact sensor pauses heating while the window is open.'),
-        find: t('Find a window or door sensor'),
-        chip: t('Window'),
+        what: t('Window or door sensor'),
       };
     case 'ac':
       return {
         title: t('Air conditioner'),
         tag: t('cold and top-up heat'),
         hint: t('The climate entity of the split unit.'),
-        find: t('Find the air conditioner'),
-        chip: t('Air conditioner'),
+        what: t('Air conditioner'),
       };
     case 'heater':
       return {
         title: t('Heater'),
         tag: t('a relay or a plug'),
         hint: t('A relay, a smart plug or the climate entity of an electric heater.'),
-        find: t('Find the heater'),
-        chip: t('Heater'),
+        what: t('Heater, relay or plug'),
       };
     case 'floor':
       return {
         title: t('Underfloor heating'),
         tag: t('the house floor circuit'),
-        hint: t('A floor probe: add the sensor and pick «Floor probe» in «Use as».'),
-        find: t('Find the zone valve or the floor thermostat'),
-        chip: t('Underfloor heating'),
+        hint: t('A floor probe or, on a floor split into zones, the zone valve of this room.'),
+        what: t('Floor zone valve or floor probe'),
       };
     case 'dehum':
       return {
         title: t('Dehumidifier'),
         tag: t('optional'),
         hint: t('A dehumidifier entity, or the plug it hangs on.'),
-        find: t('Find the dehumidifier'),
-        chip: t('Dehumidifier'),
+        what: t('Dehumidifier'),
       };
   }
 }

@@ -151,3 +151,24 @@ export function useResource<T>(key: string | null, fetcher: () => Promise<T>, op
 
   return { ...snapshot, reload, setData };
 }
+
+/**
+ * Asks again while the answer is not complete yet (the add-on had just started and could not read the
+ * recorder) or the request failed: after 5 s, 10 s, 20 s, then every 30 s, until a complete answer.
+ */
+export function useRetryUntilComplete<T>(res: ResourceState<T>, incomplete: (data: T) => boolean): void {
+  const { data, error, loading, reload } = res;
+  const attempt = useRef(0);
+  const check = useRef(incomplete);
+  check.current = incomplete;
+  useEffect(() => {
+    if (loading) return;
+    const waiting = error != null || (data !== undefined && check.current(data));
+    if (!waiting) {
+      attempt.current = 0;
+      return;
+    }
+    const timer = window.setTimeout(() => void reload(), Math.min(30_000, 5_000 * 2 ** attempt.current++));
+    return () => window.clearTimeout(timer);
+  }, [data, error, loading, reload]);
+}

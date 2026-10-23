@@ -78,6 +78,7 @@ import {
   CONFIG_TABLES,
   diffRows,
   fromRow,
+  healRoomEmitters,
   loadGraph,
   OVERRIDE_TABLE,
   prKey,
@@ -206,17 +207,21 @@ export class ConfigStore implements IConfigStore {
   /** Loads the graph; an empty database gets the first-boot seed. */
   async load(): Promise<void> {
     await this.db.exclusive(async () => {
-      const { graph, missingSingletons } = await loadGraph(this.db.manager);
+      const { graph, missingSingletons, migratedManifolds } = await loadGraph(this.db.manager);
       const fresh = missingSingletons.includes('settings');
       this.graph = fresh ? seedGraph(this.clock.now()) : graph;
       // a fresh install writes the whole seed; otherwise only singletons without a row yet (new in this version)
       const base: RowSnapshot = fresh ? new Map() : snapshotRows(graph, (t) => this.cols(t));
       if (!fresh) for (const t of CONFIG_TABLES) if (t.singleton && missingSingletons.includes(t.singleton)) base.delete(t.name);
+      // manifolds read in the older shape are written back with their sources
+      if (!fresh) for (const id of migratedManifolds) base.get('manifold')?.set(id, '');
       // once per database: names 0.1.0 seeded in Ukrainian become English (the demo house keeps its language)
       const namesChecked = (await this.db.kvGet(SEED_EN_KEY)) !== null;
       const renamed = !fresh && !namesChecked && !env.simulate ? englishSeedNames(this.graph, this.clock.now()) : 0;
       // a single outdoor sensor of an older version becomes the list, stored in the new shape
       this.graph.settings = { ...this.graph.settings, outdoor: normalizeOutdoor(this.graph.settings.outdoor) };
+      const healed = fresh ? 0 : healRoomEmitters(this.graph);
+      if (healed) this.log.log(`${healed} room source(s) got the emitter that lets them serve their room`);
       const changes = diffRows(base, this.graph, (t) => this.cols(t));
       if (changes.length) await this.db.ds.transaction((em) => writeChanges(em, changes));
       if (fresh) await this.db.kvSet(SEED_HA_KEY, 'pending');
@@ -797,6 +802,10 @@ export class ConfigStore implements IConfigStore {
       case 'circuits':
         item.sourceIds = [...new Set(item.sourceIds as Id[])];
         break;
+      case 'manifolds':
+        item.name = String(item.name ?? '').trim();
+        item.sourceIds = [...new Set((item.sourceIds as Id[] | undefined) ?? [])];
+        break;
       default:
         break;
     }
@@ -827,6 +836,29 @@ export class ConfigStore implements IConfigStore {
     }
     if (c === 'targets') this.normalizeTargets(g, id);
     if (c === 'circuits' || c === 'pumps') this.syncPumpRules(g, c, id, before);
+    if (c === 'circuits' || c === 'manifolds') this.syncManifoldSources(g, c, id, before);
+  }
+
+  /**
+   * A circuit on a manifold is fed by every source of the manifold: a source added to the manifold feeds
+   * each of its circuits, one taken off stops feeding them, a circuit put on it gains its sources. A circuit
+   * that leaves keeps its sources (it is then fed directly).
+   */
+  private syncManifoldSources(g: ConfigGraph, c: 'circuits' | 'manifolds', id: Id, before: Record<string, unknown> | null): void {
+    const merge = (circuit: Circuit, add: readonly Id[], drop: readonly Id[] = []) => {
+      const next = [...new Set([...circuit.sourceIds.filter((x) => !drop.includes(x)), ...add])];
+      if (next.length !== circuit.sourceIds.length || next.some((x, i) => x !== circuit.sourceIds[i])) circuit.sourceIds = next;
+    };
+    if (c === 'circuits') {
+      const circuit = g.circuits.get(id);
+      const m = circuit?.manifoldId ? g.manifolds.get(circuit.manifoldId) : undefined;
+      if (circuit && m) merge(circuit, m.sourceIds);
+      return;
+    }
+    const m = g.manifolds.get(id);
+    if (!m) return;
+    const dropped = ((before?.sourceIds as Id[] | undefined) ?? []).filter((x) => !m.sourceIds.includes(x));
+    for (const circuit of g.circuits.values()) if (circuit.manifoldId === id) merge(circuit, m.sourceIds, dropped);
   }
 
   /**
@@ -1016,9 +1048,14 @@ export class ConfigStore implements IConfigStore {
         return;
       }
       case 'manifolds':
+        // its circuits stay with their sources (fed directly now); its primary pumps go
         g.manifolds.delete(id);
         for (const circuit of g.circuits.values()) if (circuit.manifoldId === id) circuit.manifoldId = null;
-        for (const [pid, p] of g.pumps) if (p.manifoldId === id) g.pumps.delete(pid);
+        for (const [pid, p] of g.pumps) {
+          if (p.manifoldId !== id) continue;
+          g.pumps.delete(pid);
+          for (const [wid, w] of g.watchRules) if (w.ref?.pumpId === pid) g.watchRules.delete(wid);
+        }
         return;
       case 'pumps':
         g.pumps.delete(id);
@@ -1087,6 +1124,7 @@ export class ConfigStore implements IConfigStore {
     g.energy.exempt.sourceIds = g.energy.exempt.sourceIds.filter((x) => x !== sourceId);
     for (const [id, e] of g.emitters) if (e.sourceId === sourceId) g.emitters.delete(id);
     for (const c of g.circuits.values()) c.sourceIds = c.sourceIds.filter((x) => x !== sourceId);
+    for (const m of g.manifolds.values()) m.sourceIds = m.sourceIds.filter((x) => x !== sourceId);
     // children keep the values they copied and simply stop following
     for (const s of g.sources.values()) if (s.linkedTo === sourceId) { s.linkedTo = null; s.ownFields = []; }
     for (const [id, o] of g.overrides) if (o.scope === 'source' && o.subjectId === sourceId) g.overrides.delete(id);

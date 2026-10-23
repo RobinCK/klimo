@@ -106,11 +106,14 @@ test('room day: Klimo’s own sensor when it has data', async () => {
     return out;
   };
   const day = await history.roomDay('r_liv', '2026-10-21');
-  assert.equal(day.source, 'klimo_entity');
-  assert.deepEqual(day.series, [[MIDNIGHT, 20], [MIDNIGHT + 6 * HOUR, 20.5]]);
+  assert.equal(day.source, 'klimo_entity', 'the room sensors have nothing recorded');
+  // a 5-min grid up to now: the line reaches «now» with the value held since 06:00
+  assert.deepEqual(day.series[0], [MIDNIGHT, 20]);
+  assert.deepEqual(day.series.find(([t]) => t === MIDNIGHT + 6 * HOUR), [MIDNIGHT + 6 * HOUR, 20.5]);
+  assert.deepEqual(day.series.at(-1), [NOW, 20.5]);
   assert.deepEqual(day.stats.min, { c: 20, at: MIDNIGHT });
   assert.deepEqual(day.stats.max, { c: 20.5, at: MIDNIGHT + 6 * HOUR });
-  assert.ok(ha.historyCalls[0].ids.includes('sensor.living_klimo_temp'));
+  assert.ok(ha.historyCalls.some((c) => c.ids.includes('sensor.living_klimo_temp')));
 });
 
 test('room day: no Klimo data → rebuilt from the raw sensors with the room method', async () => {
@@ -134,7 +137,7 @@ test('room day: no Klimo data → rebuilt from the raw sensors with the room met
   assert.deepEqual(rawCall.ids.sort(), ['sensor.a', 'sensor.b', 'sensor.h'], 'excluded sensors stay out');
 });
 
-test('the last hour for the trend after a restart: Klimo’s own sensor, else the raw sensors when it went quiet', async () => {
+test('the last hour for the trend after a restart: the raw sensors, Klimo’s own sensor for a room without recorded sensors', async () => {
   const { ha, config, history } = setup();
   livingRoom(config);
   const bed = config.addRoom('r_bed', 'Спальня', 'spalnia');
@@ -163,7 +166,8 @@ test('the last hour for the trend after a restart: Klimo’s own sensor, else th
   assert.equal(bedPts.length, 61);
   assert.deepEqual(bedPts.at(-1), [NOW, 18.6]);
   assert.equal(ha.historyCalls.length, 2);
-  assert.deepEqual(ha.historyCalls[1].ids, ['sensor.c']);
+  assert.deepEqual(ha.historyCalls[0].ids, ['sensor.a', 'sensor.b', 'sensor.c'], 'the room sensors first');
+  assert.deepEqual(ha.historyCalls[1].ids, ['sensor.klimo_vitalnia_temperature', 'sensor.klimo_komora_temperature'], 'Klimo’s sensor for the rest');
 });
 
 test('room day: recorder down → the last hours from memory', async () => {

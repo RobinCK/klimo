@@ -5,7 +5,7 @@
  * status page, the source list with drill-in, and the strategy as stacked sections.
  */
 import { useCallback, useState } from 'react';
-import type { SchemaView, SimPresetId } from '@api/model';
+import type { Id, SchemaView, SimPresetId } from '@api/model';
 import { useLayout } from '@data';
 import { navigate, paths, useRoute } from '@app';
 import { AutoGrid, Page, Stack, SubNav } from '@ui';
@@ -15,6 +15,7 @@ import { GuardsSection } from './Guards';
 import { HaEntitiesSection } from './HaEntities';
 import { HouseModeSection } from './HouseMode';
 import { JournalSection } from './Journal';
+import { ManifoldDrawer, ManifoldsSection } from './Manifolds';
 import { PhoneCircuits, PhoneStatus } from './PhoneStatus';
 import { SchemaSection, WhySection } from './Schema';
 import { useSystemData, type SystemData } from './shared';
@@ -45,6 +46,8 @@ function SchemaTab({ d, focusJournal }: { d: SystemData; focusJournal: boolean }
   const sim: SimPresetId = q && PRESETS.includes(q) ? q : 'now';
   const [view, setView] = useState<SchemaView | null>(null);
   const onView = useCallback((v: SchemaView | null) => setView(v), []);
+  const [manifold, setManifold] = useState<{ id: Id | null } | null>(null);
+  const editManifold = useCallback((id: Id | null) => setManifold({ id }), []);
   return (
     <Page
       title={t('System')}
@@ -52,16 +55,24 @@ function SchemaTab({ d, focusJournal }: { d: SystemData; focusJournal: boolean }
       actions={<SystemNav current="schema" />}
     >
       <HouseModeSection d={d} />
-      <SchemaSection d={d} sim={sim} onSim={(id) => navigate(paths.system({ sim: id === 'now' ? undefined : id }), { replace: true })} onView={onView} />
+      <SchemaSection
+        d={d}
+        sim={sim}
+        onSim={(id) => navigate(paths.system({ sim: id === 'now' ? undefined : id }), { replace: true })}
+        onView={onView}
+        onManifold={editManifold}
+      />
       {/* each card keeps its own height instead of stretching to the tallest in the row */}
       <AutoGrid min={560} gap="xl">
         <Stack>
           <WhySection d={d} view={view} />
         </Stack>
-        <Stack>
+        <Stack gap="xl">
+          <ManifoldsSection d={d} onEdit={editManifold} />
           <CircuitsSection d={d} focus={route.query.section === 'circuits'} />
         </Stack>
       </AutoGrid>
+      {manifold ? <ManifoldDrawer d={d} id={manifold.id} onClose={() => setManifold(null)} /> : null}
       <AutoGrid min={420} gap="xl">
         <Stack>
           <GuardsSection d={d} />

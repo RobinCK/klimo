@@ -28,9 +28,12 @@
 
 .row,
 .multi {
+  /* the list scrolls: a row keeps its height instead of shrinking under the next one */
+  flex: none;
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
   min-height: 56px;
   padding: 8px 10px;
   border-radius: var(--ui-radius-md);

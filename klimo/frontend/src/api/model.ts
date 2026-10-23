@@ -916,11 +916,16 @@ export interface SourceConfig {
 
 /* 4.4 Hydronics --------------------------------------------------------------------------------- */
 
+/** A header (гребінка, гідрострілка) between sources and circuits; its primary pump is a Pump with `manifoldId`. */
 export interface Manifold {
   id: Id;
-  name: string; // 'Колектор'
+  name: string; // 'Колектор', unique
   supplySensorEntityId: EntityId | null;
   returnSensorEntityId: EntityId | null;
+  /** Central sources feeding the header. Every circuit on it is fed by them: the store keeps them in each
+   *  circuit's `sourceIds` (a circuit may have direct sources of its own besides). Rows saved before this
+   *  field read the sources all its circuits share. */
+  sourceIds: Id[];
   order: number;
 }
 
@@ -2309,6 +2314,8 @@ export interface SparkDto {
   targets: (Celsius | null)[] | null;
   from: EpochMs;
   stepMin: 30;
+  /** False while the recorder cannot be read yet (Klimo just started): the values are memory only, ask again soon. */
+  complete: boolean;
 }
 
 export interface TimelineTrack {
@@ -2675,12 +2682,17 @@ export interface DurationOption {
   until: EpochMs | null;
 }
 
+/** raw_sensors = the room's sensors combined by its method; klimo_entity = Klimo's published sensor (when
+ *  the room's sensors are not recorded); memory = the last hours Klimo kept itself; none = nothing yet. */
+export type RoomDaySource = 'raw_sensors' | 'klimo_entity' | 'memory' | 'none';
+
 export interface RoomDayDto {
   roomId: Id;
   date: LocalDate;
-  /** Aggregated temperature [ts, °C]; from sensor.klimo_<slug>_temperature, else rebuilt from raw sensors. */
+  /** Room temperature [ts, °C] on a 5-min grid up to `asOf`; the room's own sensors combined the way the live
+   *  value is (method, outliers, unavailable left out), else Klimo's sensor.klimo_<slug>_temperature. */
   series: [EpochMs, Celsius | null][];
-  source: 'klimo_entity' | 'raw_sensors' | 'memory';
+  source: RoomDaySource;
   humidity: [EpochMs, Pct | null][];
   targetSegments: { from: EpochMs; to: EpochMs; heatC: Celsius | null; coolC: Celsius | null; future: boolean; kind: TargetDisplayKind }[];
   demandSpans: { from: EpochMs; to: EpochMs | null; mode: Mode }[];
@@ -2691,6 +2703,26 @@ export interface RoomDayDto {
     max: { c: Celsius; at: EpochMs } | null;
     rateCPerH: number | null;
   };
+  /** Server time the day was read up to; the page adds live readings after it. */
+  asOf: EpochMs;
+  /** False while the recorder cannot be read yet (HA not connected after a start, recorder not answering):
+   *  never cached, the page shows «loading» and asks again shortly. */
+  complete: boolean;
+  diag: RoomDayDiag;
+}
+
+export type RoomDayEntityRole = 'temperature' | 'humidity' | 'klimo_temperature' | 'klimo_humidity' | 'klimo_target' | 'klimo_heat_demand' | 'klimo_cool_demand';
+
+/** What the room day was built from (also logged at debug level), so a report can be read from the add-on log. */
+export interface RoomDayDiag {
+  ha: boolean;
+  recorder: 'ok' | 'error' | 'skipped';
+  error: string | null;
+  /** Every entity asked for: rows the recorder returned and how many of them were numbers. */
+  entities: { entityId: EntityId; role: RoomDayEntityRole; rows: number; numeric: number }[];
+  humiditySource: RoomDaySource;
+  /** klimo_target = Klimo's recorded target sensor; plan = the schedule (sensor not recorded); mixed = the plan fills its gaps. */
+  targetSource: 'klimo_target' | 'plan' | 'mixed' | 'none';
 }
 
 /* 7.4 HA lookups ------------------------------------------------------------------------------------ */
@@ -2957,8 +2989,20 @@ export type CircuitCreateRequest = Omit<Circuit, 'id' | 'order' | 'mode' | 'bypa
 export type CircuitPatch = Partial<Omit<Circuit, 'id'>>;
 export type PumpCreateRequest = Omit<Pump, 'id' | 'order'>;
 export type PumpPatch = Partial<Omit<Pump, 'id'>>;
-export type ManifoldCreateRequest = Omit<Manifold, 'id' | 'order'>;
-export type ManifoldPatch = Partial<Omit<Manifold, 'id'>>;
+/** The primary pump as the manifold editor sets it (`pump: null` removes it). */
+export interface ManifoldPumpRequest {
+  entityId: EntityId;
+  name?: string;
+  runOnHeatMin: number;
+  runOnCoolMin?: number;
+}
+/** `circuitIds`: the circuits on it after the write (circuits left out leave it); all in one transaction. */
+export type ManifoldCreateRequest = Omit<Manifold, 'id' | 'order' | 'sourceIds'> & {
+  sourceIds?: Id[];
+  circuitIds?: Id[];
+  pump?: ManifoldPumpRequest | null;
+};
+export type ManifoldPatch = Partial<Omit<Manifold, 'id'>> & { circuitIds?: Id[]; pump?: ManifoldPumpRequest | null };
 
 /* 7.7 Strategy, triggers, rules, energy, system --------------------------------------------------- */
 
