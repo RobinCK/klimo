@@ -63,7 +63,7 @@
  * `klimo-room-sheet` and `klimo-open`).
  */
 
-const VERSION = '0.2.13';
+const VERSION = '0.2.14';
 
 /* ─────────────────────────────── 1 Tokens ──────────────────────────────────────────────────────
  * The same values as the panel's design tokens. `npm run tokens:card` in klimo/frontend copies
@@ -1686,6 +1686,7 @@ function roomView(ctx, entity, row) {
     iss,
     sp: a ? a.sp : null,
     stg: a ? a.stg : null,
+    sph: a ? a.sph : null,
     why: a ? a.why : null,
     sub,
     subColor: iss ? `var(--k-${iss.tone}-fg)` : 'var(--k-t3)',
@@ -1694,40 +1695,69 @@ function roomView(ctx, entity, row) {
   };
 }
 
-/** The 6-hour sparkline: stepped target band at sample midpoints, gaps break the line. */
+/** A sparkline's path through the points that are numbers; a gap breaks it, a lone point is a dot. */
+function sparkPath(pts, X, Y) {
+  const f = (x) => x.toFixed(2);
+  let d = '';
+  let pen = false;
+  for (let i = 0; i < pts.length; i++) {
+    if (!isNum(pts[i])) {
+      pen = false;
+      continue;
+    }
+    d += `${pen ? 'L' : 'M'}${f(X(i))} ${f(Y(pts[i]))} `;
+    if (!pen && (i === pts.length - 1 || !isNum(pts[i + 1]))) d += `L${f(X(i))} ${f(Y(pts[i]))} `;
+    pen = true;
+  }
+  return d.trim();
+}
+
+/** A tenth of a degree is not a wave: the temperature scale is at least this tall. */
+const SPARK_MIN_SPAN_C = 1;
+/** The target band joins the scale only this close to the line; further off it would flatten it. */
+const SPARK_BAND_NEAR_C = 1.5;
+/** A few percent of humidity drift stay a gentle slope. */
+const SPARK_HUM_MIN_SPAN = 20;
+
+/**
+ * The 6-hour sparkline: the temperature on its own scale, the stepped target band (at sample
+ * midpoints) where it falls on that scale, and the humidity as a faint line on a scale of its own
+ * behind them. Gaps break the lines.
+ */
 function sparkline(v) {
   let pts = Array.isArray(v.sp) && v.sp.length > 1 ? v.sp.map((x) => (isNum(x) ? x : null)) : null;
   if (!pts || !pts.some(isNum)) pts = isNum(v.t) ? [v.t, v.t] : null;
   if (!pts) return '';
   const n = pts.length;
   const tg = Array.isArray(v.stg) && v.stg.length === n ? v.stg.map((x) => (isNum(x) ? x : null)) : null;
+  const hum = Array.isArray(v.sph) && v.sph.length === n && v.sph.some(isNum) ? v.sph.map((x) => (isNum(x) ? x : null)) : null;
   const below = isNum(v.tol[0]) ? v.tol[0] : 0.2;
   const above = isNum(v.tol[1]) ? v.tol[1] : 0.2;
-  const pool = pts.filter(isNum);
-  if (tg) for (const x of tg) if (isNum(x)) pool.push(x - below, x + above);
-  let lo = Math.min(...pool) - 0.15;
-  let hi = Math.max(...pool) + 0.15;
-  if (hi - lo < 0.3) {
+  const temps = pts.filter(isNum);
+  let lo = Math.min(...temps);
+  let hi = Math.max(...temps);
+  if (tg) {
+    const tlo = lo;
+    const thi = hi;
+    for (const x of tg) {
+      if (!isNum(x) || x + above < tlo - SPARK_BAND_NEAR_C || x - below > thi + SPARK_BAND_NEAR_C) continue;
+      lo = Math.min(lo, x - below);
+      hi = Math.max(hi, x + above);
+    }
+  }
+  lo -= 0.15;
+  hi += 0.15;
+  if (hi - lo < SPARK_MIN_SPAN_C) {
     const mid = (hi + lo) / 2;
-    lo = mid - 0.15;
-    hi = mid + 0.15;
+    lo = mid - SPARK_MIN_SPAN_C / 2;
+    hi = mid + SPARK_MIN_SPAN_C / 2;
   }
   const X = (i) => (i / (n - 1)) * 100;
   const Y = (y) => 37 - ((y - lo) / (hi - lo)) * 34;
+  // a band beyond the scale is cut at the chart's edge (and vanishes when wholly outside)
+  const Yb = (y) => Math.min(40, Math.max(0, Y(y)));
   const mid = (i) => (X(i) + X(i + 1)) / 2;
   const f = (x) => x.toFixed(2);
-
-  let line = '';
-  let pen = false;
-  for (let i = 0; i < n; i++) {
-    if (!isNum(pts[i])) {
-      pen = false;
-      continue;
-    }
-    line += `${pen ? 'L' : 'M'}${f(X(i))} ${f(Y(pts[i]))} `;
-    if (!pen && (i === n - 1 || !isNum(pts[i + 1]))) line += `L${f(X(i))} ${f(Y(pts[i]))} `;
-    pen = true;
-  }
 
   let band = '';
   if (tg) {
@@ -1741,20 +1771,38 @@ function sparkline(v) {
       while (j + 1 < n && isNum(tg[j + 1])) j++;
       const xs = i === 0 ? 0 : mid(i - 1);
       const xe = j === n - 1 ? 100 : mid(j);
-      band += `M${f(xs)} ${f(Y(tg[i] + above))}`;
-      for (let k = i + 1; k <= j; k++) band += ` H${f(mid(k - 1))} V${f(Y(tg[k] + above))}`;
-      band += ` H${f(xe)} V${f(Y(tg[j] - below))}`;
-      for (let k = j - 1; k >= i; k--) band += ` H${f(mid(k))} V${f(Y(tg[k] - below))}`;
+      band += `M${f(xs)} ${f(Yb(tg[i] + above))}`;
+      for (let k = i + 1; k <= j; k++) band += ` H${f(mid(k - 1))} V${f(Yb(tg[k] + above))}`;
+      band += ` H${f(xe)} V${f(Yb(tg[j] - below))}`;
+      for (let k = j - 1; k >= i; k--) band += ` H${f(mid(k))} V${f(Yb(tg[k] - below))}`;
       band += ` H${f(xs)} Z `;
       i = j + 1;
     }
+  }
+
+  let humPath = '';
+  if (hum) {
+    const hs = hum.filter(isNum);
+    let hlo = Math.min(...hs);
+    let hhi = Math.max(...hs);
+    if (hhi - hlo < SPARK_HUM_MIN_SPAN) {
+      const m = (hhi + hlo) / 2;
+      hlo = m - SPARK_HUM_MIN_SPAN / 2;
+      hhi = m + SPARK_HUM_MIN_SPAN / 2;
+    }
+    humPath = sparkPath(hum, X, (h) => 37 - ((h - hlo) / (hhi - hlo)) * 34);
   }
 
   let last = n - 1;
   while (last > 0 && !isNum(pts[last])) last--;
   const tone = v.state.tone;
   const dot = `left:${f(X(last))}%;top:${f((Y(pts[last]) / 40) * 100)}%;background:var(--k-${tone}-line)`;
-  return `<svg viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true">${band ? `<path class="band" d="${band.trim()}"/>` : ''}<path class="line" d="${line.trim()}" style="stroke:var(--k-${tone}-line)"/></svg><span class="end" style="${dot}"></span>`;
+  return (
+    `<svg viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true">` +
+    `${band ? `<path class="band" d="${band.trim()}"/>` : ''}` +
+    `${humPath ? `<path class="hum" d="${humPath}"/>` : ''}` +
+    `<path class="line" d="${sparkPath(pts, X, Y)}" style="stroke:var(--k-${tone}-line)"/></svg><span class="end" style="${dot}"></span>`
+  );
 }
 
 function stateChip(state, size = 26) {
@@ -1819,6 +1867,7 @@ const ROOM_CSS = `
 .rc .spark svg { display: block; width: 100%; height: 40px; overflow: visible; }
 .rc .spark .band { fill: var(--k-band); }
 .rc .spark .line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.rc .spark .hum { fill: none; stroke: var(--k-cool-line); stroke-opacity: .35; stroke-width: 1.2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .rc .spark .end { position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; box-shadow: 0 0 0 2px var(--k-s1); }
 .rc .foot { display: flex; align-items: center; min-height: 24px; min-width: 0; }
 .pill { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 24px; padding: 0 8px; border-radius: 8px;

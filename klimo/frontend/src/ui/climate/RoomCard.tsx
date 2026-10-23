@@ -11,6 +11,11 @@ import { MetaRow, TargetSourceLine, TrendIndicator, type MetaRowProps } from '..
 import { Sparkline } from '../viz/charts/Sparkline';
 import s from './climate.module.css';
 
+/** A tenth of a degree is not a wave: the card's temperature scale is at least this tall. */
+const ROOM_SPARK_MIN_SPAN_C = 1;
+/** The target band joins the scale only this close to the line; further off it would flatten it. */
+const ROOM_SPARK_BAND_NEAR_C = 1.5;
+
 export interface RoomCardProps {
   /** card: the overview grid · compact: a 64 px row for phone lists. */
   variant: 'card' | 'compact';
@@ -24,8 +29,14 @@ export interface RoomCardProps {
   trend?: { cPerH: number | null; text: string } | null;
   /** Where the target comes from — never a bare number. */
   source: { kind: TargetDisplayKind | 'pending'; text: string; tone?: Tone };
-  /** Last 6 h with the target band (card variant only). */
-  spark?: { values: readonly (number | null)[]; target: readonly (number | null)[] | null; below: number; above: number } | null;
+  /** Last 6 h with the target band and the humidity (card variant only). */
+  spark?: {
+    values: readonly (number | null)[];
+    target: readonly (number | null)[] | null;
+    below: number;
+    above: number;
+    humidity?: readonly (number | null)[] | null;
+  } | null;
   meta?: MetaRowProps['items'];
   /** The one problem the card has room for; replaces the meta row. */
   issue?: { tone: 'warn' | 'err'; icon: IconName; text: string } | null;
@@ -83,7 +94,16 @@ export function RoomCard(p: RoomCardProps) {
       </span>
       <TargetSourceLine kind={p.source.kind} text={p.source.text} tone={p.source.tone} />
       {p.spark ? (
-        <Sparkline values={p.spark.values} target={p.spark.target} below={p.spark.below} above={p.spark.above} tone={tone} />
+        <Sparkline
+          values={p.spark.values}
+          target={p.spark.target}
+          below={p.spark.below}
+          above={p.spark.above}
+          humidity={p.spark.humidity}
+          minSpan={ROOM_SPARK_MIN_SPAN_C}
+          bandNear={ROOM_SPARK_BAND_NEAR_C}
+          tone={tone}
+        />
       ) : (
         <span className={s.roomSparkGap} aria-hidden="true" />
       )}

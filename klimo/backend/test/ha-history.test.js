@@ -245,6 +245,7 @@ test('sparks: one statistics call for all rooms; Klimo sensor, else raw sensors;
     'sensor.klimo_vitalnia_temperature': buckets(20.04),
     'sensor.klimo_vitalnia_target': buckets(21),
     'sensor.bed': buckets(18.25),
+    'sensor.h': buckets(46.4),
   });
   const sparks = await history.sparks();
   assert.equal(ha.statisticsCalls.length, 1);
@@ -257,6 +258,8 @@ test('sparks: one statistics call for all rooms; Klimo sensor, else raw sensors;
   assert.ok(liv.targets.every((v) => v === 21));
   assert.ok(sparks.r_bed.values.every((v) => v === 18.3));
   assert.equal(sparks.r_bed.targets, null);
+  assert.ok(liv.humidity.length === 13 && liv.humidity.every((v) => v === 46), 'the humidity sensor, whole percent');
+  assert.equal(sparks.r_bed.humidity, null, 'no humidity sensor, no line');
   await history.sparks();
   assert.equal(ha.statisticsCalls.length, 1, 'cached 60 s');
 });

@@ -2314,6 +2314,8 @@ export interface SparkDto {
   values: (Celsius | null)[];
   /** Active target per point (null = none). */
   targets: (Celsius | null)[] | null;
+  /** Humidity per point, the room's humidity sensors combined like the live value; null = none recorded. */
+  humidity?: (Pct | null)[] | null;
   from: EpochMs;
   stepMin: 30;
   /** False while the recorder cannot be read yet (Klimo just started): the values are memory only, ask again soon. */
@@ -3579,6 +3581,7 @@ export interface RoomCardAttrs {
   iss: { tone: 'warn' | 'err'; i: IconName; t: string; at: EpochMs | null; more: number; id: Id | null } | null;
   sp: (number | null)[]; // 13 points, 6 h
   stg: (number | null)[] | null;
+  sph: (number | null)[] | null; // humidity %, the same 13 points; null = the room has none recorded
   next: { t: string; at: EpochMs } | null; // «Далі: {t} → Ніч 18.0°»
   why: string | null; // main «Чому» sentence
   th: ThermostatModel;

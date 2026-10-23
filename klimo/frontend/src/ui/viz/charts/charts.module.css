@@ -42,6 +42,14 @@
   stroke-linecap: round;
 }
 
+.sparkHumidity {
+  fill: none;
+  stroke: color-mix(in srgb, var(--c) 35%, transparent);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
 .sparkDot {
   position: absolute;
   left: 100%;

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.14
+
+- **The room cards' 6-hour chart shows the humidity too, and reads better.** On the dashboard cards and
+  on the overview the humidity is a thin pale line on a scale of its own behind the temperature. The
+  temperature's scale is at least 1° tall, so a tenth of a degree no longer looks like a wave; the
+  target band only shapes the scale when it is close — a room 5° warmer than its target used to get a
+  flat line with a sliver of band at the bottom, now it gets its own curve (the card's pill says how
+  far off the target is).
+
 ## 0.2.13
 
 - **A collector's pump gets its meter where it is set up.** The collector's settings had the pump and

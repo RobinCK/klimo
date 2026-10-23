@@ -173,7 +173,7 @@ export function roomCard(s: RoomSummary, ctx: CodeContext, now: EpochMs, spark: 
     tempText: fmtTemp(s.tempC),
     trend: s.trendCPerH != null ? { cPerH: s.trendCPerH, text: fmtRate(s.trendCPerH) } : null,
     source,
-    spark: spark ? { values: spark.values, target: spark.targets, below: s.tol.below, above: s.tol.above } : null,
+    spark: spark ? { values: spark.values, target: spark.targets, below: s.tol.below, above: s.tol.above, humidity: spark.humidity ?? null } : null,
     meta: metaItems(s, now),
     issue: issueOf(s, ctx),
     to: paths.room(s.id),

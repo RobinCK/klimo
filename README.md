@@ -126,7 +126,7 @@ what will happen before you apply it: which rooms stop heating, where the target
 attention** lists what is wrong with one-tap fixes, naming the device — open the room, ignore for
 30 min, exclude a sensor from the calculation, go to the device. Room cards show the temperature,
 trend, target with its source ("Home until 23:00", "Manually 20.5° · until 20:30"), humidity, windows
-and a sparkline, and filter by what heats, needs attention or is under manual control; a card only
+and a 6-hour sparkline (the temperature with its target band, the humidity faintly behind it), and filter by what heats, needs attention or is under manual control; a card only
 shows the state, so a stray tap changes nothing. **Today** draws the house profile, every source, pump
 and trigger on one 24-hour strip.
 

@@ -112,14 +112,16 @@ test('room card: target line, device, window, issue, next block and a thermostat
 test('oversized cards drop «Чому» first, then the target band', () => {
   const ix = new P.ViewIndex(view());
   const card = P.roomCardAttrs(ix, ix.view.cfg.rooms[0]);
-  const longWhy = { ...card, why: 'дуже довге пояснення '.repeat(200) };
+  const longWhy = { ...card, why: 'дуже довге пояснення '.repeat(200), sph: Array.from({ length: 13 }, () => 55) };
   const fitted = P.fitCard(longWhy);
   assert.equal(fitted.why, null);
   assert.notEqual(fitted.stg, null);
+  assert.notEqual(fitted.sph, null, 'the humidity stays while the card fits');
   const huge = { ...longWhy, src: { ...card.src, t: 'x'.repeat(3500) } };
   const small = P.fitCard(huge);
   assert.ok(P.byteSize(small) <= P.CARD_CAP);
   assert.equal(small.why, null);
+  assert.equal(small.sph, null);
   assert.equal(small.stg, null);
 });
 

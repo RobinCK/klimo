@@ -582,10 +582,11 @@ export function stableDurations(list: DurationOption[]): HubAttrs['durations'] {
   return list.filter((d) => d.id !== 'until').map((d) => ({ id: d.id as HubAttrs['durations'][number]['id'], u: RELATIVE_DURATIONS.has(d.id) ? null : d.until }));
 }
 
-function sparkline(spark: SparkDto | undefined): { sp: (number | null)[]; stg: (number | null)[] | null } {
+function sparkline(spark: SparkDto | undefined): { sp: (number | null)[]; stg: (number | null)[] | null; sph: (number | null)[] | null } {
   const sp = Array.from({ length: SPARK_POINTS }, (_, i) => r1(spark?.values[i] ?? null));
   const targets = spark?.targets && spark.targets.length === SPARK_POINTS ? spark.targets.map((v) => r1(v)) : null;
-  return { sp, stg: targets };
+  const humidity = spark?.humidity && spark.humidity.length === SPARK_POINTS ? spark.humidity.map((v) => r0(v)) : null;
+  return { sp, stg: targets, sph: humidity };
 }
 
 export function roomCardAttrs(ix: ViewIndex, room: RoomConfig): RoomCardAttrs | null {
@@ -608,7 +609,7 @@ export function roomCardAttrs(ix: ViewIndex, room: RoomConfig): RoomCardAttrs | 
       why = null;
     }
   }
-  const { sp, stg } = sparkline(ix.view.sparks[room.id]);
+  const { sp, stg, sph } = sparkline(ix.view.sparks[room.id]);
   const card: RoomCardAttrs = {
     kv: 'klimo_room',
     v: 1,
@@ -644,6 +645,7 @@ export function roomCardAttrs(ix: ViewIndex, room: RoomConfig): RoomCardAttrs | 
       : null,
     sp,
     stg,
+    sph,
     next: next ? { t: ix.tx('card.next', { profile: ix.profileName(next.profileId), temp: r1(nextTemp ?? null), at: next.at }), at: next.at } : null,
     why,
     th: stableThermostat(th),
@@ -653,11 +655,13 @@ export function roomCardAttrs(ix: ViewIndex, room: RoomConfig): RoomCardAttrs | 
   return fitCard(card);
 }
 
-/** Keeps a room card under 4 KB: the «Чому» sentence goes first, then the target band of the sparkline. */
+/** Keeps a room card under 4 KB: the «Чому» sentence goes first, then the humidity and the target band of the sparkline. */
 export function fitCard(card: RoomCardAttrs, cap = CARD_CAP): RoomCardAttrs {
   let c = card;
   if (byteSize(c) <= cap) return c;
   c = { ...c, why: null };
+  if (byteSize(c) <= cap) return c;
+  c = { ...c, sph: null };
   if (byteSize(c) <= cap) return c;
   c = { ...c, stg: null };
   if (byteSize(c) <= cap) return c;

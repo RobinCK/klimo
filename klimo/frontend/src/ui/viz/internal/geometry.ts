@@ -12,41 +12,33 @@ export interface SparkGeometry {
   band: string | null;
   /** The newest sample, when it is known: y as % of the box height for an HTML dot. */
   end: { yPct: number } | null;
+  /** The humidity's polylines, on a scale of its own (empty without humidity). */
+  humidity: string[];
+}
+
+export interface SparkOptions {
+  /** The scale is at least this tall (a tenth of a degree is not a wave); 0 = as tall as the values. */
+  minSpan?: number;
+  /** The target band joins the scale only this close to the values (further off it would flatten them); none = always. */
+  bandNear?: number;
+  /** Humidity at the same samples, drawn on a scale at least {@link HUMIDITY_MIN_SPAN} tall. */
+  humidity?: readonly (number | null)[] | null;
 }
 
 const SPARK_W = 100;
 const SPARK_H = 40;
+/** A few percent of humidity drift stay a gentle slope. */
+const HUMIDITY_MIN_SPAN = 20;
 
-/**
- * 13 samples over 100×40: y-domain covers the values and target ± tolerance, padded by 0.15°,
- * `Y = 37 − (v − lo)/(hi − lo)·34`. The band steps at sample midpoints between
- * `[t − below, t + above]`; no band when the target series is missing or misaligned.
- */
-export function sparkGeometry(
-  values: readonly (number | null)[],
-  targets: readonly (number | null)[] | null | undefined,
-  below: number,
-  above: number,
-): SparkGeometry {
-  // a single sample still draws a flat line, as a two-point series
-  const vals = values.length === 1 ? [values[0], values[0]] : values.slice();
-  const n = vals.length;
-  const tg = targets && targets.length === values.length ? (values.length === 1 ? [targets[0], targets[0]] : targets.slice()) : null;
-  const pool: number[] = [];
-  for (const v of vals) if (v != null && Number.isFinite(v)) pool.push(v);
-  if (tg) for (const t of tg) if (t != null && Number.isFinite(t)) pool.push(t - below, t + above);
-  if (n < 2 || pool.length === 0) return { lines: [], band: null, end: null };
+const known = (v: number | null | undefined): v is number => v != null && Number.isFinite(v);
 
-  const lo = Math.min(...pool) - 0.15;
-  const hi = Math.max(...pool) + 0.15;
-  const X = (i: number) => (i / (n - 1)) * SPARK_W;
-  const Y = (v: number) => 37 - ((v - lo) / (hi - lo)) * 34;
+/** Polylines through the known values; a lone known sample between gaps becomes a dot-sized dash. */
+function sparkRuns(vals: readonly (number | null)[], X: (i: number) => number, Y: (v: number) => number): string[] {
   const f = (x: number) => Number(x.toFixed(2));
-
   const lines: string[] = [];
   let run: string[] = [];
   vals.forEach((v, i) => {
-    if (v == null || !Number.isFinite(v)) {
+    if (!known(v)) {
       if (run.length) lines.push(run.join(' '));
       run = [];
       return;
@@ -54,13 +46,59 @@ export function sparkGeometry(
     run.push(`${f(X(i))},${f(Y(v))}`);
   });
   if (run.length) lines.push(run.join(' '));
-  // a lone known sample between gaps is drawn as a dot-sized dash so it is not lost
   for (let k = 0; k < lines.length; k++) {
     if (!lines[k].includes(' ')) {
       const [x, y] = lines[k].split(',').map(Number);
       lines[k] = `${f(Math.max(0, x - 1.5))},${y} ${f(Math.min(SPARK_W, x + 1.5))},${y}`;
     }
   }
+  return lines;
+}
+
+/** A scale from lo to hi stretched symmetrically to at least `span`. */
+function widen(lo: number, hi: number, span: number): [number, number] {
+  if (hi - lo >= span) return [lo, hi];
+  const mid = (hi + lo) / 2;
+  return [mid - span / 2, mid + span / 2];
+}
+
+/**
+ * 13 samples over 100×40: y-domain covers the values and target ± tolerance, padded by 0.15°,
+ * `Y = 37 − (v − lo)/(hi − lo)·34`. The band steps at sample midpoints between
+ * `[t − below, t + above]`; no band when the target series is missing or misaligned. A band beyond
+ * the scale is cut at the box's edge.
+ */
+export function sparkGeometry(
+  values: readonly (number | null)[],
+  targets: readonly (number | null)[] | null | undefined,
+  below: number,
+  above: number,
+  opts: SparkOptions = {},
+): SparkGeometry {
+  // a single sample still draws a flat line, as a two-point series
+  const vals = values.length === 1 ? [values[0], values[0]] : values.slice();
+  const n = vals.length;
+  const tg = targets && targets.length === values.length ? (values.length === 1 ? [targets[0], targets[0]] : targets.slice()) : null;
+  const pool: number[] = [];
+  for (const v of vals) if (known(v)) pool.push(v);
+  if (n < 2 || pool.length === 0) return { lines: [], band: null, end: null, humidity: [] };
+  const vlo = Math.min(...pool);
+  const vhi = Math.max(...pool);
+  if (tg) {
+    for (const t of tg) {
+      if (!known(t)) continue;
+      if (opts.bandNear != null && (t + above < vlo - opts.bandNear || t - below > vhi + opts.bandNear)) continue;
+      pool.push(t - below, t + above);
+    }
+  }
+
+  const [lo, hi] = widen(Math.min(...pool) - 0.15, Math.max(...pool) + 0.15, opts.minSpan ?? 0);
+  const X = (i: number) => (i / (n - 1)) * SPARK_W;
+  const Y = (v: number) => 37 - ((v - lo) / (hi - lo)) * 34;
+  const Yb = (v: number) => Math.min(SPARK_H, Math.max(0, Y(v)));
+  const f = (x: number) => Number(x.toFixed(2));
+
+  const lines = sparkRuns(vals, X, Y);
 
   let band: string | null = null;
   if (tg) {
@@ -75,10 +113,10 @@ export function sparkGeometry(
       while (j + 1 < n && tg[j + 1] != null) j++;
       const xStart = i === 0 ? 0 : (X(i - 1) + X(i)) / 2;
       const xEnd = j === n - 1 ? SPARK_W : (X(j) + X(j + 1)) / 2;
-      let d = `M${f(xStart)} ${f(Y((tg[i] as number) + above))}`;
-      for (let k = i + 1; k <= j; k++) d += ` H${f((X(k - 1) + X(k)) / 2)} V${f(Y((tg[k] as number) + above))}`;
-      d += ` H${f(xEnd)} V${f(Y((tg[j] as number) - below))}`;
-      for (let k = j - 1; k >= i; k--) d += ` H${f((X(k) + X(k + 1)) / 2)} V${f(Y((tg[k] as number) - below))}`;
+      let d = `M${f(xStart)} ${f(Yb((tg[i] as number) + above))}`;
+      for (let k = i + 1; k <= j; k++) d += ` H${f((X(k - 1) + X(k)) / 2)} V${f(Yb((tg[k] as number) + above))}`;
+      d += ` H${f(xEnd)} V${f(Yb((tg[j] as number) - below))}`;
+      for (let k = j - 1; k >= i; k--) d += ` H${f((X(k) + X(k + 1)) / 2)} V${f(Yb((tg[k] as number) - below))}`;
       d += ` H${f(xStart)} Z`;
       parts.push(d);
       i = j + 1;
@@ -86,9 +124,17 @@ export function sparkGeometry(
     band = parts.length ? parts.join(' ') : null;
   }
 
+  let humidity: string[] = [];
+  const hum = opts.humidity && opts.humidity.length === values.length ? (values.length === 1 ? [opts.humidity[0], opts.humidity[0]] : opts.humidity.slice()) : null;
+  const hs = hum ? hum.filter(known) : [];
+  if (hum && hs.length) {
+    const [hlo, hhi] = widen(Math.min(...hs), Math.max(...hs), HUMIDITY_MIN_SPAN);
+    humidity = sparkRuns(hum, X, (h) => 37 - ((h - hlo) / (hhi - hlo)) * 34);
+  }
+
   const last = vals[n - 1];
-  const end = last != null && Number.isFinite(last) ? { yPct: (Y(last) / SPARK_H) * 100 } : null;
-  return { lines, band, end };
+  const end = known(last) ? { yPct: (Y(last) / SPARK_H) * 100 } : null;
+  return { lines, band, end, humidity };
 }
 
 /* ------------------------------------- dial ------------------------------------- */

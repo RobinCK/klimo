@@ -711,7 +711,18 @@ export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, 
     const ids = this.klimoIds(rooms);
     // thermostats keep no statistics of their current temperature: those rooms use Klimo's sensor
     const rawByRoom = new Map(rooms.map((r) => [r.id, this.roomSensors(r.id, 'temperature').filter((s) => domainOf(s.entityId) !== 'climate')]));
-    const statIds = [...new Set(rooms.flatMap((r) => [ids.get(r.id)!.temperature, ids.get(r.id)!.target, ...(rawByRoom.get(r.id) ?? []).map((s) => s.entityId)]))];
+    const humByRoom = new Map(rooms.map((r) => [r.id, this.roomSensors(r.id, 'humidity').filter((s) => domainOf(s.entityId) !== 'climate')]));
+    const statIds = [
+      ...new Set(
+        rooms.flatMap((r) => [
+          ids.get(r.id)!.temperature,
+          ids.get(r.id)!.target,
+          ...(rawByRoom.get(r.id) ?? []).map((s) => s.entityId),
+          ...((humByRoom.get(r.id) ?? []).length ? [ids.get(r.id)!.humidity] : []),
+          ...(humByRoom.get(r.id) ?? []).map((s) => s.entityId),
+        ]),
+      ),
+    ];
 
     let stats: StatRows = {};
     let complete = this.ha.connected;
@@ -757,9 +768,29 @@ export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, 
         const ring = this.ringPoints(room.id, (s) => s.target);
         targets = times.map((t) => valueAt(ring, t, 15 * MIN));
       }
+      // humidity the same way: the room's own sensors, then Klimo's copy, then memory
+      const hum = humByRoom.get(room.id) ?? [];
+      let humidity: (number | null)[] = times.map(() => null);
+      if (hum.length) {
+        humidity = times.map((t) =>
+          combine(
+            hum.flatMap((s) => {
+              const v = pick(stats[s.entityId], t);
+              return v === null ? [] : [{ v, w: s.weight }];
+            }),
+            room.humidity.method,
+          ),
+        );
+        if (!nonEmpty(humidity)) humidity = times.map((t) => pick(stats[own.humidity], t));
+        if (!nonEmpty(humidity)) {
+          const ring = this.ringPoints(room.id, (s) => s.h);
+          humidity = times.map((t) => valueAt(ring, t, 15 * MIN));
+        }
+      }
       out[room.id] = {
         values: values.map((v) => (v === null ? null : round1(v))),
         targets: nonEmpty(targets) ? targets.map((v) => (v === null ? null : round1(v))) : null,
+        humidity: nonEmpty(humidity) ? humidity.map((v) => (v === null ? null : Math.round(v))) : null,
         from,
         stepMin: 30,
         complete,
