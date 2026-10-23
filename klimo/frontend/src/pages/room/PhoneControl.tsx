@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import type { EpochMs, ProfileDto, RoomState } from '@api/model';
 import {
-  Accordion,
+  BottomSheet,
   ExplainCallout,
   IconButton,
   MobileTopBar,
@@ -13,7 +14,7 @@ import {
   UndoBar,
   type Tone,
 } from '@ui';
-import { navigate, paths, previousRoute, usePref } from '@app';
+import { navigate, paths, previousRoute } from '@app';
 import { brand } from '@brand';
 import { aggregationLabel, fmtClock, fmtDelta, fmtPct, fmtRate, fmtTemp, heatingKindWords, roomStateLabel, t, trvStrategyLabel, windowReactionLabel } from '@i18n';
 import { isControllable, RoomControlBar } from './Control';
@@ -132,11 +133,11 @@ function settingsRows(
   return rows;
 }
 
-/** Phone room page: the dial, what happens next, why, today's chart and the way into the settings. */
+/** Phone room page: the dial, what happens next, why, the way into the settings, and today's chart behind an icon. */
 export function PhoneControl({ p, ed, profiles, now }: { p: SectionProps; ed: TargetEditor; profiles: readonly ProfileDto[] | undefined; now: EpochMs }) {
   const { room, state } = p;
   const th = room.thermostat;
-  const [chartOpen, setChartOpen] = usePref<boolean>('room.chartOpen', false);
+  const [chartOpen, setChartOpen] = useState(false);
   const [min, max] = dialRange(ed, state.tempC);
   const v = ed.value;
   const editing = ed.phase === 'pending' || ed.dragging;
@@ -156,7 +157,13 @@ export function PhoneControl({ p, ed, profiles, now }: { p: SectionProps; ed: Ta
         subtitle={sub}
         onBack={back}
         align="center"
-        right={<IconButton icon="settings" label={t('Room settings')} to={paths.roomSettings(room.config.id)} variant="ghost" size={44} />}
+        rightSlots={2}
+        right={
+          <>
+            <IconButton icon="trendUp" label={t('Temperature today')} variant="ghost" size={44} onClick={() => setChartOpen(true)} />
+            <IconButton icon="settings" label={t('Room settings')} to={paths.roomSettings(room.config.id)} variant="ghost" size={44} />
+          </>
+        }
       />
       <ThermostatDial
         mode={ed.mode}
@@ -222,16 +229,10 @@ export function PhoneControl({ p, ed, profiles, now }: { p: SectionProps; ed: Ta
       ) : null}
       {ed.phase === 'view' ? <QuickActions room={room} state={state} /> : null}
       <ExplainCallout title={whyTitle(state)} text={[why.text, why.eta].filter(Boolean).join(' ') || t('Nothing to explain right now.')} />
-      <Accordion
-        id="room-today"
-        icon="calendar"
-        title={t('Today')}
-        summary={t('temperature, target and when it heated')}
-        open={chartOpen}
-        onToggle={() => setChartOpen(!chartOpen)}
-      >
-        <RoomToday room={room} state={state} profiles={profiles} now={now} compact />
-      </Accordion>
+      {/* the day's chart is not needed all the time: it opens from the chart icon at the top */}
+      <BottomSheet open={chartOpen} onClose={() => setChartOpen(false)} title={t('Today')} subtitle={room.config.name}>
+        {chartOpen ? <RoomToday room={room} state={state} profiles={profiles} now={now} compact /> : null}
+      </BottomSheet>
       <RowList ariaLabel={t('Room settings')}>
         {settingsRows(p).map((r) => (
           <SourceRow key={r.key} icon={r.icon} name={r.name} meta={r.meta} chip={r.chip} on={false} to={paths.roomSettings(room.config.id, r.key)} />

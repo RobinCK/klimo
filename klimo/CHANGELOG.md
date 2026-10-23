@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.10
+
+- **The room's chart on a phone opens from an icon.** The room page has a chart icon at the top, next
+  to the settings: it opens today's temperature, target, heating periods and humidity in a sheet from
+  the bottom. The «Today» row at the foot of the page, easy to miss below the dial, is gone.
+
 ## 0.2.9
 
 - **What each source and each pump used, in one place: System → Consumption.** For a day, a week, a

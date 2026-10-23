@@ -85,12 +85,14 @@ export interface MobileTopBarProps {
   subtitle?: { icon?: IconName; text: string; strong?: boolean };
   onBack?: () => void;
   right?: ReactNode;
+  /** How many icon buttons `right` holds; a centred title keeps as much room on the left. */
+  rightSlots?: number;
   /** center: the title sits in the middle between the back button and the actions (a room, the inbox). */
   align?: 'start' | 'center';
 }
 
 /** Phone page header: optional back button, title with a status line, right-hand actions. */
-export function MobileTopBar({ title, subtitle, onBack, right, align = 'start' }: MobileTopBarProps) {
+export function MobileTopBar({ title, subtitle, onBack, right, rightSlots = 1, align = 'start' }: MobileTopBarProps) {
   const ut = useUiText();
   const center = align === 'center';
   // a centred title needs the same width on both sides of it
@@ -98,6 +100,7 @@ export function MobileTopBar({ title, subtitle, onBack, right, align = 'start' }
   return (
     <div className={s.mobileTop} data-align={align}>
       {onBack ? <IconButton icon="chevronLeft" label={ut('Back')} variant="ghost" size={44} onClick={onBack} /> : center && right ? spacer : null}
+      {center && right ? Array.from({ length: rightSlots - 1 }, (_, i) => <span key={i} className={s.mobileSpacer} aria-hidden="true" />) : null}
       <div className={s.mobileTitle}>
         <h1>{title}</h1>
         {subtitle ? (

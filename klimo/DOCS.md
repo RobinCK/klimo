@@ -152,6 +152,7 @@ circuit. **Delete the room** hands the valves back the same way. Each change is 
   same way, so it shows the whole day also after Klimo was stopped or updated. New readings extend the
   line without a reload; the lowest and highest values of the day come from the exact readings. While
   the recorder cannot be read yet (right after a start) the chart says it is loading and asks again.
+  On a phone the chart opens from the chart icon at the top of the room page, next to its settings.
 
 ### Tolerance and requests
 

@@ -141,7 +141,8 @@ The target editor sends three seconds after the last tap and offers an undo for 
 number to type a target. +1° for 30 min and **Air for 10 min** are one tap away. The **Today** chart
 overlays the temperature with the target band, the heating periods and the scheduled targets ahead. It
 is drawn from the room's own sensors as Home Assistant recorded them, so it shows the whole day also
-after Klimo was restarted, and it grows with every new reading without a reload.
+after Klimo was restarted, and it grows with every new reading without a reload. On a phone it opens
+from the chart icon next to the room's settings.
 
 ![Room and devices](docs/screenshots/room-edit.png)
 
