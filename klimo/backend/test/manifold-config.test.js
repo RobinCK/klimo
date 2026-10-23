@@ -105,6 +105,19 @@ test('the primary pump: changed, then removed with pump: null; a pump needs a ci
     assert.ok(gone.issues.some((i) => i.path === 'manifoldId' && i.code === 'not_found'));
   }));
 
+test('the primary pump counts its plug: a meter saved with the collector, kept when left out, removed with null', () =>
+  withPlant(async ({ config, ctrl }) => {
+    const meter = { kind: 'electricity', entityId: 'sensor.zig_plug_warm_floor_energy', unit: 'kWh' };
+    const m = await ctrl.createManifold({ name: 'Колектор', pump: { entityId: 'switch.zig_plug_warm_floor', runOnHeatMin: 3, meter } }, ACTOR);
+    assert.deepEqual(config.list('pumps')[0].meter, meter);
+    await ctrl.patchManifold(m.id, { pump: { entityId: 'switch.zig_plug_warm_floor', runOnHeatMin: 5 } }, ACTOR);
+    assert.deepEqual(config.list('pumps')[0].meter, meter, 'a change without the meter keeps it');
+    await ctrl.patchManifold(m.id, { pump: { entityId: 'switch.zig_plug_warm_floor', runOnHeatMin: 5, meter: null } }, ACTOR);
+    assert.equal(config.list('pumps')[0].meter, null);
+    const bad = await rejection(() => ctrl.patchManifold(m.id, { pump: { entityId: 'switch.zig_plug_warm_floor', runOnHeatMin: 5, meter: { kind: 'gas', entityId: 'sensor.gas', unit: 'm³' } } }, ACTOR));
+    assert.ok(bad.issues.some((i) => i.path.endsWith('meter.kind')));
+  }));
+
 test('deleting a collector: circuits stay with their sources, its pump and the pump’s watch go', () =>
   withPlant(async ({ config, ctrl, boiler, rad }) => {
     const m = await ctrl.createManifold({ name: 'Колектор', sourceIds: [boiler.id], circuitIds: [rad.id], pump: { entityId: 'switch.main_pump', runOnHeatMin: 3 } }, ACTOR);

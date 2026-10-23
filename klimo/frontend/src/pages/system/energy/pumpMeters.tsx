@@ -4,7 +4,7 @@
  * offered first.
  */
 import { useState } from 'react';
-import type { ConsumptionMeterDto, Pump } from '@api/model';
+import type { ConsumptionMeterDto, Pump, SourceMeter } from '@api/model';
 import { api } from '@api/endpoints';
 import { useMutation } from '@data';
 import { EntityBindingTable, type EntityBindingRow, type InfoHintContent, type InfoHintParagraph } from '@ui';
@@ -28,9 +28,9 @@ export function pumpMeterHint(): InfoHintContent {
 }
 
 /** The energy sensor on the pump's own device (its plug), else its power sensor. */
-async function plugMeter(pump: Pump): Promise<string | null> {
+async function plugMeter(pumpEntityId: string): Promise<string | null> {
   try {
-    const d = await api.ha.entity(pump.entityId);
+    const d = await api.ha.entity(pumpEntityId);
     return d.siblings.find((s) => s.role === 'energy')?.entityId ?? d.siblings.find((s) => s.role === 'power')?.entityId ?? null;
   } catch {
     return null;
@@ -67,7 +67,7 @@ export function PumpMetersTable({
     },
     { onSuccess: onSaved, okToast: t('Meter saved') },
   );
-  const open = async (pump: Pump) => setPicking({ pump, suggested: pump.meter ? null : await plugMeter(pump) });
+  const open = async (pump: Pump) => setPicking({ pump, suggested: pump.meter ? null : await plugMeter(pump.entityId) });
   const rows: EntityBindingRow[] = pumps.map((p) => {
     const m = p.meter;
     const l = m ? live?.[p.id] : undefined;
@@ -97,6 +97,43 @@ export function PumpMetersTable({
             void save.run(pump, id);
           }}
         />
+      ) : null}
+    </>
+  );
+}
+
+/** The meter of a pump saved together with its form (a collector's pump): chosen here, written with «Save». */
+export function PumpMeterField({ pumpEntityId, meter, onChange }: { pumpEntityId: string; meter: SourceMeter | null; onChange: (m: SourceMeter | null) => void }) {
+  const [picking, setPicking] = useState<{ suggested: string | null } | null>(null);
+  const open = async () => setPicking({ suggested: meter ? null : await plugMeter(pumpEntityId) });
+  const pick = async (entityId: string | null) => {
+    setPicking(null);
+    if (!entityId) {
+      onChange(null);
+      return;
+    }
+    let unit: string | null = null;
+    try {
+      unit = (await api.ha.entity(entityId)).entity.unit;
+    } catch {
+      // the server reads the live unit anyway; the stored one is a fallback
+    }
+    onChange({ kind: 'electricity', entityId, unit });
+  };
+  const row: EntityBindingRow = {
+    role: t('Electricity meter'),
+    value: meter?.entityId ?? t('choose an entity'),
+    mono: Boolean(meter),
+    status: 'info',
+    statusLabel: meter ? undefined : t('optional'),
+    onPick: () => void open(),
+    hint: pumpMeterHint(),
+  };
+  return (
+    <>
+      <EntityBindingTable ariaLabel={t('Electricity meter')} rows={[row]} />
+      {picking ? (
+        <MeterDialog kind="electricity" value={meter?.entityId ?? null} suggested={picking.suggested} onClose={() => setPicking(null)} onPick={(id) => void pick(id)} />
       ) : null}
     </>
   );

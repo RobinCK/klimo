@@ -1080,7 +1080,7 @@ export const pumpCreateRequest = checked(patch(pumpShape), (v, add) => {
 });
 export const pumpPatch: Schema<DeepPartial<PumpPatch>> = patch({ ...pumpShape, order: int(0, 10_000) });
 
-const manifoldPumpRequest = checked(patch({ entityId: entityId(), name: name(40), runOnHeatMin: int(0, 30), runOnCoolMin: int(0, 30) }), (v, add) => {
+const manifoldPumpRequest = checked(patch({ entityId: entityId(), name: name(40), runOnHeatMin: int(0, 30), runOnCoolMin: int(0, 30), meter: nullable(sourceMeter) }), (v, add) => {
   if (v.entityId === undefined) add('entityId', 'required');
   if (v.runOnHeatMin === undefined) add('runOnHeatMin', 'required');
 }) as Schema<ManifoldPumpRequest>;

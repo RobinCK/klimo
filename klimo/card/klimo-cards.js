@@ -63,7 +63,7 @@
  * `klimo-room-sheet` and `klimo-open`).
  */
 
-const VERSION = '0.2.12';
+const VERSION = '0.2.13';
 
 /* ─────────────────────────────── 1 Tokens ──────────────────────────────────────────────────────
  * The same values as the panel's design tokens. `npm run tokens:card` in klimo/frontend copies

@@ -2997,6 +2997,8 @@ export interface ManifoldPumpRequest {
   name?: string;
   runOnHeatMin: number;
   runOnCoolMin?: number;
+  /** The energy sensor of its plug; left out = kept as it is. */
+  meter?: SourceMeter | null;
 }
 /** `circuitIds`: the circuits on it after the write (circuits left out leave it); all in one transaction. */
 export type ManifoldCreateRequest = Omit<Manifold, 'id' | 'order' | 'sourceIds'> & {

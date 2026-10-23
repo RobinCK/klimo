@@ -201,13 +201,19 @@ export class PlantController {
       for (const p of primary) await tx.remove('pumps', p.id, actor);
       return;
     }
-    const fields = { entityId: pump.entityId, runOnHeatMin: pump.runOnHeatMin, ...(pump.runOnCoolMin !== undefined ? { runOnCoolMin: pump.runOnCoolMin } : {}), ...(pump.name ? { name: pump.name } : {}) };
+    const fields = {
+      entityId: pump.entityId,
+      runOnHeatMin: pump.runOnHeatMin,
+      ...(pump.runOnCoolMin !== undefined ? { runOnCoolMin: pump.runOnCoolMin } : {}),
+      ...(pump.name ? { name: pump.name } : {}),
+      ...(pump.meter !== undefined ? { meter: pump.meter } : {}),
+    };
     if (primary.length) {
       await tx.update('pumps', primary[0].id, fields, actor);
       return;
     }
     const name = pump.name ?? found(tx.get('manifolds', manifoldId), 'Manifold').name;
-    const value: Omit<Pump, 'id' | 'order'> = { name, circuitId: null, manifoldId, entityId: pump.entityId, rule: 'source', runOnHeatMin: pump.runOnHeatMin, runOnCoolMin: pump.runOnCoolMin ?? 0, minOnSec: 60, exercise: true, speed: null, meter: null, enabled: true };
+    const value: Omit<Pump, 'id' | 'order'> = { name, circuitId: null, manifoldId, entityId: pump.entityId, rule: 'source', runOnHeatMin: pump.runOnHeatMin, runOnCoolMin: pump.runOnCoolMin ?? 0, minOnSec: 60, exercise: true, speed: null, meter: pump.meter ?? null, enabled: true };
     await tx.create('pumps', value as Omit<Pump, 'id'>, actor);
   }
 

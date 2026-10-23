@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.13
+
+- **A collector's pump gets its meter where it is set up.** The collector's settings had the pump and
+  its run-on but no place for what it draws; now its *Electricity meter* sits under the pump and is
+  saved with the collector (the plug's own energy sensor is offered first). It was only on the
+  Consumption tab before.
+
 ## 0.2.12
 
 - **Long names stay inside their cards on an iPhone.** The rule that breaks a long word, inherited from

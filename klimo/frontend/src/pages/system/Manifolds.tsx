@@ -4,7 +4,7 @@
  * creates, changes and deletes it. A simple house without one skips it.
  */
 import { useState } from 'react';
-import type { Id, Manifold, ManifoldCreateRequest, Pump, PumpState, Tone } from '@api/model';
+import type { Id, Manifold, ManifoldCreateRequest, Pump, PumpState, SourceMeter, Tone } from '@api/model';
 import { api } from '@api/endpoints';
 import { useEntitySearch, useMutation, useResource } from '@data';
 import { brand } from '@brand';
@@ -31,6 +31,7 @@ import { fmtTemp, fmtTime, t } from '@i18n';
 import type { SystemData } from './shared';
 import { runOnHint } from './circuitHints';
 import { changeErrorText } from './circuitTexts';
+import { PumpMeterField } from './energy/pumpMeters';
 
 const DEFAULT_RUN_ON = 3;
 
@@ -184,6 +185,7 @@ export function ManifoldDrawer({ d, id, onClose, onSaved }: { d: SystemData; id:
   );
   const [pumpEntity, setPumpEntity] = useState<string | null>(primary?.entityId ?? null);
   const [runOn, setRunOn] = useState(primary?.runOnHeatMin ?? DEFAULT_RUN_ON);
+  const [meter, setMeter] = useState<SourceMeter | null>(primary?.meter ?? null);
   const [supply, setSupply] = useState<string | null>(m?.supplySensorEntityId ?? null);
   const [ret, setRet] = useState<string | null>(m?.returnSensorEntityId ?? null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -203,7 +205,7 @@ export function ManifoldDrawer({ d, id, onClose, onSaved }: { d: SystemData; id:
         returnSensorEntityId: ret,
         sourceIds,
         circuitIds,
-        pump: pumpEntity ? { entityId: pumpEntity, runOnHeatMin: runOn, ...(primary ? {} : { name: t('Manifold pump') }) } : null,
+        pump: pumpEntity ? { entityId: pumpEntity, runOnHeatMin: runOn, meter, ...(primary ? {} : { name: t('Manifold pump') }) } : null,
       };
       return m ? api.manifolds.patch(m.id, body) : api.manifolds.create(body);
     },
@@ -319,6 +321,7 @@ export function ManifoldDrawer({ d, id, onClose, onSaved }: { d: SystemData; id:
                   ariaInc={t('Longer run-on')}
                 />
                 <Text>{primaryPumpText(sourceNames, runOn)}</Text>
+                <PumpMeterField pumpEntityId={pumpEntity} meter={meter} onChange={setMeter} />
               </>
             ) : null}
           </Stack>

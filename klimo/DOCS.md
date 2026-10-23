@@ -417,8 +417,9 @@ Without a state class Home Assistant keeps no statistics and the chart stays emp
 `state_class: total_increasing` in the integration or with `homeassistant: customize:`.
 
 A **pump** has a meter too: the energy sensor of the plug or relay it is switched by (kWh, or a power
-sensor in W). Choose it under *System → Consumption → Pump meters* or on the pump's card in its
-circuit; the energy sensor on the pump's own plug is offered first.
+sensor in W). Choose it under *System → Consumption → Pump meters*, on the pump's card in its circuit
+or, for a collector's pump, in the collector's settings under its pump; the energy sensor on the
+pump's own plug is offered first.
 
 **System → Consumption** shows the whole house and who used it, for a day, a week, a month or a year:
 the gas, the electricity and the cost against the period before, a chart of gas or electricity, and a
