@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.11
+
+- **No sideways scrolling on a phone.** A long entity id or device name (`sensor.zig_plug_warm_floor_energy`,
+  a window «(binary_sensor.…)» in a notification's title, a device's entity on the Devices page) did
+  not break and pushed the page wider than the screen, so the Home Assistant app let it pan sideways.
+  Such words now break where they would stick out, a drop-down never grows wider than its row (a long
+  choice ends in «…»), iOS does not enlarge the text on its own, and the page itself can no longer get
+  wider than the screen.
+
 ## 0.2.10
 
 - **The room's chart on a phone opens from an icon.** The room page has a chart icon at the top, next

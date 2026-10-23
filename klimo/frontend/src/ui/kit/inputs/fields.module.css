@@ -182,11 +182,15 @@ textarea.input {
 
 .selectInline {
   display: inline-flex;
-  flex: none;
+  flex: 0 1 auto;
+  max-width: 100%;
 }
 
+/* as wide as its longest option, never wider than the row: a long one ends in «…» */
 .selectInline .select {
   width: auto;
+  max-width: 100%;
+  text-overflow: ellipsis;
 }
 
 @media (max-width: 699px) {

@@ -7,6 +7,8 @@ html,
 body {
   background: var(--ui-bg-page);
   color: var(--ui-text-1);
+  /* nothing widens the page sideways: a phone (and Home Assistant's app around the iframe) would pan it */
+  overflow-x: clip;
 }
 
 body {
@@ -18,7 +20,10 @@ body {
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  /* a long entity id or name breaks where it would stick out instead of pushing its box wider */
+  overflow-wrap: break-word;
 }
 
 *,
