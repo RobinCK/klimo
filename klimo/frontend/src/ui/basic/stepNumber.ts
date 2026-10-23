@@ -12,12 +12,12 @@ export function decimalsOf(step: number): number {
 
 /**
  * Decimals to show `value` with: `decimals` or the step's own, more while the value sits off
- * that grid (30.1 kW left by an older, finer step reads «30.1», not «30»), at most 3.
+ * that grid (30.1 kW left by an older, finer step reads «30.1», not «30»), at most `most`.
  */
-export function shownDecimals(value: number, step: number, decimals?: number): number {
+export function shownDecimals(value: number, step: number, decimals?: number, most = 3): number {
   const d = decimals ?? decimalsOf(step);
-  for (let k = d; k <= 3; k++) if (Math.abs(Number(value.toFixed(k)) - value) < 1e-9) return k;
-  return Math.max(d, 3);
+  for (let k = d; k <= most; k++) if (Math.abs(Number(value.toFixed(k)) - value) < 1e-9) return k;
+  return Math.max(d, most);
 }
 
 export interface NumberSpan {

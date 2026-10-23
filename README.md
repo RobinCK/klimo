@@ -58,9 +58,9 @@ They and the notifications start in English — rename anything, and pick the no
 
 1. **System → Sources → Add a source** for every heat pump, boiler, air conditioner or heater, with
    its gas or electricity meter if you have one.
-2. **Rooms → Add a room**: give it a name and a Home Assistant area — Klimo offers the radiator
-   valves, thermometers and window contacts of that area by kind, and **Add a device** finds anything else.
-   The radiator and floor circuits are set up once, with the first room that needs them.
+2. **Rooms → Add a room**: give it a name and a Home Assistant area — Klimo offers the radiator valves,
+   thermometers and window contacts of that area by kind, and **Add a device** finds anything else. The
+   radiator and floor circuits are set up once, with the first room that needs them.
 3. Check **Schedule** — which profile is in force when.
 
 Klimo needs Home Assistant 2025.10 or newer. After every start it watches for 20 seconds before it
@@ -106,7 +106,7 @@ telegram_bot_token: ""   # optional, from @BotFather
 | **Profiles & schedules** | A profile is a set of targets (Home 21°, Night 19.5°, Away 18°…) with per-room exceptions. A weekly schedule says which profile is in force; rooms can have their own schedule. Presence, a calendar event or a manual change can take over — in an order you choose. |
 | **Manual control** | A room follows the **schedule**, is under **manual** control (it holds its own target with no end; the schedule does not touch it) or is **off** (frost protection stays). **Resume schedule** brings it back — per room, or for the whole house. |
 | **Climate sources** | Whatever makes heat or cold, controlled through HA entities: a relay (dry contact), a `climate` entity, a flow temperature, scripts or any service calls. Each has guards — minimum run and pause, starts per hour, a confirmation that it really runs — and fails over to the next source when it does not answer. |
-| **Circuits & pumps** | Radiators, underfloor heating and fan coils, set up once for the house; rooms join them. A floor runs as a whole with its source (the usual "floor pump with the boiler") or by zones with a valve in each room; a radiator pump runs while a room asks or with the source. Each pump keeps running for its **run-on** (3 min for radiators, 10 min for a floor by default) to take the remaining heat out of the loop. |
+| **Circuits & pumps** | Radiators, underfloor heating and fan coils, set up once for the house; rooms join them. A floor runs as a whole with its source (the usual "floor pump with the boiler") or by zones with a valve in each room; a radiator pump runs while a room asks or with the source. Each pump keeps running for its **run-on** (3 min for radiators, 10 min for a floor by default) to take the remaining heat out of the loop. A **manifold**, where the sources meet the circuits, passes every source on it to each of its circuits and can have a primary pump of its own. |
 | **Bivalence** | A heat pump and a boiler working together: alternately (below −10° only the boiler), in parallel or partly in parallel, plus "the boiler helps a heat pump that is not keeping up". |
 | **Season** | Heating, between seasons or cooling, from the 3-day average outdoor temperature (below 15° heating, above 22° cooling), with hysteresis, a minimum dwell and month limits. Or set the house mode by hand. |
 | **Triggers & actions** | A trigger is a live condition over Home Assistant (grid offline, solar power, night tariff, frost, battery low…). An action changes the rules while a trigger holds: allow or forbid sources, shift targets, pre-heat to the next schedule slot, run pumps only on demand. |
@@ -137,17 +137,19 @@ and trigger on one 24-hour strip.
 The room page answers "why": **Why it heats** spells out the comparison with the tolerance band, which
 source works and an estimate of when the target is reached. Under the target,
 **By schedule | Manual | Off** says how the room is controlled (see [Manual control](#manual-control)).
-The target editor sends three seconds after the last tap and offers an undo for eight more; +1° for
-30 min and **Air for 10 min** are one tap away. The **Today** chart overlays the temperature with the
-target band, the heating periods and the scheduled targets ahead.
+The target editor sends three seconds after the last tap and offers an undo for eight more; tap the
+number to type a target. +1° for 30 min and **Air for 10 min** are one tap away. The **Today** chart
+overlays the temperature with the target band, the heating periods and the scheduled targets ahead. It
+is drawn from the room's own sensors as Home Assistant recorded them, so it shows the whole day also
+after Klimo was restarted, and it grows with every new reading without a reload.
 
 ![Room and devices](docs/screenshots/room-edit.png)
 
 **Room and devices** (the **Edit room** button) changes the room after it is created: its name and
-area, what heats or cools it, and every device — add one from a search over all of Home Assistant,
-replace it or remove it. A removed radiator head gets its own sensor, a 20° target and an unlocked
-keypad back; a room that leaves the floor gives up its place on the floor pump. Every change is in the
-journal.
+area, what heats or cools it, and every device in its block — **Add a device** (or **+ Add** in a
+block) asks what it is and then finds it in all of Home Assistant; replace a device or remove it. A
+removed radiator head gets its own sensor, a 20° target and an unlocked keypad back; a room that leaves
+the floor gives up its place on the floor pump. Every change is in the journal.
 
 The rest of the page is the room's configuration — what heats and cools it and how (an air
 conditioner can top up the radiators when the room lacks more than 1.5°), the radiator valves with
@@ -170,10 +172,12 @@ Four steps: the name, the Home Assistant area and what heats or cools the room; 
 control it (how the sensors are combined, the tolerance, the window reaction, how the valves are
 driven); and a final check. On the devices step the area's radiator valves, thermometers and windows
 are already there, one block per kind, and **Add a device** asks what a device is and then finds it in
-all of Home Assistant — the area first. Radiators with mechanical heads or hand valves need no device;
-a relay a source already switches cannot be added, and a circulation pump is not taken for a heater. A room with radiators or a floor joins
-the house circuit, which the first such room sets up. Targets come from the profiles; a device that
-belongs to another room is marked and can be moved here.
+all of Home Assistant — the area first; **+ Add** in a block does the same with the kind chosen.
+**Radiators with ordinary valves** — hand valves or mechanical heads — need no device at all, only a
+thermometer: the room then starts the boiler or heat pump and the radiator pump by its temperature.
+A relay a source already switches cannot be added, and a circulation pump is not taken for a heater.
+A room with radiators or a floor joins the house circuit, which the first such room sets up. Targets
+come from the profiles; a device that belongs to another room is marked and can be moved here.
 
 ### Schedule & profiles
 
@@ -203,24 +207,31 @@ conditions** replay the same plant under other conditions as a what-if, without 
 ![Circuits and pumps](docs/screenshots/circuits.png)
 
 **Why it is so** lists the reasons behind the current choice (season, which source leads, the weather
-curve, bivalence). **Circuits & pumps** are the house's heating loops: each card shows what feeds the
-circuit, when its pump runs, the run-on and the rooms on it. A floor runs as a whole with its source —
-the familiar "floor pump with the boiler, 10 more minutes after" — or by zones with a valve in each
-room; the radiator pump runs while a room asks or with the source. A room with ordinary valves starts
-the source and the pump by its own temperature. Rooms are added and taken off right on the card, and a
-house that 0.1.0 set up with a circuit per room merges them into one.
+curve, bivalence). The **Manifold** card is where the sources meet the circuits — a distribution
+manifold or a hydraulic separator: the boilers and heat pumps that feed it, the circuits on it (each of
+them gets their heat), its primary pump with its run-on, and the flow and return temperatures. Add it
+with **+ Manifold** or the dashed **Add a manifold** box on the schema and open it by clicking it
+there; a simple house with one boiler on one loop skips it. **Circuits & pumps** are the house's
+heating loops: each card shows what feeds the circuit, when its pump runs, the run-on and the rooms on
+it. A floor runs as a whole with its source — the familiar "floor pump with the boiler, 10 more minutes
+after" — or by zones with a valve in each room; the radiator pump runs while a room asks or with the
+source. A room with ordinary valves starts the source and the pump by its own temperature. Rooms are
+added and taken off right on the card, and a house that 0.1.0 set up with a circuit per room merges
+them into one.
 
 ### Sources
 
 ![Sources](docs/screenshots/sources.png)
 
-Every source with its live state: what it can do (heat, cool, dry, fan), how Klimo controls it and
-how it knows the source really runs, the weather curve of the flow temperature, the circuits it
-delivers to, guards (minimum run and pause, defrosting is not a fault, failover after 5 min without
-confirmation), when it may run, its energy and its notifications. Every Home Assistant entity it uses
-has an «i» that says what it is for, what to pick and what happens if it stays empty. **Test for
-2 min** starts it on the spot and reports whether it confirmed; **Off for a while…** locks it out.
-Three identical air conditioners can be linked to one template and keep only the differences.
+Every source with its live state: what it can do (heat, cool, dry, fan), how Klimo controls it and how
+it knows the source really runs, the weather curve of the flow temperature, where it delivers — into
+the manifold and/or straight into circuits, or for an air conditioner or heater its room (**Change**
+opens the same choice as **Add a source**), guards (minimum run and pause, defrosting is not a fault,
+failover after 5 min without confirmation), when it may run, its energy and its notifications. Every
+Home Assistant entity it uses has an «i» that says what it is for, what to pick and what happens if it
+stays empty. **Test for 2 min** starts it on the spot and reports whether it confirmed; **Off for a
+while…** locks it out. Three identical air conditioners can be linked to one template and keep only the
+differences.
 
 ### Consumption
 
@@ -298,6 +309,9 @@ backup and restore of the whole configuration as one file.
 The UI is built for the phone first — this is the overview and a room in the companion app:
 
 <img src="docs/screenshots/overview-mobile.png" width="320" alt="Overview on a phone" /> <img src="docs/screenshots/room-mobile.png" width="320" alt="A room on a phone" />
+
+Every number has − and + (hold one to move faster) and can be typed: tap it, Enter applies, Escape
+cancels. The number shows as many decimals as its step, so each press changes what you see.
 
 The panel picks its language in this order: the choice made in this browser, the **panel language for
 everyone** (Settings), the Home Assistant user's language, the browser's. Notifications, the cards and
@@ -443,10 +457,12 @@ Assistant administrators. Availability uses a last-will message, so a stopped ad
 
 ## History
 
-Charts come from the **Home Assistant recorder**, not from a second database: Klimo publishes each
-room's aggregated temperature and effective target as sensors, the recorder keeps them, and the room
-page reads them back. So the history is Klimo's own view — the median of three thermometers, the
-target that was really in force — and it is there in Home Assistant's history and statistics too.
+Charts come from the **Home Assistant recorder**, not from a second database. A room's day is
+rebuilt from its own thermometers exactly as Klimo combines them — the median of three, the main one,
+an outlier left out — so it has no gaps while Klimo was stopped or updated. Klimo also publishes each
+room's aggregated temperature and effective target as sensors: the target sensor draws the target band
+of the elapsed day (the schedule fills any gap), and the temperature sensor stands in for a room whose
+own sensors the recorder does not keep. Both are in Home Assistant's history and statistics too.
 Klimo keeps only what the recorder cannot: the decision journal (30 days) and the run periods of
 sources, pumps and profiles (up to 400 days).
 

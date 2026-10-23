@@ -1,5 +1,73 @@
 # Changelog
 
+## 0.2.2
+
+- **An air conditioner or heater added from New source now works.** If you added an air conditioner or
+  a heater with **System → Sources → Add a source** in 0.2.x, it was saved without the link to its room
+  that the engine runs it through: the source page said "does not heat / does not cool", the schema
+  still drew an arrow to the room, and it never ran. It is now linked when it is added, duplicated or
+  moved to another room, and one already saved without the link is repaired once when Klimo starts —
+  nothing to add again.
+
+### The room's day
+
+- **The «Today» chart shows the whole day, also after a restart.** It is drawn from the room's own
+  sensors, combined the way the room's temperature is, so an update or a restart no longer leaves a lone
+  dot at midnight; Klimo's own sensor, unavailable while Klimo is stopped, only stands in for a room
+  whose sensors are not recorded. The lowest and highest values come from the exact readings, the target
+  band covers the whole elapsed day (the schedule fills the time Klimo was not running), and a target
+  held by hand is drawn ahead until it ends.
+- **It stays current without a reload.** New readings extend the line; the day is fetched again when the
+  tab comes back, when Home Assistant reconnects and after midnight. An answer given before the recorder
+  could be read is asked again instead of being kept, and a restart under an open page leaves the last
+  full day on screen. While it loads the chart says **Loading the temperature history…**, and with
+  nothing recorded it says so instead of showing one value as the day's minimum and maximum.
+- **The add-on log explains a day it draws**: with `log_level: debug`, one line per day names the
+  entities read, how many readings each had and which source was used.
+
+### Adding a room
+
+- **Ordinary radiators no longer block «Next».** **Radiators with ordinary valves** — hand valves or
+  mechanical thermostatic heads — need no device, only a thermometer, and are clearly apart from
+  **Radiators with smart heads**; a room may have both. Smart heads ticked by mistake offer
+  **Ordinary valves** to switch over in one click.
+- **Devices by kind, with «Add a device» at the top.** The devices step has one block per kind — smart
+  heads, temperature and humidity, windows, air conditioner, heater, floor, dehumidifier — with the
+  area's devices ticked. **Add a device** asks what the device is, then searches all of Home Assistant,
+  the area first; **+ Add** in a block opens it with the kind chosen. **Room and devices** of an
+  existing room uses the same dialog. A combined sensor is added once and brings both readings.
+- **Dropdowns you can read**: opaque, rows that never overlap, long names cut with "…", above dialogs
+  and sticky footers, opening upward near the bottom of the screen and fitting above a phone keyboard.
+- **A circulation pump is a pump.** A switch whose name or device says pump, насос or circulation is
+  no longer ticked as a heater, and the circuit pump picker lists it first — a free one before pumps
+  already in use.
+
+### Manifold
+
+- **Create and edit the manifold.** The System page has a **Manifold** card: the sources feeding it,
+  the circuits on it, its primary pump with run-on, flow and return temperatures and the pump's state.
+  Add one with **+ Manifold** or the dashed **Add a manifold** box on the schema, open it by clicking it
+  there; phones get it on the System page too. Deleting it leaves its circuits fed directly by the same
+  sources and switches its pump off.
+- **The primary pump runs when it should**: with any source of the manifold, for its own run-on after
+  the stop (or a circuit pump's longer one), and before a boiler starts — a boiler behind a manifold
+  whose circuits have no pumps of their own no longer waits for water that never moves.
+- **New source asks where it sends heat or cold.** A boiler or heat pump goes into the manifold (and so
+  every circuit on it) and/or straight into circuits; an air conditioner or heater picks its room on the
+  same step. **Change** next to **Where it delivers** on a source's page opens the same choice.
+- **The schema reads well without a manifold**: sources feeding the same circuits each get their own
+  lane, instead of arrows and labels drawn over one another.
+
+### Steppers
+
+- **Every press changes the number.** A stepper shows as many decimals as its step, so a boiler's rated
+  power goes 24 → 25 → 26 kW instead of standing on "30 kW". Steps fit the field: power by 0.1 kW below
+  2 kW, 0.5 up to 10 and whole kW above, the electronics in 10 W, a room limit by 0.5°, a pause in
+  seconds, a budget of 10.5 kW reads 10.5 — and they land on round values.
+- **Tap the number to type it.** «2,5» and «2.5 kW» both work, Enter applies, Escape cancels, and a
+  value is kept within its limits; the room target and times of day can be typed too. Hold − or + to
+  move faster. Prices keep four decimals as on the bill.
+
 ## 0.2.1
 
 - **Klimo starts again after updating.** 0.2.0 stopped at boot with `exec docker-entrypoint.sh failed:

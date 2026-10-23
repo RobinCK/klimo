@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode 
 import { useUiText } from '../../UiTextContext';
 import { Icon } from '../../basic/Icon';
 import { InfoHint, type InfoHintContent } from '../../basic/InfoHint';
-import { parseTyped, shownDecimals } from '../../basic/stepNumber';
+import { decimalsOf, parseTyped, shownDecimals } from '../../basic/stepNumber';
 import { clamp, cx, hhmmToMinutes, minutesToHhmm, snap } from '../internal/util';
 import s from './fields.module.css';
 
@@ -257,6 +257,8 @@ export interface NumberFieldProps {
   min: number;
   max: number;
   step: number;
+  /** The grid a typed value keeps (default `step`): a price billed to 4 decimals keeps them, the arrows move by `step`. */
+  precision?: number;
   /** Shown inside the field on the right («°», «хв», «%»). */
   unit?: string;
   label?: string;
@@ -272,22 +274,23 @@ export interface NumberFieldProps {
 }
 
 // with the step's decimals («21.0», «0.25»), more only for a value off that grid
-const fmt = (v: number | null, step: number) => (v == null ? '' : v.toFixed(shownDecimals(v, step)));
+const fmt = (v: number | null, step: number, precision: number) => (v == null ? '' : v.toFixed(shownDecimals(v, step, undefined, Math.max(3, decimalsOf(precision)))));
 
 /** Free numeric entry that never leaves an out-of-range value behind. */
-export function NumberField({ value, onChange, min, max, step, unit, label, ariaLabel, error, disabled, hint, onClear, placeholder }: NumberFieldProps) {
+export function NumberField({ value, onChange, min, max, step, precision = step, unit, label, ariaLabel, error, disabled, hint, onClear, placeholder }: NumberFieldProps) {
   const ut = useUiText();
   const id = useId();
-  const [text, setText] = useState(fmt(value, step));
+  const show = (v: number | null) => fmt(v, step, precision);
+  const [text, setText] = useState(show(value));
   const [invalid, setInvalid] = useState(false);
   const editing = useRef(false);
 
   useEffect(() => {
-    if (!editing.current) setText(fmt(value, step));
-  }, [value, step]);
+    if (!editing.current) setText(fmt(value, step, precision));
+  }, [value, step, precision]);
 
   // multiples of the step, kept in range (1…1440 min by 5 reads 5, 10, 15 — not 6, 11, 16)
-  const onGrid = (n: number) => clamp(snap(n, step, 0), min, max);
+  const onGrid = (n: number, grid = step) => clamp(snap(n, grid, 0), min, max);
 
   const commit = (raw: string) => {
     const n = parseTyped(raw);
@@ -298,12 +301,12 @@ export function NumberField({ value, onChange, min, max, step, unit, label, aria
     }
     if (n == null) {
       setInvalid(raw.trim() !== '');
-      setText(fmt(value, step));
+      setText(show(value));
       return;
     }
-    const next = onGrid(n);
+    const next = onGrid(n, precision);
     setInvalid(false);
-    setText(fmt(next, step));
+    setText(show(next));
     if (next !== value) onChange(next);
   };
 
@@ -313,7 +316,7 @@ export function NumberField({ value, onChange, min, max, step, unit, label, aria
       e.preventDefault();
       const base = value ?? min;
       const next = onGrid(base + (e.key === 'ArrowUp' ? step : -step));
-      setText(fmt(next, step));
+      setText(show(next));
       if (next !== value) onChange(next);
     }
   };

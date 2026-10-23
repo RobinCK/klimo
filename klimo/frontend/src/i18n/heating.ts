@@ -141,7 +141,7 @@ export const DEVICE_ROLE_ICON: Record<WizardDeviceRole, IconName> = {
   dehumidifier: 'droplet',
 };
 
-/** What a device is, on chips and in «Use as…». */
+/** What a device is: in its row, in toasts and in «already added as …». */
 export function deviceRoleLabel(role: WizardDeviceRole): string {
   return wizardDeviceRoleLabel(role);
 }

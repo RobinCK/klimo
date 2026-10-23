@@ -31,15 +31,18 @@ and the watchdog) and its own container; other add-ons on the internal network a
 ## Getting started
 
 1. **System → Sources → Add a source** for every heat pump, boiler, air conditioner or electric heater.
-   Pick the type, then how Klimo switches it and how it knows the source really runs; **Test for 2 min**
-   checks the wiring. Bind its gas, electricity or heat meter under *Consumption meters* if it has one.
+   Pick the type, then how Klimo switches it and how it knows the source really runs, and **where it
+   sends heat or cold** — a boiler or heat pump into the manifold and/or straight into circuits, an air
+   conditioner or heater into its room; **Test for 2 min** checks the wiring. Bind its gas, electricity
+   or heat meter under *Consumption meters* if it has one.
 2. **Rooms → Add a room**: a name, a Home Assistant area and what heats or cools the room. Klimo offers
    the radiator valves, thermometers, humidity sensors and window contacts of the area by kind;
-   **Add a device** finds anything else. The first room with radiators or a floor sets up the house circuit; the next
-   ones join it. Then choose how the temperature is combined, the tolerance, the window reaction and how
-   the valves are driven.
+   **Add a device** finds anything else. The first room with radiators or a floor sets up the house
+   circuit; the next ones join it. Then choose how the temperature is combined, the tolerance, the window
+   reaction and how the valves are driven.
 3. **System → Schema → Circuits & pumps** for hydronic systems: which sources feed which circuit, how
-   it runs, the pumps and their run-on, the rooms on it.
+   it runs, the pumps and their run-on, the rooms on it. Where the boiler or heat pump and the circuits
+   meet at a manifold or a hydraulic separator, add a **Manifold** above them, with its primary pump.
 4. **Schedule**: the house schedule ships with weekday and weekend plans over the six seeded profiles
    (Home, Away, Eco, Night, Guests, Vacation); adjust the targets and the blocks.
 
@@ -47,6 +50,10 @@ Profiles, triggers and actions are created with English names and notifications 
 whatever language Home Assistant speaks; rename anything, and pick the notification language in
 **Settings → Units, languages and look**. An install that started on 0.1.0 gets the English name for
 every seeded name nobody changed; its notification language stays as it was.
+
+Every number in the panel has − and + (hold one to move faster) and can be typed: tap or click it,
+Enter applies, Escape cancels, and the value is kept within its limits. It shows as many decimals as
+its step, so every press changes what you see.
 
 The panel has its own language, apart from notifications and cards: a browser's own choice comes
 first, then **Panel language for everyone**, then the Home Assistant user's language, then the
@@ -73,7 +80,8 @@ device with what it expects before it sends a command.
   *room* sources serve one room.
 - **Circuit and pumps** — a hydronic branch of the house (radiators, floor, fan coils) fed by sources and
   joined by rooms. It runs as a whole with its source or by zones and rooms, with any number of pumps
-  sharing one run-on, optionally behind a manifold with supply/return sensors and its own pump.
+  sharing one run-on, optionally on a manifold that passes its sources to every circuit on it, with
+  supply/return sensors and its own primary pump.
 - **Profile** — named targets for heating and cooling with per-room exceptions (own targets or off).
   Home, Away and Eco are system profiles (renamable, not deletable); Vacation is frost protection only.
 - **Schedule** — a weekly plan of profile blocks (30-minute steps) for the house, optional room schedules
@@ -140,6 +148,10 @@ circuit. **Delete the room** hands the valves back the same way. Each change is 
 - A sensor excluded from a notification ("Exclude from the calculation") comes back by itself after
   10 minutes of good data.
 - Humidity sensors are combined the same way (average, median, most humid, driest).
+- The room page's **Today** chart is drawn from these sensors as the recorder kept them, combined the
+  same way, so it shows the whole day also after Klimo was stopped or updated. New readings extend the
+  line without a reload; the lowest and highest values of the day come from the exact readings. While
+  the recorder cannot be read yet (right after a start) the chart says it is loading and asks again.
 
 ### Tolerance and requests
 
@@ -334,6 +346,13 @@ entity ids, ready to copy.
 `hvac_action` reports heating/cooling, the relay reads back, or a state in a list. Defrosting counts as
 running and pauses the timers.
 
+**Where it delivers** — a whole-house source (boiler, heat pump) feeds a manifold, and through it every
+circuit on it, and/or circuits directly; rooms on those circuits can then start it. A source connected
+to nothing never runs for the rooms. A room source (air conditioner, heater) serves one room: the room
+uses it through its own link, created with the source, so it heats or cools as soon as it is added —
+also one added from **Add a source**. **Change** next to **Where it delivers** on the source's page
+edits the choice.
+
 ### Guards and failover
 
 | Type | Min run | Min pause | Starts / h | Confirm within | Unavailable after |
@@ -482,7 +501,14 @@ the rooms on it.
   valves closed.
 - **Several pumps per circuit**: all together, or duty and standby — the standby pump takes over when
   the duty pump is unavailable for a minute, and the roles rotate at the weekly exercise.
-- **Manifold**: supply and return sensors and a primary pump that runs while any of its circuits does.
+- **Manifold** (System page, **+ Manifold**, or the dashed **Add a manifold** box on the schema): where
+  the sources meet the circuits — a distribution manifold or a hydraulic separator. Every source on it
+  feeds each of its circuits: a boiler added to the manifold heats all of them, a circuit put on it gains
+  its sources, and one taken off keeps them and is fed directly. Its **primary pump** runs while a source
+  of the manifold runs or a pump of its circuits does, for its own run-on after the stop (or the longest
+  circuit run-on, when that is longer), and before a boiler starts, so water moves through it. Supply and
+  return sensors are optional. Deleting a manifold leaves its circuits with their sources and switches
+  its pump off. A simple house — one boiler straight into one loop — needs none.
 - **Mixing valve**: a `number` with the floor supply temperature (35° heating, the dew-safe value when
   cooling).
 - **Pump anti-seize run**: every Sunday at 10:00 a pump that has been off for a day runs for a minute.
@@ -627,7 +653,7 @@ ids are pinned when they are created; renaming a room does not change them.
 |---|---|
 | `climate.klimo_<room>` per room | Current temperature and humidity, target (low/high between seasons), modes `off` / `auto` / `heat` / `cool` / `heat_cool` by season, presets = profiles, action. `auto` resumes the schedule, `heat` / `cool` / `heat_cool` switch to manual control, `off` switches the room off; a target lasts per Settings (until the next slot by default) or stays manual in a manual room; a preset sets the room profile until the next slot, `none` clears it. |
 | `select.klimo_<room>_control` | The room's mode: `Schedule`, `Manual`, `Off` ([Manual control](#manual-control)). |
-| `sensor.klimo_<room>_temperature` | Klimo's aggregated room temperature (recorded; the room charts read it back). |
+| `sensor.klimo_<room>_temperature` | Klimo's aggregated room temperature (recorded; the room chart uses it when the room's own sensors are not recorded). |
 | `sensor.klimo_<room>_target` | The effective target (recorded; the target band in the charts). |
 | `sensor.klimo_<room>_humidity` / `_dew_point` | With humidity sensors. |
 | `binary_sensor.klimo_<room>_heat_demand` / `_cool_demand` | The room asks for heat or cold. |
@@ -655,7 +681,12 @@ Availability uses a last-will message on `klimo/status`: when the add-on stops, 
 
 ### Recorder
 
-History comes from the Home Assistant recorder — keep the room temperature and target sensors recorded.
+History comes from the Home Assistant recorder. The room's **Today** chart is rebuilt from the
+room's own temperature and humidity sensors, combined as the room combines them, so keep them
+recorded; Klimo's `sensor.klimo_<room>_target` draws the target band of the elapsed day, and
+`sensor.klimo_<room>_temperature` stands in only for a room whose own sensors are not recorded.
+With `log_level: debug`, every day read writes one line with the entities, their readings and the
+source used.
 Exclude the card transport sensors; they change often and carry large attributes:
 
 ```yaml
