@@ -386,11 +386,17 @@
 
 .cardTitle {
   font-weight: 600;
+  /* entity ids and names from the house can be one long word: they break rather than stick out */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .cardBody {
   color: var(--ui-text-2);
   font-size: var(--ui-fs-body-sm);
+  /* entity ids and names from the house can be one long word: they break rather than stick out */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .cardActions {

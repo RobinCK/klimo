@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.12
+
+- **Long names stay inside their cards on an iPhone.** The rule that breaks a long word, inherited from
+  the page, did not reach a notification's title in the Home Assistant app on iOS: «Office window
+  (binary_sensor.zig_contact_window_office_contact)» ran past the card's edge. Notification titles and
+  texts, the lines under a device or a decision, the hints under a checkbox and the rooms and pumps of a
+  circuit now break such a word themselves, in a way Safari has long understood. Ordinary words still
+  wrap whole.
+
 ## 0.2.11
 
 - **No sideways scrolling on a phone.** A long entity id or device name (`sensor.zig_plug_warm_floor_energy`,

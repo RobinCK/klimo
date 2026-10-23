@@ -216,6 +216,9 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
+  /* entity ids and names from the house can be one long word: they break rather than stick out */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .iconBox {

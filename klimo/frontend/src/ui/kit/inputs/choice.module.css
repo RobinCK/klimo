@@ -651,6 +651,9 @@
 .checkHint {
   color: var(--ui-text-3);
   font-size: var(--ui-fs-body-sm);
+  /* entity ids and names from the house can be one long word: they break rather than stick out */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .checkLocked {
