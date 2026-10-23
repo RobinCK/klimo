@@ -14,7 +14,7 @@ async function withHa(fn, opts) {
 test('registries and states describe the demo house the way HA and Zigbee2MQTT do', () =>
   withHa(async ({ ha }) => {
     const reg = ha.registries();
-    assert.deepEqual(reg.areas.map((a) => a.name), ['Вітальня', 'Спальня', 'Дитяча', 'Кабінет', 'Кухня', 'Ванна', 'Коридор', 'Котельня', 'Гараж']);
+    assert.deepEqual(reg.areas.map((a) => a.name), ['Вітальня', 'Спальня', 'Дитяча', 'Кабінет', 'Кухня', 'Ванна', 'Коридор', 'Котельня', 'Гараж', 'Склад']);
     const trv = reg.entities.find((e) => e.entity_id === 'climate.living_trv_window');
     assert.match(trv.unique_id, /^0x[0-9a-f]+_climate_zigbee2mqtt$/);
     const ext = reg.entities.find((e) => e.entity_id === 'number.living_trv_window_external_temperature_input');

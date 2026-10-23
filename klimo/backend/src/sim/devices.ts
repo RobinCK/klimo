@@ -26,6 +26,7 @@ export const AREAS: readonly AreaSpec[] = [
   { id: 'korydor', name: 'Коридор', room: 'hall' },
   { id: 'kotelnia', name: 'Котельня', room: null },
   { id: 'garazh', name: 'Гараж', room: null },
+  { id: 'sklad', name: 'Склад', room: null },
 ];
 
 export function areaOfRoom(room: RoomKey): string {
@@ -465,6 +466,10 @@ function buildDevices(): DeviceSpec[] {
     { ...trv({ base: 'zig_thermostat_office', label: 'zig_thermostat_office', room: 'study', instance: 2, lqi: 94, battery: 88, tuya: true }), area: null, binding: { kind: 'spare' } },
     // a second outdoor thermometer, on the south-west wall: the afternoon sun warms it
     { ...thermo({ base: 'south_wall', label: 'Південна стіна', room: null, model: 'SONOFF SNZB-02D', instance: 2, lqi: 83, battery: 78 }), area: null, binding: { kind: 'sunny_wall' } },
+    // the warehouse area holds nothing yet; its sensor is paired but left without an area
+    { ...thermo({ base: 'zig_temp_warehouse', label: 'zig_temp_warehouse', room: null, model: 'SONOFF SNZB-02', instance: 2, lqi: 71, battery: 90 }), area: null },
+    // a garden pump on a Wi-Fi relay: a bare switch that only its name tells apart from a heater
+    { ...wifiRelay('sirio_barrel_backyard_pump', 'Sirio Barrel Backyard Pump', 'garazh', 'garage_plug', 0, false), area: null, binding: { kind: 'spare' } },
   ];
 }
 

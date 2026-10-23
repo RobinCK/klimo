@@ -19,6 +19,7 @@ const EN: Record<string, string> = {
   Коридор: 'Hall',
   Котельня: 'Boiler room',
   Гараж: 'Garage',
+  Склад: 'Warehouse',
   Дім: 'Home',
 
   // entity names
