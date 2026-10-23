@@ -431,6 +431,17 @@ export function healRoomEmitters(g: ConfigGraph): number {
   return n;
 }
 
+/** A relay's countdown, bound by the add-source wizard on its own, is unbound: the relay only opens and closes. */
+export function dropRelayCountdowns(g: ConfigGraph): number {
+  let n = 0;
+  for (const s of g.sources.values()) {
+    if (s.adapter.type !== 'relay' || s.adapter.watchdog.kind !== 'countdown_number') continue;
+    g.sources.set(s.id, { ...s, adapter: { ...s.adapter, watchdog: { kind: 'none' } } });
+    n++;
+  }
+  return n;
+}
+
 export async function loadGraph(em: EntityManager): Promise<{ graph: ConfigGraph; missingSingletons: ConfigSingletonName[]; migratedManifolds: Id[] }> {
   const g = emptyGraph();
   const missingSingletons: ConfigSingletonName[] = [];

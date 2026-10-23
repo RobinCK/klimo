@@ -338,7 +338,7 @@ entity ids, ready to copy.
 
 | Control | Switching | Notes |
 |---|---|---|
-| **Relay (dry contact)** | `switch` on/off, optional stages (electric boilers) and an inverted contact | Optional device watchdog: a countdown `number` (or a service) re-armed every 5 min, so the relay drops within 15 min if Klimo stops. |
+| **Relay (dry contact)** | `switch` on/off, optional stages (electric boilers) and an inverted contact | Closed — heats, open — does not. The relay's own countdown is not used. |
 | **Climate entity** | `hvac_mode` per Klimo mode, setpoint from the weather curve, the room target or a fixed value | Heat pumps, boilers with OpenTherm/eBUS bridges, air conditioners. |
 | **Flow temperature** | an enable switch plus a flow setpoint `number` and an optional mode select | |
 | **Scripts** | `script.turn_on` with `{mode, setpoint}` once per start and stop | |
@@ -732,9 +732,9 @@ Guidance:
 
 - Keep the **boiler's own frost protection** enabled — it works when neither Home Assistant nor Klimo
   does.
-- Give a boiler relay a **device-side countdown** (most Zigbee relays have one) and enter it as the
-  relay's watchdog: Klimo re-arms it every 5 minutes, and a stopped Klimo cannot leave the boiler
-  running.
+- A boiler relay is only switched on and off. When the add-on is stopped it switches the boiler off;
+  if Klimo or Home Assistant goes down, the relay keeps its last state and the boiler's own
+  thermostat and limits keep working.
 - For heat pumps and air conditioners controlled through a `climate` entity, the device keeps its own
   regulation when Klimo is away.
 

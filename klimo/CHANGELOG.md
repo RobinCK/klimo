@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.6
+
+- **The boiler relay only switches on and off.** Closed — the boiler heats, open — it does not. Klimo
+  no longer uses the relay's own countdown: the add-source wizard does not bind it any more, and a
+  countdown bound by an earlier version is unbound once when Klimo starts. The countdown already set
+  on the relay may switch it off one last time; Klimo switches it straight back on and never sets it
+  again.
+
 ## 0.2.5
 
 - **The boiler relay no longer clicks off and back on every 5 minutes.** When a boiler relay has its

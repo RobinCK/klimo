@@ -213,7 +213,7 @@ export function draftRows(adapter: SourceAdapter, caps: SourceConfig['capabiliti
       add('command', a.command, true);
       a.stages.forEach((s, i) => add(`stage${i + 2}`, s.entityId, true));
       if (a.flowSetpoint) add('flow', a.flowSetpoint.entityId, true);
-      add('watchdog', a.watchdog.kind === 'countdown_number' ? a.watchdog.entityId : null, false);
+      if (a.watchdog.kind === 'countdown_number') add('watchdog', a.watchdog.entityId, false);
       break;
     case 'climate':
       add('climate', a.climate, true);
@@ -242,12 +242,11 @@ export function draftRows(adapter: SourceAdapter, caps: SourceConfig['capabiliti
 
 /**
  * Rows the server reports, plus the optional roles it leaves out while empty (proof of
- * running, a relay timer, a power sensor), so they can be filled from the same table.
+ * running, a power sensor), so they can be filled from the same table.
  */
 export function withOptionalRows(rows: readonly SourceBinding[], adapter: SourceAdapter): SourceBinding[] {
   const out = [...rows];
   const has = (role: string) => out.some((r) => r.role === role);
-  if (adapter.type === 'relay' && !has('watchdog')) out.push({ role: 'watchdog', entityId: null, required: false, live: null, status: 'unset' });
   if (adapter.type !== 'climate' && adapter.type !== 'custom' && !has('confirm'))
     out.push({ role: 'confirm', entityId: null, required: false, live: null, status: 'unset' });
   if (!has('power')) out.push({ role: 'power', entityId: null, required: false, live: null, status: 'unset' });
@@ -288,11 +287,6 @@ export function applySiblings(
     }
   }
   if (a.type === 'relay') {
-    const countdown = sib('countdown');
-    if (a.watchdog.kind === 'none' && countdown) {
-      ({ adapter: a, energy: e } = setRole(a, e, 'watchdog', countdown));
-      filled.push('watchdog');
-    }
     const flame = sib('flame');
     if ((a.confirm.kind === 'readback' || a.confirm.kind === 'none') && (flame || e.powerEntityId)) {
       ({ adapter: a, energy: e } = setRole(a, e, 'confirm', flame ?? e.powerEntityId));

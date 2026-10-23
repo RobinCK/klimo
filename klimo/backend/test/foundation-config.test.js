@@ -85,6 +85,27 @@ test('first boot seeds settings, profiles, schedule, triggers, rules and targets
     }
   }));
 
+test('a boiler relay countdown bound by an earlier wizard is unbound once: the relay only switches on and off', async () => {
+  let s = await openStores();
+  const { dir, clock } = s;
+  try {
+    const base = newSourceConfig('gas_boiler', { id: '', name: 'Boiler', now: 0 });
+    delete base.id;
+    const wd = { kind: 'countdown_number', entityId: 'number.boiler_relay_countdown', minutes: 15, rearmEveryMin: 5 };
+    const boiler = await s.config.create('sources', { ...base, adapter: { ...base.adapter, command: 'switch.boiler_relay', watchdog: wd } }, ACTOR);
+    assert.equal(s.config.get('sources', boiler.id).adapter.watchdog.kind, 'countdown_number');
+    await s.db.kvSet('relay.countdown_dropped', null);
+    await s.close({ keep: true });
+
+    s = await openStores({ dir, clock });
+    assert.deepEqual(s.config.get('sources', boiler.id).adapter.watchdog, { kind: 'none' });
+    assert.equal(s.config.get('sources', boiler.id).adapter.command, 'switch.boiler_relay');
+    assert.equal(await s.db.kvGet('relay.countdown_dropped'), 'done');
+  } finally {
+    await s.close();
+  }
+});
+
 test('names 0.1.0 seeded in Ukrainian move to English once; renamed and own rows keep theirs', async () => {
   // a 0.1.0 database: the Ukrainian seed, a few rows the household renamed or added, no marker yet
   let s = await openStores();

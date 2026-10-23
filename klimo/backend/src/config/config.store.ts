@@ -77,6 +77,7 @@ import {
   COLLECTIONS,
   CONFIG_TABLES,
   diffRows,
+  dropRelayCountdowns,
   fromRow,
   healRoomEmitters,
   loadGraph,
@@ -110,6 +111,9 @@ import {
   type Issues,
   type ValidationEnv,
 } from './validators';
+
+/** kv: the relay countdowns of earlier versions were unbound. */
+const RELAY_COUNTDOWN_KEY = 'relay.countdown_dropped';
 
 type Change = { entity: ConfigEntityName; id: Id | null; op: BusEvents['config.changed']['op'] };
 
@@ -222,11 +226,16 @@ export class ConfigStore implements IConfigStore {
       this.graph.settings = { ...this.graph.settings, outdoor: normalizeOutdoor(this.graph.settings.outdoor) };
       const healed = fresh ? 0 : healRoomEmitters(this.graph);
       if (healed) this.log.log(`${healed} room source(s) got the emitter that lets them serve their room`);
+      // once per database: a relay's countdown is no longer used (the demo house keeps its own)
+      const countdownChecked = (await this.db.kvGet(RELAY_COUNTDOWN_KEY)) !== null;
+      const unbound = !fresh && !countdownChecked && !env.simulate ? dropRelayCountdowns(this.graph) : 0;
       const changes = diffRows(base, this.graph, (t) => this.cols(t));
       if (changes.length) await this.db.ds.transaction((em) => writeChanges(em, changes));
       if (fresh) await this.db.kvSet(SEED_HA_KEY, 'pending');
       if (!namesChecked) await this.db.kvSet(SEED_EN_KEY, 'done');
+      if (!countdownChecked) await this.db.kvSet(RELAY_COUNTDOWN_KEY, 'done');
       if (renamed) this.log.log(`${renamed} seeded name(s) moved to English`);
+      if (unbound) this.log.log(`${unbound} relay countdown(s) unbound: the relay only switches on and off`);
       this.committed = snapshotRows(this.graph, (t) => this.cols(t));
       this.log.log(
         fresh
