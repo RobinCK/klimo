@@ -4,6 +4,7 @@ import type {
   DesiredActuator,
   DesiredValue,
   EntityId,
+  EntitySnap,
   EpochMs,
   Id,
   ModeOrNone,
@@ -68,6 +69,21 @@ function stableSetpoint(rec: ActuatorRecord | undefined, value: number | null, n
   return v;
 }
 
+const UNITS_PER_MIN: Record<string, number> = { ms: 60_000, s: 60, sec: 60, min: 1, h: 1 / 60, d: 1 / 1440 };
+
+/**
+ * A relay countdown of `minutes` in the number's own unit and range: Zigbee2MQTT relays count seconds,
+ * so 15 written as minutes switched the boiler off after 15 s. Without a unit a range beyond a day of
+ * minutes is taken for seconds. `seconds` is how long the written value really lasts.
+ */
+export function countdownValue(minutes: number, snap: EntitySnap | undefined): { value: number; seconds: number } {
+  const unit = typeof snap?.attrs.unit_of_measurement === 'string' ? snap.attrs.unit_of_measurement.trim().toLowerCase() : '';
+  const max = typeof snap?.attrs.max === 'number' && snap.attrs.max > 0 ? snap.attrs.max : null;
+  const perMin = UNITS_PER_MIN[unit] ?? (max !== null && max > 1440 ? 60 : 1);
+  const value = Math.round(Math.min(minutes * perMin, max ?? Infinity) * 100) / 100;
+  return { value, seconds: (value / perMin) * 60 };
+}
+
 /** `{{mode}}`, `{{setpoint}}`… substituted in service data; a value that is exactly one placeholder keeps its type. */
 export function substitute(calls: readonly ServiceCallSpec[], vars: Record<string, string | number | null>): ServiceCallSpec[] {
   const one = /^\{\{\s*(\w+)\s*\}\}$/;
@@ -96,6 +112,8 @@ export interface SourceActuation {
   roomTargetC: number | null;
   /** Commanded OFF but still drawing: re-send OFF every minute. */
   stillDrawing: boolean;
+  /** HA entities, for the unit and range of a relay's countdown. */
+  entities?: Record<EntityId, EntitySnap>;
 }
 
 /** Desired values of a central or room source with a relay, climate, flow, script or custom adapter. */
@@ -118,7 +136,10 @@ export function sourceDesired(s: SourceConfig, m: SourceMemory, x: SourceActuati
         const wd = a.watchdog;
         // keep-alive of the device-side countdown; a counting-down number never "matches", so no confirmation
         if (wd.kind === 'countdown_number') {
-          out.push({ ...base(wd.entityId, wd.entityId, { type: 'watchdog', id: s.id, roomId: owner.roomId }, 'source', { confirm: { kind: 'none' }, refreshEverySec: wd.rearmEveryMin * 60 }), value: { kind: 'number', value: wd.minutes } });
+          const cd = countdownValue(wd.minutes, x.entities?.[wd.entityId]);
+          // a countdown cut short by the number's range is renewed well before it runs out
+          const every = Math.min(wd.rearmEveryMin * 60, Math.max(10, Math.floor(cd.seconds / 3)));
+          out.push({ ...base(wd.entityId, wd.entityId, { type: 'watchdog', id: s.id, roomId: owner.roomId }, 'source', { confirm: { kind: 'none' }, refreshEverySec: every }), value: { kind: 'number', value: cd.value } });
         } else if (wd.kind === 'service') {
           out.push({
             ...base(`svc:${s.id}:watchdog`, null, { type: 'watchdog', id: s.id, roomId: owner.roomId }, 'source', { confirm: { kind: 'none' }, refreshEverySec: wd.rearmEveryMin * 60 }),

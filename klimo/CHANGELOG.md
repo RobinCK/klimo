@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.5
+
+- **The boiler relay no longer clicks off and back on every 5 minutes.** When a boiler relay has its
+  own countdown (most Zigbee2MQTT relays do, and the add-source wizard binds it as the fail-safe by
+  itself), Klimo renewed it with 15 — but those relays count seconds, so the relay switched itself off
+  15 s after each renewal and Klimo switched it straight back on. The countdown is now written in the
+  entity's own unit (900 s, 15 min or 0.25 h) and kept within its range; a countdown shorter than the
+  renewal interval is renewed more often. Nothing to change in the settings.
+
 ## 0.2.4
 
 - **A head turned by hand becomes the room's target also when Klimo holds it off.** Out of the heating

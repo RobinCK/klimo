@@ -847,6 +847,7 @@ function actuationPhase(
         roomTempC: ownRoom?.t ?? rooms[0]?.t ?? null,
         roomTargetC: targets(m.mode),
         stillDrawing: h.stillDrawing,
+        entities: t.inputs.entities,
       }),
     );
   }

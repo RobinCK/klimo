@@ -304,6 +304,40 @@ test('alerts name the device as the devices page does, not by its entity id', as
   e.engine.onModuleDestroy();
 });
 
+test('a relay countdown counted in seconds gets 900, not 15: the boiler does not drop every 5 minutes', async () => {
+  const { countdownValue } = require('../dist/engine/core/actuation');
+  const snap = (attrs) => ({ attrs });
+  assert.deepEqual(countdownValue(15, snap({ unit_of_measurement: 's', min: 0, max: 43200 })), { value: 900, seconds: 900 });
+  assert.deepEqual(countdownValue(15, snap({ unit_of_measurement: 'min', max: 120 })), { value: 15, seconds: 900 });
+  assert.deepEqual(countdownValue(15, snap({ unit_of_measurement: 'h' })), { value: 0.25, seconds: 900 });
+  assert.deepEqual(countdownValue(15, snap({ max: 43200 })), { value: 900, seconds: 900 }, 'no unit, a range of seconds');
+  assert.deepEqual(countdownValue(15, snap({ max: 60 })), { value: 15, seconds: 900 }, 'no unit, a range of minutes');
+  assert.deepEqual(countdownValue(15, snap({ unit_of_measurement: 's', max: 600 })), { value: 600, seconds: 600 }, 'cut to the range');
+  assert.deepEqual(countdownValue(15, undefined), { value: 15, seconds: 900 });
+
+  // a Zigbee2MQTT relay: it switches itself off when its countdown in seconds runs out
+  const e = h.makeEngine({ safety: NO_DRY_RUN, states: { t: 18 } });
+  e.ha.set('number.boiler_countdown', '0', { min: 0, max: 43200, step: 1, unit_of_measurement: 's' }, { silent: true });
+  await e.boot();
+  let armed = null;
+  let drops = 0;
+  for (let i = 0; i < 16 * 60; i++) {
+    const row = e.engine.ledger()['number.boiler_countdown'];
+    if (row && row.commandedAt !== armed?.at) armed = { at: row.commandedAt, sec: Number(e.ha.getState('number.boiler_countdown').state) };
+    if (armed && e.ha.getState('switch.boiler_relay').state === 'on' && e.clock.now() - armed.at >= armed.sec * SEC) {
+      e.ha.foreign('switch.boiler_relay', 'off', {}, null);
+      drops++;
+      armed = null;
+    }
+    await e.advance(SEC);
+  }
+  assert.equal(e.ha.getState('number.boiler_countdown').state, '900');
+  assert.equal(drops, 0, 'the relay never ran out of its countdown');
+  assert.equal(e.ha.getState('switch.boiler_relay').state, 'on');
+  assert.equal(e.callsTo('number.boiler_countdown').length, 4, 're-armed every 5 minutes');
+  e.engine.onModuleDestroy();
+});
+
 test('a head Klimo holds off turned by hand: the number on the head becomes the room target', async () => {
   const cfg = h.makeCfg();
   cfg.house = { ...cfg.house, mode: 'off' };
