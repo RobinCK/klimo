@@ -63,7 +63,7 @@ test('one top-level profile, as the Supervisor expects before it renames it to t
   const slug = /^slug:\s*(\S+)/m.exec(fs.readFileSync(path.join(ADDON, 'config.yaml'), 'utf8'))[1];
   assert.deepEqual(names, [slug]);
   assert.match(text, /^#include <tunables\/global>$/m);
-  assert.match(text, /^profile \S+ flags=\(attach_disconnected,mediate_deleted\) \{$/m);
+  assert.match(text, /^profile \S+ flags=\(attach_disconnected,mediate_deleted(,complain)?\) \{$/m);
   assert.match(text, /^\s+#include <abstractions\/base>$/m);
 });
 
@@ -125,7 +125,25 @@ test('the card bundle may be written to HA’s www folder, and nothing else of t
   assert.ok(!allows('/config/klimo.yaml', 'w'));
 });
 
-test('the image is read-only; only node, docker-init and the backup hook run', () => {
+test('the container starts: docker-init may run the command the Dockerfile gives it', () => {
+  // 0.2.0 did not start: docker-init ran the base image's docker-entrypoint.sh, which the profile refused
+  const dockerfile = fs.readFileSync(path.join(ADDON, 'Dockerfile'), 'utf8');
+  const exec = (k) => {
+    const m = [...dockerfile.matchAll(new RegExp(`^${k}\\s+(\\[.*\\])\\s*$`, 'gm'))].pop();
+    return m ? JSON.parse(m[1]) : null;
+  };
+  const entrypoint = exec('ENTRYPOINT');
+  assert.deepEqual(entrypoint, [], 'the base image entrypoint is cleared');
+  const [program] = exec('CMD');
+  const resolved = program.startsWith('/') ? program : `/usr/local/bin/${program}`;
+  for (const f of ['/sbin/docker-init', resolved, '/usr/local/bin/docker-entrypoint.sh']) assert.ok(allows(f, 'x'), f);
+});
+
+test('the profile only logs until real installs show it covers everything', () => {
+  assert.match(text, /^profile klimo flags=\([^)]*\bcomplain\b[^)]*\) \{$/m);
+});
+
+test('the image is read-only; its programs, docker-init and the backup hook run', () => {
   for (const f of ['/app/dist/main.js', '/app/public/index.html', '/app/card/klimo-cards.js', '/usr/local/bin/node', '/etc/passwd']) {
     assert.ok(allows(f, 'r') && !allows(f, 'w'), f);
   }

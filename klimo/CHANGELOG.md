@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1
+
+- **Klimo starts again after updating.** 0.2.0 stopped at boot with `exec docker-entrypoint.sh failed:
+  Permission denied`: its new AppArmor profile let Docker's init run node but not the base image's
+  entrypoint script in front of it. The container now runs node directly, the profile allows every
+  program of the image, and it runs in **complain mode** — it logs what it would refuse and blocks
+  nothing, so an access nobody foresaw can never stop the heating control again. It will enforce once
+  real installs show the rules are complete; the security rating stays 8.
+
 ## 0.2.0
 
 ### Manual control

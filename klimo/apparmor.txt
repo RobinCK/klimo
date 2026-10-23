@@ -2,8 +2,11 @@
 
 # Klimo's AppArmor profile. The Supervisor loads it with the add-on and renames it to the add-on's slug
 # (local_klimo, <repository>_klimo); every process of the container runs under it: Docker's init, node
-# and the backup hook. Anything it does not allow is refused and logged on the host as apparmor="DENIED".
-profile klimo flags=(attach_disconnected,mediate_deleted) {
+# and the backup hook.
+# It runs in complain mode: nothing is refused, anything outside the rules below is only logged on the
+# host as apparmor="ALLOWED". A profile that refuses something unforeseen stops the heating controller,
+# so it is enforced only once real installs have shown that these rules cover everything.
+profile klimo flags=(attach_disconnected,mediate_deleted,complain) {
   #include <abstractions/base>
 
   # Docker's default capability set; the add-on asks for nothing beyond it
@@ -35,11 +38,12 @@ profile klimo flags=(attach_disconnected,mediate_deleted) {
   /{,usr/,usr/local/}lib/**.so* mr,
   /app/node_modules/**.node mr,
 
-  # what runs: Docker's init (PID 1), node, and backup_pre / backup_post (busybox sh + wget)
+  # what runs: Docker's init (PID 1), node, the image's own entrypoint scripts, and backup_pre /
+  # backup_post (busybox sh + wget); every program of the read-only image may run, nothing written
+  # at runtime may
   /sbin/docker-init ix,
-  /usr/local/bin/node ix,
+  /{bin,sbin,usr/bin,usr/sbin,usr/local/bin}/* ix,
   /app/backup-hook.sh ix,
-  /bin/busybox ix,
 
   # node and musl read memory, CPU and cgroup limits; nothing in /proc or /sys is written
   /proc/{,**} r,

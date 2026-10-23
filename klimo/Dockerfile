@@ -40,4 +40,7 @@ COPY card/klimo-cards.js ./card/klimo-cards.js
 COPY backup-hook.sh /app/backup-hook.sh
 RUN chmod +x /app/backup-hook.sh
 EXPOSE 8099
+# node runs as the container's command directly: the base image's docker-entrypoint.sh only adds a shell
+# in front of it, and that shell is one more thing the add-on's AppArmor profile would have to allow
+ENTRYPOINT []
 CMD [ "node", "dist/main.js" ]

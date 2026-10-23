@@ -25,7 +25,7 @@ The interface follows your Home Assistant language — English, Українсь
   restart.
 - **Own database** for the configuration, the decision journal, alerts and run history.
 - **Locked down**: reached only through ingress, no extra privileges, and its own AppArmor profile
-  that lets it write nothing but its database and the card bundle — security rating 8.
+  describing exactly what it reads and writes (in complain mode for now) — security rating 8.
 - **Controls any hardware through Home Assistant entities**: Zigbee2MQTT radiator valves, Shelly or
   Zigbee relays, the `climate` entity of a heat pump or an air conditioner, a flow-temperature
   `number`, scripts — anything Home Assistant can switch.
@@ -660,10 +660,10 @@ Developer Tools → States: a counter needs `state_class: total_increasing` (or 
 Set a missing state class in its integration or with `homeassistant: customize:`; the chart fills from
 then on.
 
-### "permission denied" in Klimo's log
+### `apparmor="ALLOWED"` lines in the host log
 
-The host's AppArmor profile refused a file Klimo tried to open. The host log (Settings → System → Logs,
-source **Host**) names the path in an `apparmor="DENIED"` line — please report it; see
+Klimo's AppArmor profile runs in complain mode: it blocks nothing, but logs any file access it does not
+list yet. The host log (Settings → System → Logs, source **Host**) names the path — please report it; see
 [Security](klimo/DOCS.md#security).
 
 ## License

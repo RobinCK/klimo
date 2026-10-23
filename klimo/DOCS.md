@@ -705,30 +705,30 @@ Guidance:
 ## Security
 
 Home Assistant rates the add-on **8 of 8**: the panel is reached only through Ingress, the add-on asks for
-no extra privileges, and it runs under its own AppArmor profile (`apparmor.txt`, loaded by the Supervisor
-with the add-on). The profile allows:
+no extra privileges, and it ships its own AppArmor profile (`apparmor.txt`, loaded by the Supervisor with
+the add-on). The profile describes what Klimo needs:
 
 - the network — Home Assistant, the Supervisor, MQTT, an external database, Telegram;
-- reading the add-on image and running only node, Docker's init and the backup hook;
+- reading the add-on image and running the programs in it (node, Docker's init, the backup hook);
 - reading `/data/options.json` and what node needs from `/proc` and `/sys`;
 - writing only the database in `/data` (`klimo.sqlite` and its `-wal`, `-shm`, `-journal` files), SQLite's
   temporary files in `/tmp` / `/var/tmp`, and `www/klimo-cards.js` in the Home Assistant config folder
   (creating `www` when it is missing).
 
-Everything else is refused: the rest of the Home Assistant config folder (`secrets.yaml`, `.storage`) is
-neither read nor written, the add-on's own `addon_configs` folder is not touched, the image cannot be
-changed, and the kernel files Docker keeps away from containers stay closed.
+The profile runs in **complain mode**: nothing is refused, an access outside these rules is only logged.
+A profile that refuses something unforeseen stops the add-on — and with it the heating control — so it
+will be switched to enforcing only after real installs have shown that the rules cover everything Klimo
+does. (0.2.0 enforced it and did not start: Docker's init could not run the base image's entrypoint.)
 
-A refused access is logged by the host, not by Klimo: Settings → System → Logs, source **Host** (or
-`ha host logs`) shows a kernel line such as
+An access outside the rules is logged by the host, not by Klimo: Settings → System → Logs, source
+**Host** (or `ha host logs`) shows a kernel line such as
 
 ```
-audit: type=1400 audit(1761134400.123:57): apparmor="DENIED" operation="open" class="file" profile="local_klimo" name="/homeassistant/secrets.yaml" pid=2154 comm="node" requested_mask="r" denied_mask="r" fsuid=0 ouid=0
+audit: type=1400 audit(1761134400.123:57): apparmor="ALLOWED" operation="open" class="file" profile="local_klimo" name="/homeassistant/secrets.yaml" pid=2154 comm="node" requested_mask="r" denied_mask="r" fsuid=0 ouid=0
 ```
 
 `profile` ends in `_klimo`, `name` is the path and `requested_mask` what was asked (`r` read, `w` write,
-`x` run). Klimo's own log shows the same moment as a *permission denied* (`EACCES`) error. Please report
-such a line: it means Klimo needs a path the profile does not know yet.
+`x` run). Please report such a line: it means Klimo touches a path the profile does not know yet.
 
 ## Migrating from automations
 
@@ -765,8 +765,8 @@ the `klimo_event` event) are welcome.
   If Home Assistant reports units it cannot convert, control pauses and a banner says so.
 - **Telegram stops answering buttons** — another program polls the same bot token (often HA's
   `telegram_bot` integration); use one or the other.
-- **"permission denied" in Klimo's log** — the host's AppArmor refused a file access; the host log names
-  the path (see [Security](#security)).
+- **`apparmor="ALLOWED"` lines for `_klimo` in the host log** — Klimo touched a path its AppArmor profile
+  does not list yet; nothing was blocked, but please report the line (see [Security](#security)).
 - **The consumption chart is empty** — the meter has no state class, so Home Assistant keeps no
   statistics for it: set `state_class: total_increasing` (a power sensor: `measurement`) in its
   integration or with `homeassistant: customize:` (see [Consumption and cost](#consumption-and-cost)).
