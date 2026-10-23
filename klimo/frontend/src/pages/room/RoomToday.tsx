@@ -166,11 +166,12 @@ export function RoomToday({
             future: s.future,
           }))}
           spans={(d?.demandSpans ?? []).map((s) => ({ from: s.from, to: s.to, tone: s.mode }))}
+          humidity={(d?.humidity ?? []).map(([ts, v]) => ({ t: ts, pct: v }))}
           now={now}
           dayStart={dayStart}
           dayEnd={dayEnd}
           tol={{ heat: { below: scale(tol.heat.below), above: scale(tol.heat.above) }, cool: { below: scale(tol.cool.below), above: scale(tol.cool.above) } }}
-          legend={{ temperature: t('temperature'), target: t('target ± tolerance'), future: t('scheduled ahead'), heat: t('heated'), cool: t('cooled') }}
+          legend={{ temperature: t('temperature'), target: t('target ± tolerance'), future: t('scheduled ahead'), heat: t('heated'), cool: t('cooled'), humidity: t('humidity') }}
           ariaLabel={aria}
           unitText={displayUnits() === 'F' ? '°F' : '°'}
           emptyText={emptyText}

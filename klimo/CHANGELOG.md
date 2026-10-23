@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.7
+
+- **The room's «Today» chart shows the humidity too** — a thin pale line on a scale of its own, behind
+  the temperature, with the current value at its end. A few percent of drift stays a gentle slope, so
+  it does not pull the eye from the temperature.
+
 ## 0.2.6
 
 - **The boiler relay only switches on and off.** Closed — the boiler heats, open — it does not. Klimo

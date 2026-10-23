@@ -115,6 +115,12 @@
   background: color-mix(in srgb, var(--c) 30%, transparent);
 }
 
+.swHumidity {
+  width: 14px;
+  height: 1px;
+  background: color-mix(in srgb, var(--c) 55%, transparent);
+}
+
 .dayPlot {
   position: relative;
   width: 100%;
@@ -157,6 +163,29 @@
   stroke-width: 2.25;
   stroke-linejoin: round;
   stroke-linecap: round;
+}
+
+/* humidity stays in the background: thin and pale under the temperature line */
+.dayHumidity {
+  fill: none;
+  stroke: color-mix(in srgb, var(--c) 32%, transparent);
+  stroke-width: 1.1;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.dayHumidityLabel {
+  position: absolute;
+  transform: translate(10px, -50%);
+  color: color-mix(in srgb, var(--c) 55%, transparent);
+  font-size: var(--ui-fs-micro);
+  font-weight: 400;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.dayHumidityLabel[data-edge='end'] {
+  transform: translate(calc(-100% - 10px), -50%);
 }
 
 .dayNow {

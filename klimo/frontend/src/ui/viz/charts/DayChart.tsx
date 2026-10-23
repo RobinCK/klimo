@@ -47,13 +47,15 @@ export interface DayChartProps {
   targets: readonly DayChartTarget[];
   /** When the room was heated or cooled (full-height tinted columns). */
   spans: readonly DayChartSpan[];
+  /** Relative humidity (%), a faint line on its own scale with its last value at the end; null = no reading. */
+  humidity?: readonly { t: number; pct: number | null }[];
   now: number;
   /** Local midnight of the charted day (epoch ms). */
   dayStart: number;
   /** Next local midnight; differs from +24 h on daylight-saving days. */
   dayEnd?: number;
   tol?: { heat: Band; cool: Band };
-  legend: { temperature: string; target: string; future: string; heat?: string; cool?: string };
+  legend: { temperature: string; target: string; future: string; heat?: string; cool?: string; humidity?: string };
   title?: string;
   /** One-sentence summary: «Графік температури у Вітальні за сьогодні: нічна ціль 18°, вдень 20°, тричі гріла». */
   ariaLabel: string;
@@ -65,12 +67,34 @@ export interface DayChartProps {
 }
 
 const DEFAULT_TOL = { heat: { below: 0.2, above: 0.2 }, cool: { below: 0.3, above: 0.3 } };
+/** The humidity scale spans at least this many points, so a few % of drift stays a gentle slope. */
+const HUMIDITY_MIN_SPAN = 20;
+
+/** Polylines of the known samples between `from` and `until`, broken at gaps, and the last one drawn. */
+function track(points: readonly { t: number; v: number | null }[], X: (t: number) => number, Y: (v: number) => number, from: number, until: number) {
+  const lines: string[] = [];
+  let run: string[] = [];
+  let last: { t: number; v: number } | null = null;
+  for (const p of [...points].sort((a, b) => a.t - b.t)) {
+    if (p.t < from || p.t > until) continue;
+    if (p.v == null || !Number.isFinite(p.v)) {
+      if (run.length > 1) lines.push(run.join(' '));
+      run = [];
+      continue;
+    }
+    run.push(`${X(p.t).toFixed(1)},${Y(p.v).toFixed(1)}`);
+    last = { t: p.t, v: p.v };
+  }
+  if (run.length > 1) lines.push(run.join(' '));
+  return { lines, last };
+}
 
 /** A room's day: temperature line, target band (past solid, schedule ahead dashed), heating spans, now. */
 export function DayChart({
   series,
   targets,
   spans,
+  humidity,
   now,
   dayStart,
   dayEnd,
@@ -152,20 +176,31 @@ export function DayChart({
     }
 
     // the line: known samples up to now, broken at gaps
-    const lines: string[] = [];
-    let run: string[] = [];
-    let last: { t: number; c: number } | null = null;
-    for (const p of [...series].sort((a, b) => a.t - b.t)) {
-      if (p.t < dayStart || p.t > Math.min(end, now)) continue;
-      if (p.c == null || !Number.isFinite(p.c)) {
-        if (run.length > 1) lines.push(run.join(' '));
-        run = [];
-        continue;
-      }
-      run.push(`${X(p.t).toFixed(1)},${Y(p.c).toFixed(1)}`);
-      last = { t: p.t, c: p.c };
+    const { lines, last } = track(
+      series.map((p) => ({ t: p.t, v: p.c })),
+      X,
+      Y,
+      dayStart,
+      Math.min(end, now),
+    );
+
+    // humidity on a scale of its own across the plot, never steeper than its minimum span
+    const hum = (humidity ?? []).filter((p) => p.pct != null && Number.isFinite(p.pct)).map((p) => p.pct as number);
+    let hLo = hum.length ? Math.min(...hum) : 0;
+    let hHi = hum.length ? Math.max(...hum) : 100;
+    if (hHi - hLo < HUMIDITY_MIN_SPAN) {
+      const mid = (hHi + hLo) / 2;
+      hLo = mid - HUMIDITY_MIN_SPAN / 2;
+      hHi = mid + HUMIDITY_MIN_SPAN / 2;
     }
-    if (run.length > 1) lines.push(run.join(' '));
+    const humTrack = track(
+      (humidity ?? []).map((p) => ({ t: p.t, v: p.pct })),
+      X,
+      linear(hLo, hHi, Y_BOTTOM, yTop),
+      dayStart,
+      Math.min(end, now),
+    );
+    const humLast = humTrack.last ? { x: X(humTrack.last.t), y: linear(hLo, hHi, Y_BOTTOM, yTop)(humTrack.last.v), v: humTrack.last.v } : null;
 
     const nowIn = now >= dayStart && now <= end;
     const active = spans.find((sp) => sp.from <= now && (sp.to == null || sp.to >= now - 60_000));
@@ -177,12 +212,14 @@ export function DayChart({
       heat,
       cool,
       lines,
+      humLines: humTrack.lines,
+      humLast,
       nowX: nowIn ? X(now) : null,
-      dot: last && nowIn ? { x: X(last.t), y: Y(last.c) } : null,
+      dot: last && nowIn ? { x: X(last.t), y: Y(last.v) } : null,
       dotTone: active?.tone ?? null,
       hasCool: spans.some((sp) => sp.tone === 'cool'),
     };
-  }, [series, targets, spans, now, dayStart, end, tol, plotH, x0, yTop]);
+  }, [series, targets, spans, humidity, now, dayStart, end, tol, plotH, x0, yTop]);
 
   const dotColor = g.dotTone ? toneVar(g.dotTone, 'line') : 'var(--ui-text-1)';
   const nowPct = g.nowX != null ? (g.nowX / W) * 100 : null;
@@ -210,6 +247,12 @@ export function DayChart({
               {legend.heat}
             </span>
           ) : null}
+          {legend.humidity && g.humLines.length ? (
+            <span className={s.legendItem}>
+              <span className={s.swHumidity} style={{ '--c': toneVar('cool', 'line') } as CSSProperties} />
+              {legend.humidity}
+            </span>
+          ) : null}
           {legend.cool && g.hasCool ? (
             <span className={s.legendItem}>
               <span className={s.swSpan} style={{ '--c': toneVar('cool', 'line') } as CSSProperties} />
@@ -225,6 +268,9 @@ export function DayChart({
           {g.cool ? <path d={g.cool} className={s.daySpan} style={{ '--c': toneVar('cool', 'line') } as CSSProperties} /> : null}
           {g.bandPast ? <path d={g.bandPast} className={s.dayBandPast} /> : null}
           {g.bandFuture ? <path d={g.bandFuture} className={s.dayBandFuture} vectorEffect="non-scaling-stroke" /> : null}
+          {g.humLines.map((points, i) => (
+            <polyline key={`h${i}`} points={points} className={s.dayHumidity} style={{ '--c': toneVar('cool', 'line') } as CSSProperties} vectorEffect="non-scaling-stroke" />
+          ))}
           {g.lines.map((points, i) => (
             <polyline key={i} points={points} className={s.dayLine} vectorEffect="non-scaling-stroke" />
           ))}
@@ -238,6 +284,16 @@ export function DayChart({
             style={{ left: pct((g.dot.x / W) * 100), top: pct((g.dot.y / H) * 100), '--c': dotColor } as CSSProperties}
             aria-hidden="true"
           />
+        ) : null}
+        {g.humLast ? (
+          <span
+            className={s.dayHumidityLabel}
+            data-edge={g.humLast.x / W > 0.94 ? 'end' : undefined}
+            style={{ left: pct((g.humLast.x / W) * 100), top: pct((g.humLast.y / H) * 100), '--c': toneVar('cool', 'line') } as CSSProperties}
+            aria-hidden="true"
+          >
+            {Math.round(g.humLast.v)}%
+          </span>
         ) : null}
         {g.grid.map(({ v, y }) => (
           <span key={v} className={s.dayYLabel} style={{ top: pct((y / H) * 100) }} aria-hidden="true">
