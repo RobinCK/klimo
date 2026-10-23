@@ -81,6 +81,7 @@ export class PumpRow {
   @IntCol() minOnSec: number;
   @BoolCol() exercise: boolean;
   @JsonCol() speed: Pump['speed'];
+  @JsonCol() meter: Pump['meter'];
   @BoolCol() enabled: boolean;
   @IntCol() order: number;
 }

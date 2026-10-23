@@ -19,6 +19,7 @@ const AREA: Record<RouteName, AreaKey> = {
   sources: 'system',
   source: 'system',
   strategy: 'system',
+  energy: 'system',
   journal: 'system',
   notifications: 'notifications',
   devices: 'devices',

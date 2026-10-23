@@ -28,6 +28,7 @@ import { circuitKindLabel, fmtTemp, pumpGroupModeLabel, t } from '@i18n';
 import type { SystemData } from './shared';
 import { bypassHint, flowSensorHint, mixingHeatHint, mixingValveHint, pumpHint, returnSensorHint, runOnHint } from './circuitHints';
 import { changeErrorText, modeLabel, modeOptions, modeWords } from './circuitTexts';
+import { PumpMetersTable } from './energy/pumpMeters';
 
 const KINDS: readonly CircuitKind[] = ['radiators', 'floor', 'fancoil', 'other'];
 
@@ -373,6 +374,7 @@ function PumpsEditor({ d, dto }: { d: SystemData; dto: CircuitDto }) {
                 hint={t('A short run once a week, so the pump does not seize in summer.')}
                 onChange={(on) => void patch.run(p.id, { exercise: on })}
               />
+              <PumpMetersTable pumps={[p]} label={() => t('Electricity meter')} live={null} editable={d.canEdit} onSaved={() => void d.circuits.reload()} />
               <Row gap="sm" wrap>
                 <Button variant="secondary" size="sm" icon="play" onClick={() => void exercise.run(p.id)}>
                   {t('Run for a minute')}

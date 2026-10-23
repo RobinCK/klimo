@@ -1,8 +1,9 @@
 /**
- * System («Система»): the plant as a whole. Three tabs on wide screens — the schema (house
+ * System («Система»): the plant as a whole. Four tabs on wide screens — the schema (house
  * mode, what-if, circuits and pumps, protections, Home Assistant entities, the decision
- * journal), the sources, and the strategy with its triggers and energy policy. Phones get a
- * status page, the source list with drill-in, and the strategy as stacked sections.
+ * journal), the sources, the strategy with its triggers and energy policy, and what the sources
+ * and pumps used. Phones get a status page, the source list with drill-in, the strategy as
+ * stacked sections and the consumption.
  */
 import { useCallback, useState } from 'react';
 import type { Id, SchemaView, SimPresetId } from '@api/model';
@@ -20,11 +21,12 @@ import { PhoneCircuits, PhoneStatus } from './PhoneStatus';
 import { SchemaSection, WhySection } from './Schema';
 import { useSystemData, type SystemData } from './shared';
 import { SourcesTab } from './sources/SourcesTab';
+import { EnergyTab } from './energy/EnergyTab';
 import { StrategyTab } from './strategy/StrategyTab';
 
 const PRESETS: readonly SimPresetId[] = ['now', 'frost', 'blackout_sun', 'shoulder', 'summer', 'custom'];
 
-type Tab = 'schema' | 'sources' | 'strategy';
+type Tab = 'schema' | 'sources' | 'strategy' | 'energy';
 
 function SystemNav({ current }: { current: Tab }) {
   return (
@@ -35,6 +37,7 @@ function SystemNav({ current }: { current: Tab }) {
         { key: 'schema', label: t('Schema'), to: paths.system() },
         { key: 'sources', label: t('Sources'), to: paths.sources() },
         { key: 'strategy', label: t('Strategy & triggers'), to: paths.strategy() },
+        { key: 'energy', label: t('Consumption'), to: paths.energy() },
       ]}
     />
   );
@@ -98,6 +101,9 @@ export default function SystemPage(): JSX.Element {
   }
   if (route.name === 'strategy') {
     return <StrategyTab d={d} phone={phone} nav={phone ? null : <SystemNav current="strategy" />} />;
+  }
+  if (route.name === 'energy') {
+    return <EnergyTab d={d} phone={phone} nav={phone ? null : <SystemNav current="energy" />} />;
   }
   if (phone) return route.query.section === 'circuits' ? <PhoneCircuits d={d} /> : <PhoneStatus d={d} />;
   return <SchemaTab d={d} focusJournal={route.name === 'journal'} />;

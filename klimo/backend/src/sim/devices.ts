@@ -257,6 +257,12 @@ function zigbeeRelay(base: string, label: string, area: string, target: RelayTar
   };
 }
 
+/** A smart plug that also counts what went through it (kWh), next to its power. */
+function withEnergy(d: DeviceSpec): DeviceSpec {
+  const energy = ent(`sensor.${d.name}_energy`, 'energy', 'energy_meter', 'Енергія', '0', counter('kWh', 'energy'));
+  return { ...d, entities: [...d.entities.slice(0, 2), energy, ...d.entities.slice(2)] };
+}
+
 function wifiRelay(base: string, label: string, area: string, target: RelayTarget, powerW: number, withPower: boolean): DeviceSpec {
   const entities = [ent(`switch.${base}`, 'switch', 'switch', null, 'off')];
   if (withPower) entities.push(ent(`sensor.${base}_power`, 'power', 'power', 'Потужність', '0', measurement('W', 'power')));
@@ -340,7 +346,7 @@ function buildDevices(): DeviceSpec[] {
       ],
     },
     zigbeeRelay('radiator_pump', 'Насос радіаторів', 'kotelnia', 'pump_radiators', 'Zigbee-реле', 1, 128, 45, false),
-    zigbeeRelay('floor_heating_pump', 'Насос теплої підлоги', 'kotelnia', 'pump_floor_a', 'Zigbee-реле', 1, 137, 40, false),
+    withEnergy(zigbeeRelay('floor_heating_pump', 'Насос теплої підлоги', 'kotelnia', 'pump_floor_a', 'Zigbee-розетка', 1, 137, 40, true)),
     zigbeeRelay('study_heater', 'Конвектор · розетка', 'kabinet', 'convector', 'Zigbee-розетка 16 А', 1, 118, 1500, true),
     wifiRelay('floor_pump_b', 'Насос підлоги · резерв', 'kotelnia', 'pump_floor_b', 40, false),
     wifiRelay('manifold_pump', 'Насос колектора', 'kotelnia', 'pump_manifold', 60, false),

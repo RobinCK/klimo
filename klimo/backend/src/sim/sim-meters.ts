@@ -4,7 +4,8 @@ import type { World } from './thermal-model';
 
 /* =====================================================================================================
  * The demo house's meters: a pulse counter on the gas meter (the boiler and the kitchen stove share
- * it) and the heat pump's own electricity and heat counters. They grow with what the simulated plant
+ * it), the heat pump's own electricity and heat counters and the energy counter of the floor pump's
+ * plug. They grow with what the simulated plant
  * does — the flame and how hard the boiler fires, the compressor's draw and output — and report like
  * their integrations do: cumulative readings with a state class HA compiles into long-term statistics.
  * ===================================================================================================== */
@@ -15,6 +16,11 @@ const HOUR = 60 * MIN;
 export const GAS_METER = 'sensor.gas_meter';
 export const HP_ENERGY_METER = 'sensor.heat_pump_energy';
 export const HP_HEAT_METER = 'sensor.heat_pump_heat_energy';
+/** The energy counter of the plug the floor pump runs on. */
+export const FLOOR_PUMP_METER = 'sensor.floor_heating_pump_energy';
+export const FLOOR_PUMP_KW = 0.045;
+/** What the plug draws with the pump off (its own relay and radio). */
+export const PLUG_STANDBY_KW = 0.0006;
 
 /** The gas counter as other installs report it; the template copy has no state class, so no statistics. */
 export const GAS_METER_MIRRORS: readonly { entityId: EntityId; perM3: number; statistics: boolean }[] = [
@@ -33,12 +39,18 @@ export interface MeterReadings {
   gasM3: number;
   hpKwh: number;
   hpHeatKwh: number;
+  floorPumpKwh: number;
 }
 
-const METER_READINGS: Readonly<Record<EntityId, keyof MeterReadings>> = { [GAS_METER]: 'gasM3', [HP_ENERGY_METER]: 'hpKwh', [HP_HEAT_METER]: 'hpHeatKwh' };
+const METER_READINGS: Readonly<Record<EntityId, keyof MeterReadings>> = {
+  [GAS_METER]: 'gasM3',
+  [HP_ENERGY_METER]: 'hpKwh',
+  [HP_HEAT_METER]: 'hpHeatKwh',
+  [FLOOR_PUMP_METER]: 'floorPumpKwh',
+};
 
 /** Where the meters stood when the long-term history begins. */
-export const READINGS_AT_ARCHIVE_START: MeterReadings = { gasM3: 4213.27, hpKwh: 6120.42, hpHeatKwh: 17830.95 };
+export const READINGS_AT_ARCHIVE_START: MeterReadings = { gasM3: 4213.27, hpKwh: 6120.42, hpHeatKwh: 17830.95, floorPumpKwh: 212.64 };
 
 /** Readings go to HA rounded to what the counters resolve (10 l of gas, 10 Wh). */
 export const meterValue = (x: number): number => Math.round(x * 100) / 100;
@@ -81,7 +93,7 @@ export class SimMeters {
   }
 
   /** Adds what the plant used since the last call, at the rates it runs with now. */
-  advance(w: World, at: EpochMs, localMinute: number): void {
+  advance(w: World, at: EpochMs, localMinute: number, floorPumpOn: boolean): void {
     const h = (at - this.at) / HOUR;
     if (h <= 0) return;
     this.at = at;
@@ -89,6 +101,7 @@ export class SimMeters {
     this.readings.gasM3 += gasM3PerHour(boilerKw(w), stoveKw(localMinute)) * h;
     this.readings.hpKwh += w.hp.electricKw * h;
     if (w.hp.mode === 'heat') this.readings.hpHeatKwh += w.hp.thermalKw * h;
+    this.readings.floorPumpKwh += (floorPumpOn ? FLOOR_PUMP_KW : PLUG_STANDBY_KW) * h;
   }
 }
 

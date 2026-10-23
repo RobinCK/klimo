@@ -927,6 +927,14 @@ export function validatePump(p: Pump, g: ConfigGraph): Issues {
     if (!isNum(p.speed.heat) && !isStr(p.speed.heat)) v.push('speed.heat', 'type');
     if (!isNum(p.speed.cool) && !isStr(p.speed.cool)) v.push('speed.cool', 'type');
   }
+  if (p.meter !== null && v.obj('meter', p.meter)) {
+    const electric = p.meter.kind === 'electricity';
+    if (!electric) v.push('meter.kind', 'enum', { values: 'electricity' });
+    v.entity('meter.entityId', p.meter.entityId, METER_DOMAINS, { required: true, checkExists: p.enabled });
+    if (electric && p.meter.unit !== null && v.str('meter.unit', p.meter.unit, 1, 16) && !meterUnitFits('electricity', p.meter.unit)) {
+      v.push('meter.unit', 'unit', { expected: Object.keys(METER_UNITS).filter((u) => meterUnitFits('electricity', u)).join('|') });
+    }
+  }
   return v.issues;
 }
 

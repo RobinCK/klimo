@@ -434,7 +434,7 @@ function RunsTable({ data, kinds, source }: { data: SourceConsumptionDto; kinds:
 
 /* ---------------- meters ---------------- */
 
-function meterRowStatus(m: ConsumptionMeterDto | undefined): Pick<EntityBindingRow, 'status' | 'statusLabel'> {
+export function meterRowStatus(m: ConsumptionMeterDto | undefined): Pick<EntityBindingRow, 'status' | 'statusLabel'> {
   if (!m) return { status: 'info' };
   if (m.status === 'missing') return { status: 'err', statusLabel: t('missing') };
   if (m.status === 'unsupported_unit') return { status: 'err', statusLabel: t('wrong unit') };
@@ -482,7 +482,12 @@ function MetersBlock({
     };
   });
   return (
-    <Section variant="plain" level={3} title={t('Consumption meters')} subtitle={t('one per kind; only their readings in Home Assistant are used')}>
+    <Section
+      variant="plain"
+      level={3}
+      title={t('Consumption meters')}
+      subtitle={t('what this source itself uses, one per kind; the pumps have meters of their own on the Consumption tab')}
+    >
       <Stack gap="sm">
         <EntityBindingTable ariaLabel={t('Meters of the source')} rows={rows} />
         {editable && hidden.length ? (
@@ -497,9 +502,22 @@ function MetersBlock({
   );
 }
 
-function MeterDialog({ kind, value, onClose, onPick }: { kind: MeterKind; value: string | null; onClose: () => void; onPick: (id: string | null) => void }) {
+/** Picks the meter of one kind; `suggested` (the energy sensor on a pump's own plug) is filled in when none is bound. */
+export function MeterDialog({
+  kind,
+  value,
+  suggested,
+  onClose,
+  onPick,
+}: {
+  kind: MeterKind;
+  value: string | null;
+  suggested?: string | null;
+  onClose: () => void;
+  onPick: (id: string | null) => void;
+}) {
   const search = useEntitySearch(kind === 'gas' ? 'gas_meter' : kind === 'electricity' ? 'electricity_meter' : 'heat_meter');
-  const [chosen, setChosen] = useState<string | null>(value);
+  const [chosen, setChosen] = useState<string | null>(value ?? suggested ?? null);
   const use = useCallback(() => onPick(chosen), [chosen, onPick]);
   return (
     <Dialog
@@ -516,7 +534,7 @@ function MeterDialog({ kind, value, onClose, onPick }: { kind: MeterKind; value:
       <Stack gap="md">
         <EntityPicker
           // a focused picker opens its list over «Remove» and «Cancel»; a bound meter opens closed
-          autoFocus={!value}
+          autoFocus={!value && !suggested}
           clearable
           ariaLabel={meterLabel(kind)}
           placeholder={t('Search Home Assistant entities')}

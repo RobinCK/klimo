@@ -51,6 +51,7 @@ function pageFor(name: RouteName, phone: boolean): PageKey {
     case 'sources':
     case 'source':
     case 'strategy':
+    case 'energy':
       return 'system';
     case 'notifications':
       return 'notifications';

@@ -2,7 +2,7 @@ import { addDays, fromLocal, toLocal } from '../engine/core/time';
 import type { EpochMs, LocalDate } from '../shared/model';
 import { stream } from './random';
 import type { HourRow } from './sim-recorder';
-import { BOILER_MAX_KW, BOILER_MIN_KW, gasM3PerHour, meterValue, type MeterReadings, stoveKw } from './sim-meters';
+import { BOILER_MAX_KW, BOILER_MIN_KW, FLOOR_PUMP_KW, gasM3PerHour, meterValue, type MeterReadings, PLUG_STANDBY_KW, stoveKw } from './sim-meters';
 import { heatPumpCop } from './thermal-model';
 
 /* =====================================================================================================
@@ -58,6 +58,7 @@ export interface Archive {
   gas: HourRow[];
   hpEnergy: HourRow[];
   hpHeat: HourRow[];
+  floorPump: HourRow[];
   /** Meter readings at `to`. */
   end: MeterReadings;
   runs: ArchiveRun[];
@@ -144,7 +145,7 @@ class HourAcc {
 
 export function buildArchive(spec: ArchiveSpec, start: MeterReadings): Archive {
   const climate = new ArchiveClimate(spec.seed);
-  const out: Archive = { outdoor: [], sunnyWall: [], gas: [], hpEnergy: [], hpHeat: [], end: { ...start }, runs: [] };
+  const out: Archive = { outdoor: [], sunnyWall: [], gas: [], hpEnergy: [], hpHeat: [], floorPump: [], end: { ...start }, runs: [] };
   const readings = { ...start };
   const outdoorAcc = new HourAcc();
   const wallAcc = new HourAcc();
@@ -211,6 +212,8 @@ export function buildArchive(spec: ArchiveSpec, start: MeterReadings): Archive {
       readings.gasM3 += gasM3PerHour(boilerKw, stoveKw(minute)) * h;
       readings.hpKwh += (hp.on ? hpKw / heatPumpCop(tout) + 0.05 : heating ? 0.12 : 0.01) * h;
       readings.hpHeatKwh += hpKw * h;
+      // the floor runs with whichever source heats
+      readings.floorPumpKwh += (hp.on || boiler.on ? FLOOR_PUMP_KW : PLUG_STANDBY_KW) * h;
 
       outdoorAcc.add(tout);
       wallAcc.add(tout + sunnyWallBonus(minute, doy));
@@ -222,6 +225,7 @@ export function buildArchive(spec: ArchiveSpec, start: MeterReadings): Archive {
         meterRow(out.gas, hour, readings.gasM3, start.gasM3);
         meterRow(out.hpEnergy, hour, readings.hpKwh, start.hpKwh);
         meterRow(out.hpHeat, hour, readings.hpHeatKwh, start.hpHeatKwh);
+        meterRow(out.floorPump, hour, readings.floorPumpKwh, start.floorPumpKwh);
         hour += HOUR;
       }
     }

@@ -34,15 +34,19 @@ test('source consumption: any panel user, range and date validated, today by def
   });
 });
 
-test('house consumption for the overview: today unless a date is given', async () => {
+test('house consumption: today for the overview unless a period is given', async () => {
   await withApi(async (api) => {
     let res = await api.request('GET', '/api/energy/consumption', { headers: MEMBER });
     assert.equal(res.status, 200);
-    assert.deepEqual(api.calls.of('consumption.house')[0], [undefined]);
+    assert.deepEqual(api.calls.of('consumption.house')[0], [{}]);
     res = await api.request('GET', '/api/energy/consumption?date=2026-10-20');
     assert.equal(res.status, 200);
-    assert.deepEqual(api.calls.of('consumption.house')[1], ['2026-10-20']);
+    assert.deepEqual(api.calls.of('consumption.house')[1], [{ date: '2026-10-20' }]);
+    res = await api.request('GET', '/api/energy/consumption?range=month&date=2026-10-20');
+    assert.deepEqual(api.calls.of('consumption.house')[2], [{ range: 'month', date: '2026-10-20' }]);
     res = await api.request('GET', '/api/energy/consumption?date=yesterday');
+    assert.equal(res.status, 400);
+    res = await api.request('GET', '/api/energy/consumption?range=decade');
     assert.equal(res.status, 400);
   });
 });

@@ -89,8 +89,8 @@ device with what it expects before it sends a command.
 - **Override** — a time-boxed manual change: a room target, boost, airing, room off, a room or house
   profile, a source locked off. Each one has an end ("until the next slot", 1 h, 3 h…, or none under
   manual control) and can be undone.
-- **Meter** — a gas, electricity or heat counter of a source; Klimo reads its long-term statistics in
-  Home Assistant for the consumption charts and costs.
+- **Meter** — a gas, electricity or heat counter of a source, or the energy counter of a pump's plug;
+  Klimo reads its long-term statistics in Home Assistant for the consumption charts and costs.
 - **Season** — heating, between seasons, cooling. **House mode** — Auto, heating only, cooling only or
   off (off still keeps frost protection, exercise runs and notifications).
 - **Trigger** — a named live condition over Home Assistant; **action** — what changes while a trigger
@@ -393,8 +393,9 @@ page under *Consumption meters*:
 - **Gas**: a counter in m³, ft³, L, kWh or MJ (device class `gas`, state class `total_increasing` or
   `total`). A boiler and a stove on one meter: the hours, days and months show everything the meter
   counted; a single run gets only the gas used while the boiler ran.
-- **Electricity**: an energy counter in kWh, or a power sensor in W or kW, which is added up over time
-  (an estimate). A source saved before meters existed uses its power sensor.
+- **Electricity**: what the source itself draws — an energy counter in kWh, or a power sensor in W or
+  kW, which is added up over time (an estimate). For a gas boiler that is the energy sensor of its own
+  smart plug (its pump and electronics). A source saved before meters existed uses its power sensor.
 - **Heat**: a heat meter in kWh. With it the page shows the boiler's efficiency (heat ÷ the energy of
   the gas) or the heat pump's COP (heat ÷ electricity).
 
@@ -414,10 +415,20 @@ runs and was shared out by running time. A meter that is reset or replaced is sk
 Without a state class Home Assistant keeps no statistics and the chart stays empty: set
 `state_class: total_increasing` in the integration or with `homeassistant: customize:`.
 
+A **pump** has a meter too: the energy sensor of the plug or relay it is switched by (kWh, or a power
+sensor in W). Choose it under *System → Consumption → Pump meters* or on the pump's card in its
+circuit; the energy sensor on the pump's own plug is offered first.
+
+**System → Consumption** shows the whole house and who used it, for a day, a week, a month or a year:
+the gas, the electricity and the cost against the period before, a chart of gas or electricity, and a
+row for every source and pump — its gas, electricity, cost and running time. A meter shared by two
+sources counts in both rows and once in the house. A row without a meter says so; a source's row opens
+its page, where its meters are chosen.
+
 **Prices** are set in *Settings → Energy prices*: the currency, the price of a kWh of electricity, the
 price of gas per m³ or per kWh, and the calorific value of the gas (10.5 kWh per m³ unless the bill says
 otherwise). The **Energy** tile of the overview adds today's gas, electricity and cost of all sources
-with meters.
+and pumps with meters.
 
 ## Strategy
 

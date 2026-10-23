@@ -76,7 +76,7 @@ export function periodLabel(dto: Pick<SourceConsumptionDto, 'range' | 'date' | '
 }
 
 /** Axis label and full name of a bucket. */
-export function bucketLabels(dto: Pick<SourceConsumptionDto, 'range' | 'bucket'>, b: ConsumptionBucket): { label: string; title: string } {
+export function bucketLabels(dto: Pick<SourceConsumptionDto, 'range' | 'bucket'>, b: Pick<ConsumptionBucket, 'start' | 'end'>): { label: string; title: string } {
   const z = zonedParts(b.start);
   if (dto.bucket === 'hour') return { label: pad(z.hour), title: `${fmtTime(b.start)}–${fmtTime(b.end)}` };
   if (dto.bucket === 'month') return { label: monthShort(z.month), title: `${monthLong(z.month)} ${z.year}` };
@@ -88,9 +88,19 @@ export function bucketLabels(dto: Pick<SourceConsumptionDto, 'range' | 'bucket'>
 
 /** How the period compares with the one before («+12% vs yesterday at this time»). */
 export function changeText(dto: SourceConsumptionDto, kind: MeterKind): string | null {
+  return changeAgainst(dto, dto.totals[kind], dto.previous.totals[kind], dto.previous.complete);
+}
+
+/** «+12% vs yesterday at this time» for an amount of the period and the same of the period before. */
+export function changeAgainst(
+  dto: Pick<SourceConsumptionDto, 'range' | 'from' | 'to' | 'now'>,
+  value: number | null,
+  before: number | null,
+  complete: boolean,
+): string | null {
   // against a period recorded only in part a percentage would mislead (+2653 %)
-  if (!dto.previous.complete) return dto.previous.totals[kind] != null ? t('the period before is only partly recorded') : null;
-  const pct = fmtChange(dto.totals[kind], dto.previous.totals[kind]);
+  if (!complete) return before != null ? t('the period before is only partly recorded') : null;
+  const pct = fmtChange(value, before);
   if (!pct) return null;
   const running = dto.from <= dto.now && dto.now < dto.to;
   const text = running

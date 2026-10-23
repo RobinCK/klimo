@@ -472,8 +472,8 @@ export const api = {
     get: () => http.get<EnergyDto>('/energy'),
     patch: (p: EnergyPatch) => http.patch<EnergyDto>('/energy', p),
     setup: (body: EnergySetupRequest) => http.post<EnergyDto>('/energy/setup', body),
-    /** Today across the sources with meters (the overview energy tile). */
-    consumption: () => http.get<HouseConsumptionDto>('/energy/consumption'),
+    /** What the house used in a period and who used it (default: today — the overview energy tile). */
+    consumption: (q: Partial<ConsumptionQuery> = {}) => http.get<HouseConsumptionDto>(`/energy/consumption${qs({ range: q.range, date: q.date })}`),
   },
   triggers: {
     list: () => http.get<TriggerDto[]>('/triggers'),

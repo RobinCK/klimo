@@ -207,7 +207,7 @@ export class PlantController {
       return;
     }
     const name = pump.name ?? found(tx.get('manifolds', manifoldId), 'Manifold').name;
-    const value: Omit<Pump, 'id' | 'order'> = { name, circuitId: null, manifoldId, entityId: pump.entityId, rule: 'source', runOnHeatMin: pump.runOnHeatMin, runOnCoolMin: pump.runOnCoolMin ?? 0, minOnSec: 60, exercise: true, speed: null, enabled: true };
+    const value: Omit<Pump, 'id' | 'order'> = { name, circuitId: null, manifoldId, entityId: pump.entityId, rule: 'source', runOnHeatMin: pump.runOnHeatMin, runOnCoolMin: pump.runOnCoolMin ?? 0, minOnSec: 60, exercise: true, speed: null, meter: null, enabled: true };
     await tx.create('pumps', value as Omit<Pump, 'id'>, actor);
   }
 

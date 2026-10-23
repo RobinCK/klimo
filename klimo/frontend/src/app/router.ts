@@ -21,6 +21,7 @@ export type RouteName =
   | 'sources'
   | 'source'
   | 'strategy'
+  | 'energy'
   | 'journal'
   | 'notifications'
   | 'devices'
@@ -51,6 +52,7 @@ const PATTERNS: [RouteName, RegExp, string[]][] = [
   ['sources', /^\/system\/sources$/, []],
   ['source', /^\/system\/sources\/([^/]+)$/, ['id']],
   ['strategy', /^\/system\/strategy$/, []],
+  ['energy', /^\/system\/energy$/, []],
   ['journal', /^\/system\/journal$/, []],
   ['system', /^\/system$/, []],
   ['notifications', /^\/notifications$/, []],
@@ -75,6 +77,7 @@ export const paths = {
   sources: () => '/system/sources',
   source: (id: string) => `/system/sources/${encodeURIComponent(id)}`,
   strategy: () => '/system/strategy',
+  energy: () => '/system/energy',
   journal: () => '/system/journal',
   notifications: () => '/notifications',
   devices: (q: { filter?: string } = {}) => withQuery('/devices', q),

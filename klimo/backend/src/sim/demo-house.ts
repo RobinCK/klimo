@@ -334,7 +334,13 @@ export function buildDemoHouse(base: ExportBundle, now: EpochMs, lang: Lang = 'u
   const pump = (id: Id, name: string, entityId: string, patch: Partial<Pump>, order: number): Pump => ({ ...DEFAULT_PUMP(), id, name, entityId, order, ...patch });
   b.pumps = [
     pump(PUMP_IDS.radiators, 'Насос радіаторів', 'switch.radiator_pump', { circuitId: CIRCUIT_IDS.radiators, rule: 'rooms', runOnHeatMin: 3 }, 0),
-    pump(PUMP_IDS.floorA, 'Насос теплої підлоги', 'switch.floor_heating_pump', { circuitId: CIRCUIT_IDS.floor, rule: 'source', runOnHeatMin: 10 }, 1),
+    pump(
+      PUMP_IDS.floorA,
+      'Насос теплої підлоги',
+      'switch.floor_heating_pump',
+      { circuitId: CIRCUIT_IDS.floor, rule: 'source', runOnHeatMin: 10, meter: { kind: 'electricity', entityId: 'sensor.floor_heating_pump_energy', unit: 'kWh' } },
+      1,
+    ),
     pump(PUMP_IDS.floorB, 'Насос підлоги · резерв', 'switch.floor_pump_b', { circuitId: CIRCUIT_IDS.floor, rule: 'source', runOnHeatMin: 10 }, 2),
     pump(PUMP_IDS.manifold, 'Насос колектора', 'switch.manifold_pump', { manifoldId: MANIFOLD_ID, rule: 'source', runOnHeatMin: 3, exercise: true }, 3),
   ];

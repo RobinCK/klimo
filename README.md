@@ -111,7 +111,7 @@ telegram_bot_token: ""   # optional, from @BotFather
 | **Season** | Heating, between seasons or cooling, from the 3-day average outdoor temperature (below 15° heating, above 22° cooling), with hysteresis, a minimum dwell and month limits. Or set the house mode by hand. |
 | **Triggers & actions** | A trigger is a live condition over Home Assistant (grid offline, solar power, night tariff, frost, battery low…). An action changes the rules while a trigger holds: allow or forbid sources, shift targets, pre-heat to the next schedule slot, run pumps only on demand. |
 | **Energy budget** | During a blackout the electric sources share a power budget (4 kW by default): they start one by one, the least important is shed first, and below 20 % battery only frost protection runs. |
-| **Meters & consumption** | A source can have a gas, an electricity and a heat meter. Klimo reads their long-term statistics from Home Assistant and shows what the source used per hour, day or month, what it cost, the gas per degree-day and the COP — it stores no readings of its own. |
+| **Meters & consumption** | A source can have a gas, an electricity and a heat meter, a pump the energy meter of its plug. Klimo reads their long-term statistics from Home Assistant and shows what each source and pump used per hour, day or month, what it cost, the gas per degree-day and the COP — it stores no readings of its own. |
 
 ## Tour
 
@@ -244,6 +244,11 @@ against the period before, the cost, the gas or energy per degree-day (the weath
 boiler's efficiency or the heat pump's COP. Klimo reads the meters' long-term statistics from Home
 Assistant and stores nothing itself, so a meter bound today shows its whole recorded past. Prices are
 set in **Settings → Energy prices**, and the overview's energy tile adds up today.
+
+**System → Consumption** puts the whole house together: the gas, the electricity and the cost of a day,
+a week, a month or a year, and a row for every source and pump with what it used and how long it ran.
+A pump on a smart plug gets the plug's energy sensor as its meter, so the floor pump's electricity is
+counted apart from the boiler's.
 
 ### Strategy & triggers
 

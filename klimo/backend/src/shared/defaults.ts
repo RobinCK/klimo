@@ -548,6 +548,7 @@ export function DEFAULT_PUMP(): Pump {
     minOnSec: 60,
     exercise: true,
     speed: null,
+    meter: null,
     enabled: true,
     order: 0,
   };

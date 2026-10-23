@@ -191,10 +191,53 @@ test('the house today: a shared meter counts once, gas in kWh as soon as one met
   near(h.cost, gasToday * 8, 0.05);
 
   config.sources.push({ ...newSourceConfig('gas_boiler', { id: 's_boiler3', name: 'Котел 3', now: 1 }), meters: [{ kind: 'gas', entityId: 'sensor.gas_kwh', unit: 'kWh' }] });
-  h = await service.house('2026-10-20');
+  h = await service.house({ date: '2026-10-20' });
   assert.equal(h.units.gas, 'kWh');
   near(h.gas, 10 * 24 * FT3 * 10.5, 0.1);
   near(h.sources[0].gas, 10 * 24 * FT3 * 10.5, 0.1);
+});
+
+test('a pump with the energy meter of its plug: its own row, the house electricity, a month by the day', async () => {
+  const { service, ha, config } = setup({ extraSpans: [{ id: 'p', subject: 'pump', subjectId: 'p_floor', kind: 'run', mode: 'heat', startTs: MIDNIGHT + 2 * HOUR, endTs: MIDNIGHT + 4 * HOUR, meta: null }] });
+  ha.set(state('sensor.floor_plug_energy', '12.3', { unit_of_measurement: 'kWh', state_class: 'total_increasing', device_class: 'energy', friendly_name: 'Розетка підлоги' }));
+  const gasStats = ha.statisticsFn;
+  ha.statisticsFn = (ids, start, end, period, types) => {
+    const out = gasStats(ids, start, end, period, types);
+    if (ids.includes('sensor.floor_plug_energy')) {
+      const rows = [];
+      for (let h = Math.floor(start / HOUR) * HOUR; h < end && h + HOUR <= NOW; h += HOUR) if (h >= MIDNIGHT - DAY) rows.push({ start: h, change: 0.05 });
+      out['sensor.floor_plug_energy'] = rows;
+    }
+    return out;
+  };
+  config.settings.tariffs = { ...config.settings.tariffs, electricityPerKwh: 4 };
+  config.pumps = [{ id: 'p_floor', name: 'Насос підлоги', meter: { kind: 'electricity', entityId: 'sensor.floor_plug_energy', unit: 'kWh' } }, { id: 'p_rad', name: 'Насос радіаторів', meter: null }];
+  config.list = (c) => (c === 'sources' ? config.sources : c === 'pumps' ? config.pumps : []);
+
+  const h = await service.house();
+  assert.equal(h.range, 'day');
+  assert.equal(h.bucket, 'hour');
+  assert.equal(h.buckets.length, 24);
+  assert.deepEqual(h.pumps.map((p) => p.pumpId), ['p_floor'], 'only pumps with a meter');
+  const pump = h.pumps[0];
+  near(pump.electricity, 14 * 0.05);
+  near(pump.cost, 14 * 0.05 * 4, 0.01);
+  assert.equal(pump.runtimeMin, 120);
+  assert.equal(pump.meters[0].entityId, 'sensor.floor_plug_energy');
+  assert.equal(h.sources[0].electricity, null, 'the boiler has no electricity meter of its own');
+  near(h.electricity, 14 * 0.05);
+  near(h.cost, (10 * 14.5 + 30) * FT3 * 8 + 14 * 0.05 * 4, 0.05);
+  assert.equal(h.buckets[3].electricity, 0.05);
+  assert.equal(h.buckets[20].future, true);
+
+  const m = await service.house({ range: 'month' });
+  assert.equal(m.bucket, 'day');
+  assert.equal(m.date, '2026-10-01');
+  assert.equal(m.previousDate, '2026-09-01');
+  assert.equal(m.previousComplete, false, 'the meters reach back to 20 October only');
+  assert.equal(m.buckets.length, 31);
+  near(m.pumps[0].electricity, (24 + 14) * 0.05);
+  await assert.rejects(() => service.house({ range: 'decade' }), (e) => e.status === 400);
 });
 
 test('unknown sources and ranges are refused', async () => {

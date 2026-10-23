@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.9
+
+- **What each source and each pump used, in one place: System → Consumption.** For a day, a week, a
+  month or a year: the house's gas, electricity and cost against the period before, a chart of gas or
+  electricity, and a row for every source and pump with its gas, electricity, cost and running time
+  (on a phone the amounts sit next to the name). A row opens the source's page.
+- **A pump counts what its plug draws.** A floor or radiator pump on a smart plug gets an electricity
+  meter: the energy sensor of the plug (offered first) or a power sensor. Choose it under *Pump
+  meters* on the new tab or on the pump's card in its circuit. The pumps' electricity is added to the
+  house and to the overview's energy tile.
+- The electricity meter of a source is what the source itself draws — for a gas boiler, the energy
+  sensor of its own plug; the source page now says so, and that pumps have meters of their own. A
+  pump's plug bound as the boiler's meter before should be moved: unbind it on the boiler and choose
+  it for the pump.
+
 ## 0.2.8
 
 - **A head turned by hand keeps the number it was turned to.** Heads such as the Aqara E1 report every

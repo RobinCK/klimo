@@ -193,6 +193,14 @@ export function PhoneStatus({ d }: { d: SystemData }) {
           to={paths.notifications()}
         />
         <SourceRow
+          icon="gauge"
+          name={t('Consumption')}
+          meta={t('What the sources and the pumps used')}
+          chip={{ tone: 'hold', label: t('Open') }}
+          on={false}
+          to={paths.energy()}
+        />
+        <SourceRow
           icon="list"
           name={t('Decision journal')}
           meta={last ? `${fmtClock(last.ts, d.now)} · ${renderJournal(last, d.ctx)}` : t('What the system did and why')}

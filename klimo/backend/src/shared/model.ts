@@ -973,6 +973,8 @@ export interface Pump {
   minOnSec: number; // 60
   exercise: boolean; // weekly anti-seize (SafetySettings.pumpExercise)
   speed: { entityId: EntityId; heat: number | string; cool: number | string } | null;
+  /** What the pump draws: the energy sensor of its plug (kind 'electricity'); null = not counted. */
+  meter: SourceMeter | null;
   enabled: boolean;
   order: number;
 }
@@ -2987,7 +2989,7 @@ export interface CircuitDto {
 /** `mode` defaults by kind (floor 'follow_source', radiators 'zoned'), `bypass` to false. */
 export type CircuitCreateRequest = Omit<Circuit, 'id' | 'order' | 'mode' | 'bypass'> & Partial<Pick<Circuit, 'mode' | 'bypass'>>;
 export type CircuitPatch = Partial<Omit<Circuit, 'id'>>;
-export type PumpCreateRequest = Omit<Pump, 'id' | 'order'>;
+export type PumpCreateRequest = Omit<Pump, 'id' | 'order' | 'meter'> & Partial<Pick<Pump, 'meter'>>;
 export type PumpPatch = Partial<Omit<Pump, 'id'>>;
 /** The primary pump as the manifold editor sets it (`pump: null` removes it). */
 export interface ManifoldPumpRequest {
@@ -3368,21 +3370,59 @@ export interface SourceConsumptionDto {
   now: EpochMs;
 }
 
-/** GET /api/energy/consumption — the overview energy tile: today across the sources with meters. */
-export interface HouseConsumptionDto {
-  date: LocalDate;
-  from: EpochMs;
-  to: EpochMs;
+/** The house's gas and electricity in one hour, day or month (heat meters are left out). */
+export interface HouseConsumptionBucket {
+  start: EpochMs;
+  end: EpochMs;
   gas: number | null;
   electricity: number | null;
   cost: number | null;
-  /** Yesterday up to the same time of day. */
+  partial: boolean;
+  future: boolean;
+}
+
+/** What one source or pump used in the period (its own meters; a meter shared with another one counts in both rows). */
+export interface ConsumerUse {
+  gas: number | null;
+  electricity: number | null;
+  cost: number | null;
+  /** Minutes it ran in the period (Klimo's run spans). */
+  runtimeMin: number;
+  meters: ConsumptionMeterDto[];
+}
+
+/**
+ * GET /api/energy/consumption?range=day|week|month|year&date=YYYY-MM-DD — what the house used in a
+ * period and who used it: the overview energy tile (today) and the «Споживання» page.
+ */
+export interface HouseConsumptionDto {
+  range: ConsumptionRange;
+  /** First day of the period. */
+  date: LocalDate;
+  from: EpochMs;
+  to: EpochMs;
+  bucket: ConsumptionBucketSize;
+  buckets: HouseConsumptionBucket[];
+  /** The whole house: every meter once, however many sources or pumps share it. */
+  gas: number | null;
+  electricity: number | null;
+  cost: number | null;
+  /** The period before up to the same elapsed time (yesterday up to this time of day). */
   previous: ConsumptionValues;
+  /** First day of the period before. */
+  previousDate: LocalDate;
+  /** Every meter has readings from the start of the period before (otherwise a ±% would compare against a part). */
+  previousComplete: boolean;
   units: ConsumptionUnits;
-  sources: { sourceId: Id; gas: number | null; electricity: number | null; cost: number | null; runtimeMin: number }[];
-  /** At least one source has a meter (otherwise the tile invites to bind one). */
+  tariffs: EnergyTariffs;
+  /** Sources with a meter; gas in the house's unit. */
+  sources: ({ sourceId: Id } & ConsumerUse)[];
+  /** Pumps with a meter. */
+  pumps: ({ pumpId: Id } & ConsumerUse)[];
+  /** At least one source or pump has a meter (otherwise the tile invites to bind one). */
   configured: boolean;
   recorder: 'ok' | 'unavailable';
+  now: EpochMs;
 }
 
 /* 7.10 Simulator (KLIMO_SIMULATE=1 only) --------------------------------------------------------------- */
@@ -4250,7 +4290,7 @@ export interface IHistory {
 /** ha/consumption.service.ts — what sources used, from their meters' statistics and Klimo's run spans. */
 export interface IConsumption {
   source(sourceId: Id, q: ConsumptionQuery): Promise<SourceConsumptionDto>;
-  house(date?: LocalDate): Promise<HouseConsumptionDto>;
+  house(q?: Partial<ConsumptionQuery>): Promise<HouseConsumptionDto>;
 }
 
 /** Inputs the shell needs besides plain states (Home Assistant services; values are cached, cheap to read). */

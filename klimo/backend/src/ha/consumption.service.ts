@@ -14,6 +14,7 @@ import type {
   ConsumptionTotals,
   ConsumptionUnits,
   ConsumptionValues,
+  ConsumerUse,
   EnergyTariffs,
   EntityId,
   EpochMs,
@@ -165,12 +166,17 @@ export class ConsumptionService implements IConsumption {
     return this.cached(key, () => this.buildSource(source, range, date, now));
   }
 
-  async house(date?: LocalDate): Promise<HouseConsumptionDto> {
-    const now = this.clock.now();
-    const day = this.dateOf(date, now);
-    const key = `house|${day}|${Math.floor(now / MIN)}|${this.config.revision()}`;
+  async house(q: Partial<ConsumptionQuery> = {}): Promise<HouseConsumptionDto> {
+    const range = q.range ?? 'day';
+    if (!CONSUMPTION_RANGES.includes(range)) {
+      throw validationError([{ path: 'range', code: 'enum', params: { values: CONSUMPTION_RANGES.join('|') } }]);
+    }
 
-    return this.cached(key, () => this.buildHouse(day, now));
+    const now = this.clock.now();
+    const date = this.dateOf(q.date, now);
+    const key = `house|${range}|${date}|${Math.floor(now / MIN)}|${this.config.revision()}`;
+
+    return this.cached(key, () => this.buildHouse(range, date, now));
   }
 
   /* ── plumbing ─────────────────────────────────────────────────────────────────────────────── */
@@ -206,9 +212,9 @@ export class ConsumptionService implements IConsumption {
     return this.config.singleton('settings').tariffs;
   }
 
-  /** The source's meters with their live unit and state. */
-  private meterRefs(source: SourceConfig): MeterRef[] {
-    return source.meters.map((meter) => {
+  /** Meters of a source or a pump with their live unit and state. */
+  private meterRefs(meters: readonly SourceMeter[]): MeterRef[] {
+    return meters.map((meter) => {
       const st = this.ha.getState(meter.entityId);
       const liveUnit = st?.attributes.unit_of_measurement;
       const unitText = typeof liveUnit === 'string' && liveUnit ? liveUnit : meter.unit;
@@ -240,9 +246,9 @@ export class ConsumptionService implements IConsumption {
     });
   }
 
-  private async runSpans(from: EpochMs, to: EpochMs, sourceId?: Id): Promise<RunSpan[]> {
+  private async runSpans(from: EpochMs, to: EpochMs, subject: 'source' | 'pump', subjectId?: Id): Promise<RunSpan[]> {
     try {
-      return (await this.spans.range(from, to, 'source', sourceId)).filter((s) => s.kind === 'run');
+      return (await this.spans.range(from, to, subject, subjectId)).filter((s) => s.kind === 'run');
     } catch (e) {
       this.once.warn('spans', `run spans unavailable: ${errorText(e)}`);
 
@@ -329,10 +335,10 @@ export class ConsumptionService implements IConsumption {
     const prevPlan = planPeriod(range, shiftPeriod(range, plan.date, -1), tz);
     const prev: Window = { from: prevPlan.from, to: sameElapsed(plan, prevPlan, now) };
     const until = Math.max(plan.from, Math.min(plan.to, now));
-    const refs = this.meterRefs(source);
+    const refs = this.meterRefs(source.meters);
     const tariffs = this.tariffs();
     const withRuns = range === 'day' || range === 'week';
-    const spans = await this.runSpans(prevPlan.from, plan.to, source.id);
+    const spans = await this.runSpans(prevPlan.from, plan.to, 'source', source.id);
     // a run across the period's edge (last night's, from 23:36 to 06:30) is measured whole in either day,
     // so the readings reach past the edges; buckets and totals still stop at them
     const listed = withRuns ? runsIn(spans, plan.from, until, now) : [];
@@ -424,46 +430,67 @@ export class ConsumptionService implements IConsumption {
 
   /* ── the house ────────────────────────────────────────────────────────────────────────────── */
 
-  private async buildHouse(date: LocalDate, now: EpochMs): Promise<HouseConsumptionDto> {
+  /**
+   * Every source and pump with a meter over the period, read in one go: the house counts each meter
+   * once (a gas meter shared by two boilers is not doubled), each row counts its own meters whole.
+   */
+  private async buildHouse(range: ConsumptionRange, date: LocalDate, now: EpochMs): Promise<HouseConsumptionDto> {
     const tz = this.clock.tz();
-    const plan = planPeriod('day', date, tz);
-    const prevPlan = planPeriod('day', addDays(plan.date, -1), tz);
+    const plan = planPeriod(range, date, tz);
+    const prevPlan = planPeriod(range, shiftPeriod(range, plan.date, -1), tz);
     const prevTo = sameElapsed(plan, prevPlan, now);
     const until = Math.max(plan.from, Math.min(plan.to, now));
     const tariffs = this.tariffs();
-    const sources = this.config.list('sources').map((s) => ({ source: s, refs: this.meterRefs(s).filter((r) => r.meter.kind !== 'heat') }));
-    const all = sources.flatMap((s) => s.refs);
-    const spans = await this.runSpans(plan.from, plan.to);
-    const reading = await this.read(all, { from: prevPlan.from, to: until }, 'hour', null, false, now);
+    const counted = (meters: readonly SourceMeter[]) => this.meterRefs(meters).filter((r) => r.meter.kind !== 'heat');
+    const sources = this.config
+      .list('sources')
+      .map((s) => ({ id: s.id, refs: counted(s.meters) }))
+      .filter((s) => s.refs.length);
+    const pumps = this.config.list('pumps').flatMap((p) => (p.meter ? [{ id: p.id, refs: counted([p.meter]) }] : []));
+    const all = [...sources, ...pumps].flatMap((x) => x.refs);
+    const [sourceSpans, pumpSpans] = await Promise.all([this.runSpans(plan.from, plan.to, 'source'), this.runSpans(plan.from, plan.to, 'pump')]);
+    const reading = await this.read(all, { from: prevPlan.from, to: until }, range === 'year' ? 'day' : 'hour', null, false, now);
     const house = new MeterValues(all, reading, tariffs);
-    const perSource = sources
-      .filter((s) => s.refs.length)
-      .map(({ source, refs }) => {
-        const own = new MeterValues(refs, reading, tariffs);
-        const v = own.between(plan.from, until);
+    const use = (refs: MeterRef[], spans: RunSpan[]): ConsumerUse => {
+      const own = new MeterValues(refs, reading, tariffs);
+      const v = own.between(plan.from, until);
 
-        return {
-          sourceId: source.id,
-          gas: roundTo(own.gasIn(v.gas, house.gasUnit()), 3),
-          electricity: roundTo(v.electricity, 3),
-          cost: roundTo(v.cost, 2),
-          runtimeMin: Math.round(runtimeMin(spans.filter((x) => x.subjectId === source.id), plan.from, until, now)),
-        };
-      });
-    const today = house.between(plan.from, until);
+      return {
+        gas: roundTo(own.gasIn(v.gas, house.gasUnit()), 3),
+        electricity: roundTo(v.electricity, 3),
+        cost: roundTo(v.cost, 2),
+        runtimeMin: Math.round(runtimeMin(spans, plan.from, until, now)),
+        meters: refs.map((r) => r.dto),
+      };
+    };
+    const total = house.between(plan.from, until);
 
     return {
+      range,
       date: plan.date,
       from: plan.from,
       to: plan.to,
-      gas: roundTo(today.gas, 3),
-      electricity: roundTo(today.electricity, 3),
-      cost: roundTo(today.cost, 2),
+      bucket: plan.bucket,
+      buckets: plan.edges.slice(0, -1).map((start, i) => {
+        const end = plan.edges[i + 1];
+        const future = start >= now;
+        const v = future ? EMPTY_VALUES : house.between(start, Math.min(end, now));
+
+        return { start, end, gas: roundTo(v.gas, 3), electricity: roundTo(v.electricity, 3), cost: roundTo(v.cost, 2), partial: start < now && now < end, future };
+      }),
+      gas: roundTo(total.gas, 3),
+      electricity: roundTo(total.electricity, 3),
+      cost: roundTo(total.cost, 2),
       previous: rounded(house.between(prevPlan.from, prevTo)),
+      previousDate: prevPlan.date,
+      previousComplete: house.knownFrom(prevPlan.from, range === 'year' ? DAY : HOUR),
       units: house.units(),
-      sources: perSource,
+      tariffs,
+      sources: sources.map((s) => ({ sourceId: s.id, ...use(s.refs, sourceSpans.filter((x) => x.subjectId === s.id)) })),
+      pumps: pumps.map((p) => ({ pumpId: p.id, ...use(p.refs, pumpSpans.filter((x) => x.subjectId === p.id)) })),
       configured: all.length > 0,
       recorder: reading.ok ? 'ok' : 'unavailable',
+      now,
     };
   }
 }

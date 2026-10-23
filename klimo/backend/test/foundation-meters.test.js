@@ -74,3 +74,28 @@ test('an export from before meters imports with the power sensor as the electric
     assert.deepEqual(config.get('sources', s.id).meters, [{ kind: 'electricity', entityId: 'sensor.convector_power', unit: null }]);
     assert.equal(config.singleton('settings').tariffs.gasKwhPerM3, 10.5);
   }));
+
+test('a pump counts what its plug draws: an electricity meter kept across a restart; gas or °C refused', async () => {
+  const s = await openStores();
+  const dir = s.dir;
+  let pumpId;
+  try {
+    const c = await s.config.create('circuits', { name: 'Тепла підлога', shortName: 'Підлога', kind: 'floor', manifoldId: null, sourceIds: [], capabilities: { heat: true, cool: false }, supply: { sensorEntityId: null, returnEntityId: null, coolC: 18, coolMaxC: 22 }, mixingValve: null, dewMarginC: null, pumpGroupMode: 'all', flowSafety: false, order: 0 }, ACTOR);
+    const p = await s.config.create('pumps', { name: 'Насос підлоги', circuitId: c.id, manifoldId: null, entityId: 'switch.floor_plug', rule: 'source', runOnHeatMin: 10, runOnCoolMin: 0, minOnSec: 60, exercise: true, speed: null, enabled: true, order: 0 }, ACTOR);
+    pumpId = p.id;
+    assert.equal(s.config.get('pumps', p.id).meter, null, 'a pump starts without a meter');
+    await s.config.update('pumps', p.id, { meter: { kind: 'electricity', entityId: 'sensor.floor_plug_energy', unit: 'kWh' } }, ACTOR);
+    let e = await rejection(() => s.config.update('pumps', p.id, { meter: { kind: 'gas', entityId: 'sensor.gas_meter', unit: 'm³' } }, ACTOR));
+    assert.deepEqual(e.issues.map((i) => [i.path, i.code]), [['meter.kind', 'enum']]);
+    e = await rejection(() => s.config.update('pumps', p.id, { meter: { kind: 'electricity', entityId: 'sensor.floor_temperature', unit: '°C' } }, ACTOR));
+    assert.deepEqual(e.issues.map((i) => [i.path, i.code]), [['meter.unit', 'unit']]);
+  } finally {
+    await s.close({ keep: true });
+  }
+  const again = await openStores({ dir });
+  try {
+    assert.deepEqual(again.config.get('pumps', pumpId).meter, { kind: 'electricity', entityId: 'sensor.floor_plug_energy', unit: 'kWh' });
+  } finally {
+    await again.close();
+  }
+});

@@ -52,7 +52,7 @@ import { stream, type Rng } from './random';
 import { climateFor, SCENARIOS, scenarioStart, type Scenario } from './scenarios';
 import { buildSnapshot } from './snapshot';
 import { SimClock } from './sim.clock';
-import { type ArchivedSpan, GAS_METER, GAS_METER_MIRRORS, HP_ENERGY_METER, HP_HEAT_METER, meterValue, READINGS_AT_ARCHIVE_START, RunTracker, runningSources, SIMULATED_HISTORY, SimMeters } from './sim-meters';
+import { type ArchivedSpan, FLOOR_PUMP_METER, GAS_METER, GAS_METER_MIRRORS, HP_ENERGY_METER, HP_HEAT_METER, meterValue, READINGS_AT_ARCHIVE_START, RunTracker, runningSources, SIMULATED_HISTORY, SimMeters } from './sim-meters';
 import { advanceWorld, Environment, newWorld, relativeHumidity, trvLocalTemp, type Actuation, type World } from './thermal-model';
 
 /* =====================================================================================================
@@ -417,6 +417,7 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
     }
     rec.importHours(HP_ENERGY_METER, 'meter', archive.hpEnergy);
     rec.importHours(HP_HEAT_METER, 'meter', archive.hpHeat);
+    rec.importHours(FLOOR_PUMP_METER, 'meter', archive.floorPump);
     this.meters.reset(archive.end, from);
     const ids = { heatPump: SOURCE_IDS.heatPump, boiler: SOURCE_IDS.boiler };
     return archive.runs
@@ -832,7 +833,7 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
   /** Device logic that is not physics: the boiler relay's countdown, the meters counting. */
   private tickDevices(at: EpochMs): void {
     this.ha.tickCountdown(at);
-    this.meters.advance(this.world, at, toLocal(at, this.simClock.tz()).minute);
+    this.meters.advance(this.world, at, toLocal(at, this.simClock.tz()).minute, this.ha.getState('switch.floor_heating_pump')?.state === 'on');
   }
 
   /* ── world → HA ─────────────────────────────────────────────────────────────────────────────── */
@@ -1062,6 +1063,7 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
     for (const m of GAS_METER_MIRRORS) report(m.entityId, r.gasM3 * m.perM3);
     report(HP_ENERGY_METER, r.hpKwh);
     report(HP_HEAT_METER, r.hpHeatKwh);
+    report(FLOOR_PUMP_METER, r.floorPumpKwh);
   }
 
   private syncGlobals(at: EpochMs): void {

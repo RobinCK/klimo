@@ -784,7 +784,6 @@ export const statisticsQuery = rangeRules(
 );
 export const outdoorHistoryQuery = obj({ days: opt(int(1, 31, { coerce: true })) });
 export const consumptionQuery: Schema<Partial<ConsumptionQuery>> = obj({ range: opt(oneOf(CONSUMPTION_RANGES)), date: opt(localDate) });
-export const houseConsumptionQuery = obj({ date: opt(localDate) });
 export const rangeQuery = obj({ from: opt(epoch(true)), to: opt(epoch(true)) });
 
 /* ── profiles, priority, house ────────────────────────────────────────────────────────────────── */
@@ -1071,6 +1070,7 @@ const pumpShape = {
   minOnSec: int(0, 3600),
   exercise: bool(),
   speed: nullable(obj({ entityId: entityId(), heat: numOrStr, cool: numOrStr })),
+  meter: nullable(sourceMeter),
   enabled: bool(),
 };
 
