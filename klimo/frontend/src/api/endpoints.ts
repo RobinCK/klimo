@@ -331,6 +331,7 @@ export const api = {
           nearRoomId: q.nearRoomId,
           nearAreaId: q.nearAreaId,
           wizard: q.wizard,
+          wizardRoles: q.wizardRoles,
           limit: q.limit,
         })}`,
         init,

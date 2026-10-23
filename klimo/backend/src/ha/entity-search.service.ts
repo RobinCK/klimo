@@ -27,6 +27,7 @@ import {
   isPowerSensor,
   isTemperatureSensor,
   isValvePosition,
+  looksLikePump,
   looksLikeTrv,
   matchesRole,
   setpointStepC,
@@ -61,6 +62,8 @@ const OTHER_ROOM = 5;
 const KIND_WORD = 30;
 /** Outdoor sensor picker: thermometers whose name or area says outdoors come before the rest. */
 const OUTDOOR_FIRST = 20;
+/** Circuit pump picker: relays that say they run a pump come first. */
+const PUMP_FIRST = 20;
 /** Devices «Не використовуються в Klimo» lists only what is clearly a climate device. */
 const UNASSIGNED_CONFIDENCE = 0.5;
 
@@ -102,6 +105,9 @@ export class EntitySearchService implements IEntitySearch {
     const domains = q.domain?.length ? new Set(q.domain) : null;
     const classes = q.deviceClass?.length ? new Set(q.deviceClass) : null;
     const words = new Set(searchKey(query).split(' ').filter(Boolean));
+    // one role, or a device group of the wizard (temperature, humidity and combined sensors together)
+    const want = q.wizardRoles?.length ? new Set(q.wizardRoles) : q.wizard && q.wizard !== 'any' ? new Set([q.wizard]) : null;
+    const withHint = !!q.wizard || !!want;
 
     const hits: { r: EntityRecord; score: number; name: string; wizard: WizardRoleHint | null }[] = [];
     for (const r of this.registry.records()) {
@@ -112,8 +118,10 @@ export class EntitySearchService implements IEntitySearch {
       const f = this.registry.facts(r);
       if (classes && !(f.deviceClass && classes.has(f.deviceClass))) continue;
       if (q.role && !matchesRole(q.role, f, this.siblingRefs(r).map((s) => s.role))) continue;
-      const wizard = q.wizard ? this.wizardHint(r, f) : null;
-      if (q.wizard && (!wizard || (q.wizard !== 'any' && !wizard.possible.includes(q.wizard)))) continue;
+      const wizard = withHint ? this.wizardHint(r, f) : null;
+      if (withHint && (!wizard || (want && !wizard.possible.some((x) => want.has(x))))) continue;
+      // what a room takes only on purpose (a pump) shows up when its name is searched for
+      if (want && wizard && !wizard.suggested.length && !query) continue;
 
       let score = 0;
       if (query) {
@@ -132,7 +140,8 @@ export class EntitySearchService implements IEntitySearch {
       if (nearArea && r.areaId === nearArea) score += SCORE.nearRoom;
       if (q.nearAreaId && r.areaId === q.nearAreaId) score += NEAR_AREA;
       if (q.role === 'outdoor' && isOutdoorSensor(f)) score += OUTDOOR_FIRST;
-      if (wizard && q.wizard && q.wizard !== 'any') score += wizard.suggested[0] === q.wizard ? ROLE_FIRST : wizard.suggested.includes(q.wizard) ? ROLE_ALSO : 0;
+      if (q.role === 'pump' && looksLikePump(f, this.registry.deviceName(r.device))) score += PUMP_FIRST;
+      if (wizard && want) score += want.has(wizard.suggested[0]) ? ROLE_FIRST : wizard.suggested.some((x) => want.has(x)) ? ROLE_ALSO : 0;
       if (wizard && f.deviceClass && searchKey(f.deviceClass).split(' ').every((w) => words.has(w))) score += KIND_WORD;
       if (wizard && referenced.has(r.entityId)) {
         const uses = this.config.usages({ type: 'entity', id: r.entityId });
@@ -166,6 +175,7 @@ export class EntitySearchService implements IEntitySearch {
       hasClimate: siblingFacts.some((s) => s.domain === 'climate'),
       hasTemperature: siblingFacts.some(isTemperatureSensor),
       hasHumidity: siblingFacts.some(isHumiditySensor),
+      deviceName: this.registry.deviceName(r.device),
     };
   }
 

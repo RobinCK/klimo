@@ -2714,6 +2714,8 @@ export interface HaEntityQuery {
   nearAreaId?: string;
   /** Add-room wizard: only what can take this device role ('any': any role), each result with its `wizard` hint. */
   wizard?: WizardDeviceRole | 'any';
+  /** Like `wizard`, for a device group: what can take one of these roles, the likeliest ones first. */
+  wizardRoles?: WizardDeviceRole[];
   limit?: number; // default 50, max 500
 }
 export interface HaEntityDto {
@@ -2738,7 +2740,10 @@ export interface HaEntityDto {
   /** The temperature it reads in °C: a sensor's state, a climate's current_temperature (only with `wizard`). */
   valueC?: Celsius | null;
 }
-/** Add-room wizard: `suggested` is one role when clear, two (likeliest first) when it could be either; `possible` is every role it can take. */
+/**
+ * Add-room wizard: `suggested` is one role when clear, two (likeliest first) when it could be either, none
+ * when a room takes it only on purpose (a circulation pump); `possible` is every role it can take.
+ */
 export interface WizardRoleHint {
   suggested: WizardDeviceRole[];
   possible: WizardDeviceRole[];

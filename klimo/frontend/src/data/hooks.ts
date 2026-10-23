@@ -14,6 +14,7 @@ import type {
   RoomDetailDto,
   RoomState,
   RoomSummary,
+  WizardDeviceRole,
   WsTopic,
 } from '@api/model';
 import { api, type IncidentScope } from '@api/endpoints';
@@ -426,6 +427,8 @@ export interface EntitySearchContext {
   areaId?: string | null;
   /** Add-room wizard: what can take this device role ('any': any role), each with its role hint. */
   wizard?: HaEntityQuery['wizard'];
+  /** A device group of the wizard: what can take one of these roles. */
+  wizardRoles?: readonly WizardDeviceRole[];
   /** Only entities not yet used by Klimo. */
   unassigned?: boolean;
   domain?: string[];
@@ -436,6 +439,7 @@ export interface EntitySearchContext {
 export function useEntitySearch(role: EntityRolePreset | null, ctx: EntitySearchContext = {}): (q: string) => Promise<HaEntityDto[]> {
   const { roomId, areaId, wizard, unassigned, limit } = ctx;
   const domain = ctx.domain?.join(',');
+  const roles = ctx.wizardRoles?.join(',');
   return useCallback(
     (q: string) =>
       api.ha.entities({
@@ -444,11 +448,12 @@ export function useEntitySearch(role: EntityRolePreset | null, ctx: EntitySearch
         nearRoomId: roomId,
         nearAreaId: areaId ?? undefined,
         wizard,
+        wizardRoles: roles ? (roles.split(',') as WizardDeviceRole[]) : undefined,
         unassigned,
         domain: domain ? domain.split(',') : undefined,
         limit: limit ?? 50,
       }),
-    [role, roomId, areaId, wizard, unassigned, domain, limit],
+    [role, roomId, areaId, wizard, roles, unassigned, domain, limit],
   );
 }
 

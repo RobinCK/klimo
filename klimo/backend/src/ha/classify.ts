@@ -282,10 +282,21 @@ export interface DeviceContext {
   hasClimate: boolean;
   hasTemperature: boolean;
   hasHumidity: boolean;
+  /** The HA device's name (a relay is often called after what it drives). */
+  deviceName?: string | null;
 }
 
 function hint(f: EntityFacts): string {
   return `${f.key} ${searchKey(f.name).replace(/ /g, '_')}`;
+}
+
+// «насос» folds to nasos, «циркуляційний» to tsyrkuliatsiinyi
+const PUMP_HINT = /pump|nasos|(^|[_ ])circ|tsyrkul|tsirkul|cirkul/;
+
+/** A relay whose id, name or device says it runs a pump: the plant's, not a room's heater or zone valve. */
+export function looksLikePump(f: EntityFacts, deviceName?: string | null): boolean {
+  if (f.domain !== 'switch' && f.domain !== 'input_boolean') return false;
+  return PUMP_HINT.test(`${hint(f)} ${f.entityId.replace('.', '_')} ${searchKey(deviceName).replace(/ /g, '_')}`);
 }
 
 /** The most likely wizard role of an entity found in an area, with a confidence 0..1 (null = not offered). */
@@ -325,6 +336,7 @@ export function discoveryGuess(f: EntityFacts, ctx: DeviceContext): DiscoveryGue
     case 'input_boolean':
     case 'fan': {
       if (ctx.hasClimate) return null; // child lock, window detection… of a head or an AC
+      if (looksLikePump(f, ctx.deviceName)) return null;
       if (DEHUMIDIFIER_HINT.test(text)) return { role: 'dehumidifier', confidence: 0.75 };
       if (f.domain === 'fan') return null;
       if (FLOOR_HINT.test(text)) return { role: 'floor_zone', confidence: 0.7 };
@@ -400,6 +412,8 @@ export function wizardRoles(f: EntityFacts, ctx: DeviceContext): WizardRoleHint 
       const light = f.domain === 'light';
       const extra: WizardDeviceRole[] = f.domain === 'input_boolean' ? ['window', 'door'] : [];
       const dehum: WizardDeviceRole[] = light ? [] : ['dehumidifier'];
+      // a circulation pump is nothing a room takes by itself; picked on purpose it can still be one
+      if (looksLikePump(f, ctx.deviceName)) return roleHint([], 'heater', 'floor_zone', ...dehum, ...extra);
       if (!light && DEHUMIDIFIER_HINT.test(text)) return roleHint(['dehumidifier'], 'heater', 'floor_zone', ...extra);
       if (FLOOR_HINT.test(text)) return roleHint(['floor_zone'], 'heater', ...dehum, ...extra);
       if (HEATER_HINT.test(text)) return roleHint(['heater'], 'floor_zone', ...dehum, ...extra);

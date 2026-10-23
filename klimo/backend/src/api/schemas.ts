@@ -754,6 +754,7 @@ export const entityQuery = obj({
   nearRoomId: opt(id()),
   nearAreaId: opt(str(255, { min: 1 })),
   wizard: opt(oneOf([...WIZARD_ROLES, 'any'] as const)),
+  wizardRoles: csv(oneOf(WIZARD_ROLES), 11),
   limit: opt(int(1, 500, { coerce: true })),
 });
 

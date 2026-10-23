@@ -2309,6 +2309,8 @@ export interface SparkDto {
   targets: (Celsius | null)[] | null;
   from: EpochMs;
   stepMin: 30;
+  /** False while the recorder cannot be read yet (Klimo just started): the values are memory only, ask again soon. */
+  complete: boolean;
 }
 
 export interface TimelineTrack {
@@ -2675,12 +2677,17 @@ export interface DurationOption {
   until: EpochMs | null;
 }
 
+/** raw_sensors = the room's sensors combined by its method; klimo_entity = Klimo's published sensor (when
+ *  the room's sensors are not recorded); memory = the last hours Klimo kept itself; none = nothing yet. */
+export type RoomDaySource = 'raw_sensors' | 'klimo_entity' | 'memory' | 'none';
+
 export interface RoomDayDto {
   roomId: Id;
   date: LocalDate;
-  /** Aggregated temperature [ts, °C]; from sensor.klimo_<slug>_temperature, else rebuilt from raw sensors. */
+  /** Room temperature [ts, °C] on a 5-min grid up to `asOf`; the room's own sensors combined the way the live
+   *  value is (method, outliers, unavailable left out), else Klimo's sensor.klimo_<slug>_temperature. */
   series: [EpochMs, Celsius | null][];
-  source: 'klimo_entity' | 'raw_sensors' | 'memory';
+  source: RoomDaySource;
   humidity: [EpochMs, Pct | null][];
   targetSegments: { from: EpochMs; to: EpochMs; heatC: Celsius | null; coolC: Celsius | null; future: boolean; kind: TargetDisplayKind }[];
   demandSpans: { from: EpochMs; to: EpochMs | null; mode: Mode }[];
@@ -2691,6 +2698,26 @@ export interface RoomDayDto {
     max: { c: Celsius; at: EpochMs } | null;
     rateCPerH: number | null;
   };
+  /** Server time the day was read up to; the page adds live readings after it. */
+  asOf: EpochMs;
+  /** False while the recorder cannot be read yet (HA not connected after a start, recorder not answering):
+   *  never cached, the page shows «loading» and asks again shortly. */
+  complete: boolean;
+  diag: RoomDayDiag;
+}
+
+export type RoomDayEntityRole = 'temperature' | 'humidity' | 'klimo_temperature' | 'klimo_humidity' | 'klimo_target' | 'klimo_heat_demand' | 'klimo_cool_demand';
+
+/** What the room day was built from (also logged at debug level), so a report can be read from the add-on log. */
+export interface RoomDayDiag {
+  ha: boolean;
+  recorder: 'ok' | 'error' | 'skipped';
+  error: string | null;
+  /** Every entity asked for: rows the recorder returned and how many of them were numbers. */
+  entities: { entityId: EntityId; role: RoomDayEntityRole; rows: number; numeric: number }[];
+  humiditySource: RoomDaySource;
+  /** klimo_target = Klimo's recorded target sensor; plan = the schedule (sensor not recorded); mixed = the plan fills its gaps. */
+  targetSource: 'klimo_target' | 'plan' | 'mixed' | 'none';
 }
 
 /* 7.4 HA lookups ------------------------------------------------------------------------------------ */
@@ -2714,6 +2741,8 @@ export interface HaEntityQuery {
   nearAreaId?: string;
   /** Add-room wizard: only what can take this device role ('any': any role), each result with its `wizard` hint. */
   wizard?: WizardDeviceRole | 'any';
+  /** Like `wizard`, for a device group: what can take one of these roles, the likeliest ones first. */
+  wizardRoles?: WizardDeviceRole[];
   limit?: number; // default 50, max 500
 }
 export interface HaEntityDto {
@@ -2738,7 +2767,10 @@ export interface HaEntityDto {
   /** The temperature it reads in °C: a sensor's state, a climate's current_temperature (only with `wizard`). */
   valueC?: Celsius | null;
 }
-/** Add-room wizard: `suggested` is one role when clear, two (likeliest first) when it could be either; `possible` is every role it can take. */
+/**
+ * Add-room wizard: `suggested` is one role when clear, two (likeliest first) when it could be either, none
+ * when a room takes it only on purpose (a circulation pump); `possible` is every role it can take.
+ */
 export interface WizardRoleHint {
   suggested: WizardDeviceRole[];
   possible: WizardDeviceRole[];

@@ -26,7 +26,10 @@ import type {
   OutdoorAggregation,
   OutdoorHistoryDto,
   RoomConfig,
+  RoomDayDiag,
   RoomDayDto,
+  RoomDaySource,
+  RoomSensor,
   SparkDto,
   StatisticsQuery,
   StatisticsSeriesDto,
@@ -35,6 +38,7 @@ import type {
 } from '../shared/model';
 import { BUS, CLOCK, CONFIG_STORE, HA_PORT, READ_MODELS, SPAN_STORE } from '../tokens';
 import { combineBuckets } from './outdoor';
+import { combineSteps, dropOutliers, extremes, onGrid, type OutlierRule, type SensorSteps } from './room-series';
 import { bucketize, combine, downsample, type Point, roundTo, valueAt } from './series';
 import { domainOf, entityTempUnit, fToC, isAvailableState, parseNumber, systemTempUnit, type TempUnit } from './units';
 
