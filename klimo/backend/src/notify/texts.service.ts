@@ -83,6 +83,9 @@ const SUBJECT_KINDS: ReadonlySet<EventKind> = new Set<EventKind>([
   'window_open_long',
 ]);
 
+/** Alerts about one source failing: named by the source, with its entity when another source reads the same. */
+const SOURCE_KINDS: ReadonlySet<EventKind> = new Set<EventKind>(['source_failed', 'source_unavailable']);
+
 /** Words that name a kind of device rather than this device («Temperature», «Датчик», «Радіатор»). */
 const GENERIC_WORDS = new Set([
   'sensor', 'датчик', 'temperature', 'temp', 'температура', 'температури', 'humidity', 'вологість', 'вологості', 'thermometer',
@@ -255,7 +258,9 @@ export class TextsService implements ITexts {
    * says what it is), its `role`, and what Klimo does meanwhile when that depends on live state (where a
    * room takes its temperature from, the outdoor fallback, a trigger's rule for missing data).
    */
-  subjectFacts(d: Pick<Detection, 'kind' | 'roomId' | 'entityId' | 'deviceKey' | 'facts'>): ReasonParams {
+  subjectFacts(d: Pick<Detection, 'kind' | 'roomId' | 'entityId' | 'deviceKey' | 'facts' | 'sourceId'>): ReasonParams {
+    if (d.sourceId && SOURCE_KINDS.has(d.kind)) return this.sourceFacts(d.sourceId);
+    if (d.kind === 'z2m_offline') return this.bridgeFacts(d.facts ?? {});
     if (!SUBJECT_KINDS.has(d.kind)) return {};
     const f = d.facts ?? {};
     const entityId = (typeof f.entityId === 'string' && f.entityId) || d.entityId || null;
@@ -301,6 +306,23 @@ export class TextsService implements ITexts {
     }
     if (d.kind === 'battery_low') out.reminderPct = this.config.singleton('deviceHealth').batteryLow.reminderPct;
     return out;
+  }
+
+  /** Two sources that still read the same with their room («Кондиціонер · Вітальня» twice): the entity id is added. */
+  private sourceFacts(sourceId: string): ReasonParams {
+    const c = this.nameCache();
+    const label = c.sources.get(sourceId);
+    if (!label) return {};
+    for (const [id, other] of c.sources) if (id !== sourceId && sameName(other, label)) return { sourceShared: true };
+    return {};
+  }
+
+  /** Two Zigbee2MQTT bridges with one name: their base topics tell them apart. */
+  private bridgeFacts(f: ReasonParams): ReasonParams {
+    const list = this.config.list('z2m');
+    const z = list.find((x) => x.id === f.instanceId);
+    if (!z) return {};
+    return list.some((x) => x.id !== z.id && sameName(x.name, z.name)) ? { topic: z.baseTopic } : {};
   }
 
   /** Another device in the same place with the same name, or a name that only says what it is. */

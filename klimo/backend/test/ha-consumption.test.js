@@ -31,7 +31,7 @@ function gasMeter() {
   return { readings, before, hour };
 }
 
-function setup({ meterUnit = 'ft³', failRecorder = false } = {}) {
+function setup({ meterUnit = 'ft³', failRecorder = false, extraSpans = [] } = {}) {
   const clock = new FakeClock(NOW);
   const ha = new FakeHa();
   const meter = gasMeter();
@@ -73,6 +73,7 @@ function setup({ meterUnit = 'ft³', failRecorder = false } = {}) {
   const spanList = [
     { id: 'a', subject: 'source', subjectId: 's_boiler', kind: 'run', mode: 'heat', startTs: MIDNIGHT + 6 * HOUR, endTs: MIDNIGHT + 7 * HOUR, meta: null },
     { id: 'b', subject: 'source', subjectId: 's_boiler', kind: 'run', mode: 'heat', startTs: MIDNIGHT + 14 * HOUR, endTs: null, meta: null },
+    ...extraSpans,
   ];
   const spans = { range: async (from, to, subject, id) => spanList.filter((s) => s.startTs < to && (s.endTs ?? NOW) > from && (!id || s.subjectId === id)) };
   return { service: new ConsumptionService(ha, config, spans, clock), ha, config, meter };
@@ -137,6 +138,23 @@ test('a month by days and a year by months come from the same statistics; runs o
   const week = await service.source('s_boiler', { range: 'week' });
   assert.equal(week.date, '2026-10-19');
   assert.equal(week.runs.length, 2);
+});
+
+test('a run across midnight is measured whole in both days, the days themselves stop at midnight', async () => {
+  // 23:30–00:30 at the base rate of 10 ft³/h: yesterday read only its first half and showed 5 ft³ for 60 min
+  const night = { id: 'n', subject: 'source', subjectId: 's_boiler', kind: 'run', mode: 'heat', startTs: MIDNIGHT - 30 * MIN, endTs: MIDNIGHT + 30 * MIN, meta: null };
+  const { service, meter } = setup({ extraSpans: [night] });
+  const yesterday = await service.source('s_boiler', { range: 'day', date: '2026-10-20' });
+  const today = await service.source('s_boiler', { range: 'day' });
+  for (const d of [yesterday, today]) {
+    const run = d.runs.find((r) => r.start === night.startTs);
+    assert.ok(run, `${d.date} lists the night run`);
+    assert.equal(run.minutes, 60);
+    near(run.gas, 10 * FT3);
+  }
+  near(yesterday.totals.gas, (meter.before(MIDNIGHT) - meter.before(MIDNIGHT - DAY)) * FT3);
+  near(yesterday.buckets[23].gas, meter.hour(MIDNIGHT - HOUR) * FT3);
+  assert.equal(yesterday.totals.runs, 1);
 });
 
 test('a recorder that does not answer leaves the amounts unknown, the runtime still counts', async () => {

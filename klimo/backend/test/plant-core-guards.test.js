@@ -175,8 +175,8 @@ test('a running heat pump unavailable for 3 minutes faults as unavailable and th
   assert.equal(h.sourceState(res, 's_boiler').on, false);
 });
 
-test('a boiler needing flow: the flow-safety pump starts at 10:00:00, the boiler at 10:00:20', () => {
-  const t10 = kyiv(2026, 10, 21, 10, 0);
+/** A boiler feeding radiators (one room) and a flow-safety floor loop; `radPump` false leaves the radiators without a pump. */
+function flowHouse(radPump = true) {
   const boiler = h.gasBoiler('s_boiler');
   const rad = h.circuit('c_rad', ['s_boiler']);
   const floor = h.circuit('c_floor', ['s_boiler'], { kind: 'floor', flowSafety: true, order: 1 });
@@ -184,15 +184,21 @@ test('a boiler needing flow: the flow-safety pump starts at 10:00:00, the boiler
   const pf = h.pump('p_floor', 'c_floor', 'switch.floor_pump', { rule: 'rooms' });
   const r = h.room('r_liv');
   const e = h.emitter('e_rad', 'r_liv', { circuitId: 'c_rad', roles: { heat: 'primary', cool: null } });
-  const cfg = h.makeCfg({ rooms: [r], emitters: [e], sources: [boiler], circuits: [rad, floor], pumps: [pr, pf], heat: { chain: h.chain('s_boiler') } });
-  const run = h.runner(cfg, { start: t10 - 10 * SEC });
+  return h.makeCfg({ rooms: [r], emitters: [e], sources: [boiler], circuits: [rad, floor], pumps: radPump ? [pr, pf] : [pf], heat: { chain: h.chain('s_boiler') } });
+}
+
+test('a boiler needing flow: the pump of the loop it starts for runs at 10:00:00, the boiler at 10:00:20', () => {
+  // the pre-run goes through the radiators the room asks for, not the floor loop: that pump would stop
+  // again the moment the boiler fires and the radiator pump takes over
+  const t10 = kyiv(2026, 10, 21, 10, 0);
+  const run = h.runner(flowHouse(), { start: t10 - 10 * SEC });
   run.set('switch.boiler_relay', 'off').set('switch.rad_pump', 'off').set('switch.floor_pump', 'off');
   run.room('r_liv', { t: 19.7, demand: 'heat' });
   let res = run.tick(t10);
   assert.equal(h.sourceState(res, 's_boiler').on, false);
-  assert.equal(h.pumpState(res, 'p_floor').on, true);
-  assert.equal(h.pumpState(res, 'p_floor').reason, 'prerun');
-  assert.equal(h.pumpState(res, 'p_rad').on, false);
+  assert.equal(h.pumpState(res, 'p_rad').on, true);
+  assert.equal(h.pumpState(res, 'p_rad').reason, 'prerun');
+  assert.equal(h.pumpState(res, 'p_floor').on, false);
   assert.deepEqual(h.verdictOf(res, 'r_liv').waitReason, { code: 'wait.prerun', params: { sourceId: 's_boiler', until: t10 + 20 * SEC } });
   assert.equal(res.nextWakeAt, t10 + 20 * SEC);
 
@@ -201,6 +207,21 @@ test('a boiler needing flow: the flow-safety pump starts at 10:00:00, the boiler
   res = run.tick(t10 + 20 * SEC);
   assert.equal(h.sourceState(res, 's_boiler').on, true);
   assert.equal(h.pumpState(res, 'p_rad').on, true, 'the radiator pump follows the open radiators');
+  assert.equal(h.pumpState(res, 'p_floor').on, false, 'no flow-safety run while the radiator pump moves the water');
+});
+
+test('a boiler needing flow for a loop without a pump of its own: the flow-safety pump pre-runs and keeps the flow', () => {
+  const t10 = kyiv(2026, 10, 21, 10, 0);
+  const run = h.runner(flowHouse(false), { start: t10 - 10 * SEC });
+  run.set('switch.boiler_relay', 'off').set('switch.floor_pump', 'off');
+  run.room('r_liv', { t: 19.7, demand: 'heat' });
+  let res = run.tick(t10);
+  assert.equal(h.sourceState(res, 's_boiler').on, false);
+  assert.equal(h.pumpState(res, 'p_floor').on, true);
+  assert.equal(h.pumpState(res, 'p_floor').reason, 'prerun');
+  res = run.tick(t10 + 20 * SEC);
+  assert.equal(h.sourceState(res, 's_boiler').on, true);
+  assert.equal(h.pumpState(res, 'p_floor').on, true, 'the only pump moves the water through the running boiler');
 });
 
 test('a check run starts the source regardless of demand, reports the confirmation and stops at its end', () => {

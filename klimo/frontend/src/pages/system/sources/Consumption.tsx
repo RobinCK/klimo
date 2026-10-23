@@ -508,7 +508,6 @@ function MeterDialog({ kind, value, onClose, onPick }: { kind: MeterKind; value:
       title={meterLabel(kind)}
       size="md"
       actions={[
-        // the picker opens focused, so its own clear button stays hidden: unbinding needs a way of its own
         ...(value ? [{ label: t('Remove'), icon: 'trash' as const, onClick: () => onPick(null), variant: 'danger' as const }] : []),
         { label: t('Cancel'), onClick: onClose, variant: 'secondary' },
         { label: t('Use it'), onClick: use },
@@ -516,7 +515,8 @@ function MeterDialog({ kind, value, onClose, onPick }: { kind: MeterKind; value:
     >
       <Stack gap="md">
         <EntityPicker
-          autoFocus
+          // a focused picker opens its list over «Remove» and «Cancel»; a bound meter opens closed
+          autoFocus={!value}
           clearable
           ariaLabel={meterLabel(kind)}
           placeholder={t('Search Home Assistant entities')}

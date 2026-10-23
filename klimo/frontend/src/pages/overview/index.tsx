@@ -123,9 +123,12 @@ function Desktop({ d, sw, house }: { d: Data; sw: ProfileSwitch; house: HouseSta
 /** Phone «Сьогодні»: one row with the lead source's day, leading to the system page. */
 function TodayRow({ d, house, sources }: { d: Data; house: HouseState; sources: readonly SourceDto[] | undefined }) {
   const plant: PlantState | null = d.plant;
-  const leadId = house.leadSourceId ?? plant?.lead.heat ?? plant?.lead.cool ?? null;
-  const lead = plant?.sources.find((s) => s.sourceId === leadId) ?? null;
   const today = d.today.data;
+  // nothing leads in a quiet hour (every room satisfied, the heat pump below its bivalence point):
+  // the source that ran longest today still tells the day
+  const longest = today?.stats.perSource.filter((p) => p.cycles > 0).sort((a, b) => b.runtimeMin - a.runtimeMin)[0]?.sourceId ?? null;
+  const leadId = house.leadSourceId ?? plant?.lead.heat ?? plant?.lead.cool ?? longest;
+  const lead = plant?.sources.find((s) => s.sourceId === leadId) ?? null;
   const use = useTodayUse();
   if (!lead || !today) return null;
   const kind = sources?.find((s) => s.config.id === lead.sourceId)?.config.kind ?? 'custom';

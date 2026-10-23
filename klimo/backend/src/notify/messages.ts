@@ -113,13 +113,16 @@ export function incidentVars(i: IncidentLike, ctx: TextContext, extra: Vars = {}
   const name = label ?? (entity ? names.entity(entity) : null) ?? (i.deviceKey ? names.device(i.deviceKey) : null) ?? entity;
   // two sensors both called «Температура» in one room read the same: the entity id tells them apart
   const subject = name && entity && f.showEntity === true && name !== entity ? `${name} (${entity})` : name;
+  // likewise two air conditioners both called «Кондиціонер» in one room
+  const sourceName = sourceId ? (names.source(sourceId) ?? sourceId) : null;
   const since = num(f.since);
   const minutes = num(f.minutes) ?? (since !== null ? minutesSince(since, ctx.now) : minutesSince(i.openedAt, ctx.now));
   const lastAt = num(f.lastAt) ?? num(f.lastReportedAt) ?? (num(f.minutes) !== null ? ctx.now - (num(f.minutes) as number) * MINUTE_MS : null);
   const vars: Record<string, Vars[string]> = {
     ...f,
     room: roomId ? (names.room(roomId) ?? roomId) : null,
-    source: sourceId ? (names.source(sourceId) ?? sourceId) : null,
+    source: sourceName && entity && f.sourceShared === true ? `${sourceName} (${entity})` : sourceName,
+    sourceName,
     fallback: fallbackId ? (names.source(fallbackId) ?? fallbackId) : null,
     circuit: circuitId ? (names.circuit(circuitId) ?? circuitId) : null,
     instance: instanceId ? (names.instance(instanceId) ?? label ?? instanceId) : label,
@@ -155,8 +158,9 @@ export function renderEventTexts(kind: EventKind, vars: Vars, ctx: TextContext):
   let title = renderRow(t.title, vars, ctx);
   let body = renderRow(t.body, vars, ctx);
   // an entity id would push the state off a lock screen: the title keeps the name, the body says which entity
-  if (title.length > TITLE_MAX && typeof vars.entity === 'string' && vars.device !== vars.deviceName) {
-    title = renderRow(t.title, { ...vars, device: vars.deviceName, sensor: vars.deviceName }, ctx);
+  const withId = vars.device !== vars.deviceName || vars.source !== vars.sourceName;
+  if (title.length > TITLE_MAX && typeof vars.entity === 'string' && withId) {
+    title = renderRow(t.title, { ...vars, device: vars.deviceName, sensor: vars.deviceName, source: vars.sourceName }, ctx);
     if (!body.includes(vars.entity)) body = `${renderRow(SYSTEM_TEXTS.entityRef, { entity: vars.entity }, ctx)} ${body}`;
   }
   return { title: clip(title, TITLE_MAX), body, short: renderRow(t.short, vars, ctx) };
@@ -189,7 +193,8 @@ function placeOf(i: IncidentLike, ctx: TextContext, extra: Vars): string | null 
   const v = incidentVars(i, ctx, extra);
   if (typeof v.room === 'string') return v.room;
   if (v.outdoor === true || v.role === 'outdoor') return labelOf(['Outdoors', 'Надворі'], ctx.lang);
-  return typeof v.source === 'string' ? v.source : null;
+  // the bare name: two same-named sources are one place, their lines below tell them apart
+  return typeof v.sourceName === 'string' ? v.sourceName : typeof v.source === 'string' ? v.source : null;
 }
 
 /**

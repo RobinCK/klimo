@@ -29,10 +29,14 @@ const has = (v: Vars, k: string) => v[k] !== undefined && v[k] !== null && v[k] 
 const cool = (v: Vars) => v.mode === 'cool';
 const outdoor = (v: Vars) => v.outdoor === true || v.role === 'outdoor';
 
-/** Which bridge, when there may be several: «Zigbee2MQTT «Garage»», or a name that already says it («Z2M #2»). */
+/**
+ * Which bridge, when there may be several: «Zigbee2MQTT «Garage»», or a name that already says it («Z2M #2»);
+ * two bridges with one name add their base topic.
+ */
 function bridge(v: Vars): string {
-  if (!has(v, 'instance')) return 'Zigbee2MQTT';
-  return /zigbee2mqtt|z2m/i.test(String(v.instance)) ? '{instance}' : 'Zigbee2MQTT «{instance}»';
+  const topic = has(v, 'topic') ? ' ({topic})' : '';
+  if (!has(v, 'instance')) return `Zigbee2MQTT${topic}`;
+  return (/zigbee2mqtt|z2m/i.test(String(v.instance)) ? '{instance}' : 'Zigbee2MQTT «{instance}»') + topic;
 }
 
 /** «Кухня · », «Надворі · » or nothing: where the device is, in front of its name. */
@@ -247,8 +251,8 @@ export const EVENTS: Record<EventKind, EventTexts> = {
     short: ['{source} does not respond', '{source} не відповідає'],
     resolved: ['{source} is back online', '{source} знову на зв’язку'],
     line: [
-      (v) => `{source} ({entity}): no response for {duration} — ${fallbackClause(v, 0)}`,
-      (v) => `{source} ({entity}): не відповідає {duration} — ${fallbackClause(v, 1)}`,
+      (v) => `${v.sourceShared === true ? '{source}' : '{source} ({entity})'}: no response for {duration} — ${fallbackClause(v, 0)}`,
+      (v) => `${v.sourceShared === true ? '{source}' : '{source} ({entity})'}: не відповідає {duration} — ${fallbackClause(v, 1)}`,
     ],
     group: ['{n|source does|sources do} not respond', '{n|джерело не відповідає|джерела не відповідають|джерел не відповідають}'],
   },
@@ -385,7 +389,7 @@ export const EVENTS: Record<EventKind, EventTexts> = {
       (v) => `${where(v, 0)}{device}: unavailable[ for {duration}] — ${entityAction(v, 0)[1]}`,
       (v) => `${where(v, 1)}{device}: недоступно[ {duration}] — ${entityAction(v, 1)[1]}`,
     ],
-    group: ['{n|entity|entities} unavailable', '{n|сутність недоступна|сутності недоступні|сутностей недоступні}'],
+    group: ['{n|entity|entities} unavailable', '{n|сутність недоступна|сутності недоступні|сутностей недоступно}'],
   },
   entity_missing: {
     title: [(v) => `${where(v, 0)}{device}: entity missing`, (v) => `${where(v, 1)}{device}: сутності немає`],

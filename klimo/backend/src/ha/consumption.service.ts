@@ -123,6 +123,11 @@ export function runtimeMin(spans: readonly RunSpan[], a: EpochMs, b: EpochMs, no
   return ms / MIN;
 }
 
+/** The runs a period lists: every one that ran inside [a, b), also when it began before or ended after. */
+function runsIn(spans: readonly RunSpan[], a: EpochMs, b: EpochMs, now: EpochMs): RunSpan[] {
+  return spans.filter((s) => s.startTs < b && (s.endTs ?? now) > a);
+}
+
 /**
  * What a source used — gas, electricity, heat — by hour, day or month, with cost, runtime, outdoor
  * temperature, heating degree-days and efficiency, plus single runs. Everything is read on request:
@@ -328,7 +333,12 @@ export class ConsumptionService implements IConsumption {
     const tariffs = this.tariffs();
     const withRuns = range === 'day' || range === 'week';
     const spans = await this.runSpans(prevPlan.from, plan.to, source.id);
-    const reading = await this.read(refs, { from: prevPlan.from, to: until }, range === 'year' ? 'day' : 'hour', withRuns ? plan.from : null, true, now);
+    // a run across the period's edge (last night's, from 23:36 to 06:30) is measured whole in either day,
+    // so the readings reach past the edges; buckets and totals still stop at them
+    const listed = withRuns ? runsIn(spans, plan.from, until, now) : [];
+    const runsFrom = withRuns ? Math.min(plan.from, ...listed.map((s) => s.startTs)) : null;
+    const readTo = Math.max(until, ...listed.map((s) => Math.min(s.endTs ?? now, now)));
+    const reading = await this.read(refs, { from: prevPlan.from, to: readTo }, range === 'year' ? 'day' : 'hour', runsFrom, true, now);
     const values = new MeterValues(refs, reading, tariffs);
     const totals = (a: EpochMs, b: EpochMs): ConsumptionTotals => this.totals(values, spans, reading.outdoor, a, b, now);
 
@@ -389,7 +399,7 @@ export class ConsumptionService implements IConsumption {
   }
 
   private runs(values: MeterValues, spans: RunSpan[], from: EpochMs, to: EpochMs, now: EpochMs): ConsumptionRun[] {
-    const mine = spans.filter((s) => s.startTs < to && (s.endTs ?? now) > from).sort((a, b) => a.startTs - b.startTs);
+    const mine = runsIn(spans, from, to, now).sort((a, b) => a.startTs - b.startTs);
     const windows = mine.map((s) => ({ start: s.startTs, end: s.endTs ?? now }));
     const shares = values.runShares(windows);
 

@@ -370,3 +370,81 @@ test('two inputs of one trigger: named from Home Assistant, the same names told 
     await h.close();
   }
 });
+
+/** Two air conditioners both called «Кондиціонер» in the Office, both gone from Home Assistant. */
+async function twoAcs(h, room) {
+  const { newSourceConfig } = require('../dist/shared/defaults');
+  const ids = ['climate.ac_window', 'climate.ac_door'];
+  for (const entityId of ids) {
+    const { id: _id, ...ac } = newSourceConfig('ac', { id: 'x', name: 'Кондиціонер', now: 0, scope: 'room', roomId: room.id });
+    await h.config.create('sources', { ...ac, adapter: { ...ac.adapter, climate: entityId } }, ACTOR);
+    h.ha.set(entityId, 'unavailable', {}, { changedAgoMs: 20 * MIN });
+  }
+  await h.tick(h.watch.watchDetections(h.clock.now()).filter((d) => d.kind === 'source_unavailable'));
+  return ids;
+}
+
+test('two air conditioners with one name in one room: each alert and its recovery carry the entity id', async () => {
+  const h = await openNotify();
+  try {
+    const { room } = await office(h);
+    await h.settings({ grouping: { enabled: false, windowMin: 2 } });
+    const ids = await twoAcs(h, room);
+    const titles = (await h.log()).map((x) => x.title).sort();
+    assert.deepEqual(titles, ids.map((id) => `Кондиціонер · Office (${id}) не відповідає`).sort());
+    const incs = h.incidents.list({ scope: 'all' }).filter((i) => i.kind === 'source_unavailable');
+    assert.deepEqual(incs.map((i) => h.texts.resolved(h.incidents.snapshot(i.id) ?? i)).sort(), ids.map((id) => `Кондиціонер · Office (${id}) знову на зв’язку`).sort());
+  } finally {
+    await h.close();
+  }
+});
+
+test('two air conditioners with one name, grouped: each line names its entity once', async () => {
+  const h = await openNotify();
+  try {
+    const { room } = await office(h);
+    const ids = await twoAcs(h, room);
+    await h.advance(2 * MIN + SEC);
+    const msg = (await h.log()).find((x) => x.body.includes('• '));
+    assert.equal(msg.title, '2 джерела не відповідають · Кондиціонер · Office', 'the place once, without the ids');
+    const lines = msg.body.split('\n');
+    assert.equal(lines.length, 2, msg.body);
+    for (const id of ids) assert.equal(lines.filter((l) => l.startsWith(`• Кондиціонер · Office (${id}): не відповідає 20 хв`)).length, 1, msg.body);
+    for (const l of lines) assert.equal(l.match(/climate\./g).length, 1, l);
+  } finally {
+    await h.close();
+  }
+});
+
+test('two Zigbee2MQTT bridges with one name are told apart by their base topics', async () => {
+  const h = await openNotify();
+  try {
+    await h.settings({ grouping: { enabled: false, windowMin: 2 } });
+    const out = [];
+    for (const k of [0, 1]) {
+      const z = await h.config.create('z2m', { name: 'Гараж', baseTopic: `zigbee2mqtt_${k}`, frontendUrl: null, bridgeEntityId: `binary_sensor.z2m_${k}_bridge`, resendOnRestart: true }, ACTOR);
+      out.push(det('z2m_offline', `z2m_offline:${z.id}`, { entityId: `binary_sensor.z2m_${k}_bridge`, facts: { instanceId: z.id, name: z.name, since: WED_1910 - (k + 2) * MIN } }));
+    }
+    await h.tick(out);
+    assert.deepEqual((await h.log()).map((x) => x.title).sort(), ['Zigbee2MQTT «Гараж» (zigbee2mqtt_0) не на зв’язку', 'Zigbee2MQTT «Гараж» (zigbee2mqtt_1) не на зв’язку']);
+    const incs = h.incidents.list({ scope: 'all' });
+    assert.deepEqual(incs.map((i) => h.texts.resolved(h.incidents.snapshot(i.id) ?? i)).sort(), [
+      'Zigbee2MQTT «Гараж» (zigbee2mqtt_0) повернувся — команди надіслано знову',
+      'Zigbee2MQTT «Гараж» (zigbee2mqtt_1) повернувся — команди надіслано знову',
+    ]);
+  } finally {
+    await h.close();
+  }
+});
+
+test('group titles agree with the count in Ukrainian («5 сутностей недоступно»)', () => {
+  const uk = m.textContext('uk', WED_1910, TZ);
+  assert.deepEqual([1, 2, 5, 11, 21, 22].map((n) => m.renderGroupTitle('entity_unavailable', n, uk)), [
+    '1 сутність недоступна',
+    '2 сутності недоступні',
+    '5 сутностей недоступно',
+    '11 сутностей недоступно',
+    '21 сутність недоступна',
+    '22 сутності недоступні',
+  ]);
+});
