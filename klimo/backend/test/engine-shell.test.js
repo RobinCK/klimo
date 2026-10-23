@@ -304,6 +304,37 @@ test('alerts name the device as the devices page does, not by its entity id', as
   e.engine.onModuleDestroy();
 });
 
+test('a head Klimo holds off turned by hand: the number on the head becomes the room target', async () => {
+  const cfg = h.makeCfg();
+  cfg.house = { ...cfg.house, mode: 'off' };
+  const e = h.makeEngine({ cfg, safety: NO_DRY_RUN });
+  await e.boot();
+  await e.advance(3 * MIN);
+  const row = e.engine.ledger()['climate.living_trv'];
+  assert.deepEqual([row.commanded.hvacMode, row.status], ['off', 'confirmed']);
+  const shown = e.ha.getState('climate.living_trv').attributes.temperature;
+  e.ha.foreign('climate.living_trv', 'off', { temperature: shown + 3 }, null);
+  await e.advance(SEC);
+  assert.equal(e.roomActionsCalls.length, 1);
+  assert.deepEqual(e.roomActionsCalls[0].req, { value: shown + 3, duration: 'slot' });
+  e.engine.onModuleDestroy();
+});
+
+test('a head Klimo holds closed at its frost floor turned by hand: the number, not the difference, is the target', async () => {
+  const e = h.makeEngine({ safety: NO_DRY_RUN });
+  await e.boot();
+  await e.advance(3 * MIN);
+  const room = e.engine.room('r_living');
+  const head = room.trvs.find((x) => x.entityId === 'climate.living_trv');
+  head.activity = 'closed';
+  const sent = e.engine.ledger()['climate.living_trv'].commanded.temperature;
+  e.ha.foreign('climate.living_trv', 'heat', { temperature: sent + 2 }, 'user');
+  await e.advance(SEC);
+  assert.equal(e.roomActionsCalls.length, 1);
+  assert.deepEqual(e.roomActionsCalls[0].req, { value: sent + 2, duration: 'slot' });
+  e.engine.onModuleDestroy();
+});
+
 test('an AC on fixed on/off setpoints turned by hand: the number on the AC becomes the room target', async () => {
   const cfg = h.makeCfg({ room: { ac: { ...h.d.DEFAULT_ROOM().ac, control: 'onoff' } } });
   const ac = { ...h.d.newSourceConfig('ac', { id: 's_ac', name: 'Кондиціонер', now: 0, scope: 'room', roomId: 'r_living' }), enabled: true };

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.4
+
+- **A head turned by hand becomes the room's target also when Klimo holds it off.** Out of the heating
+  season, or with the house off, Klimo switches the heads off; a knob turned on such a head was simply
+  ignored. Now the number turned becomes the room's target, the same as on a working head (kept until
+  the next slot, put back or saved into the profile — **If a valve is turned by hand** in the room's
+  settings).
+- **A head closed at 7° and turned to 21° asks for 21°.** On a head Klimo held closed, at frost
+  protection or at its safe value, the turn was added to the room's target as a difference (+14° → 32°).
+  The number on the head is now taken as it is; on a working head a turn still moves the target by the
+  same number of degrees.
+
 ## 0.2.3
 
 - **"What heats or cools the room?" reads at a glance.** The choices sit in two columns with a short

@@ -277,7 +277,7 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
     this.everConnected = this.ha.connected;
     this.haDownSince = this.ha.connected ? null : now;
     this.ha.onConnection((ok) => this.onConnection(ok));
-    this.ha.onStateChanged((id, next) => this.onStateChanged(id, next));
+    this.ha.onStateChanged((id, next, prev) => this.onStateChanged(id, next, prev));
     this.ha.onEvent((type) => {
       if (type === 'homeassistant_started') this.resyncAll('ha_started');
     });
@@ -1254,10 +1254,10 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
     this.cache.ha(ok, this.health());
   }
 
-  private onStateChanged(entityId: EntityId, next: HaStateObj | null): void {
+  private onStateChanged(entityId: EntityId, next: HaStateObj | null, prev: HaStateObj | null): void {
     if (this.phase !== 'running') return;
     try {
-      this.reconciler.onStateChanged(entityId, next, this.config.engineConfig().safety.conflict);
+      this.reconciler.onStateChanged(entityId, next, this.config.engineConfig().safety.conflict, prev);
     } catch (e) {
       this.once.warn('state', `state change of ${entityId} could not be checked: ${errorText(e)}`);
     }
@@ -1343,7 +1343,10 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
     const current = state?.target.displayC ?? state?.target.heatC ?? null;
     // heads in on/off or valve mode and ACs in on/off show fixed setpoints: the hand's number is the target
     // (a room's AC is a `local` actuator)
-    const absolute = current === null || (m.ownerType === 'trv' && (room.trv.strategy === 'onoff' || room.trv.strategy === 'valve')) || (m.ownerType === 'local' && room.ac.control !== 'target');
+    // so does a head Klimo holds closed, at frost or at its safe value: 7° turned to 21° means 21°
+    const head = m.ownerType === 'trv' ? state?.trvs.find((x) => x.entityId === m.entityId) : undefined;
+    const tracksTarget = !head || head.activity === 'heating' || head.activity === 'idle';
+    const absolute = m.absolute || current === null || (m.ownerType === 'trv' && (room.trv.strategy === 'onoff' || room.trv.strategy === 'valve' || !tracksTarget)) || (m.ownerType === 'local' && room.ac.control !== 'target');
     const valueC = round1(Math.min(32, Math.max(5, absolute ? m.valueC : current + (m.valueC - m.commandedC))));
     let userName: string | null = null;
     try {

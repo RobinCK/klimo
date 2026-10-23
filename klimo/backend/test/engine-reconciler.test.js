@@ -285,6 +285,33 @@ test('a head switched off keeps showing its old setpoint: later reports of it ar
   assert.equal(s.ha.getState('climate.living_trv').state, 'off');
 });
 
+test('a head Klimo holds off, its knob turned: the number turned is reported as the target itself', async () => {
+  const s = setup();
+  const manual = [];
+  s.rec.onManualChange((m) => manual.push(m));
+  await s.run([head(19.5)]);
+  s.clock.t += 10 * MIN;
+  const off = head(7, { minIntervalSec: 0 });
+  off.value = climate(7, 'off');
+  await s.run([off]);
+  s.clock.t += SEC;
+  await s.run([off]);
+  assert.equal(s.row('climate.living_trv').status, 'confirmed');
+  s.clock.t += MIN;
+  // the head stays off, its setpoint moves from 19.5 to 22
+  let before = s.ha.getState('climate.living_trv');
+  s.ha.foreign('climate.living_trv', 'off', { temperature: 22 }, null);
+  s.rec.onStateChanged('climate.living_trv', s.ha.getState('climate.living_trv'), CONFLICT, before);
+  assert.equal(manual.length, 1);
+  assert.deepEqual([manual[0].valueC, manual[0].absolute, manual[0].roomId], [22, true, 'r_living']);
+  // switched on by the knob with a new number: the same
+  before = s.ha.getState('climate.living_trv');
+  s.ha.foreign('climate.living_trv', 'heat', { temperature: 23 }, 'user');
+  s.rec.onStateChanged('climate.living_trv', s.ha.getState('climate.living_trv'), CONFLICT, before);
+  assert.equal(manual.length, 2);
+  assert.equal(manual[1].valueC, 23);
+});
+
 test('the boot window only reads: matching rows are confirmed, only a watchdog keep-alive goes out', async () => {
   const s = setup();
   const t0 = s.clock.now();

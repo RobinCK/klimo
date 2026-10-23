@@ -203,7 +203,9 @@ control method is chosen per room:
 - **Save the battery**: the room temperature is sent at most every 5 min and only on a change of 0.2° or
   more (at once for 1°), with a keep-alive every 30 min.
 - **If a valve is turned by hand**: keep it until the next schedule slot, revert it after a minute, or
-  save it into the profile. With the child lock on, only changes from the HA UI count.
+  save it into the profile. With the child lock on, only changes from the HA UI count. On a working
+  valve the turn moves the room's target by the same degrees; on a valve Klimo holds closed or off (out
+  of season, frost protection) the number turned becomes the target.
 - **Resend the targets after Zigbee2MQTT restarts** — Klimo notices the bridge coming back and re-sends
   every target and setting.
 - When a room or a valve is removed, the valve gets its own sensor back, a target of 20° and its child

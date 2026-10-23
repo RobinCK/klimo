@@ -101,6 +101,8 @@ export interface ManualChange {
   /** Setpoint the device shows now / the one Klimo had sent (°C). */
   valueC: number;
   commandedC: number;
+  /** The head showed no target of Klimo's (it was off): the number turned is the target itself. */
+  absolute: boolean;
   userId: string | null;
   contextId: string | null;
   at: EpochMs;
@@ -623,7 +625,7 @@ export class ReconcilerService {
    * a hand on a head or AC (its setpoint moved away from what Klimo sent) or another writer switching
    * a relay, pump or valve against Klimo — twice within the window and Klimo backs off.
    */
-  onStateChanged(entityId: EntityId, next: HaStateObj | null, conflict: SafetySettings['conflict'] = DEFAULT_CONFLICT): void {
+  onStateChanged(entityId: EntityId, next: HaStateObj | null, conflict: SafetySettings['conflict'] = DEFAULT_CONFLICT, prev: HaStateObj | null = null): void {
     if (!next || !next.context) return;
     const ledger = this.memory.ledger();
     const ctxId = next.context.id;
@@ -631,11 +633,12 @@ export class ReconcilerService {
     if (!rows.length || rows.some((r) => r.contextIds.includes(ctxId))) return;
     const now = this.clock.now();
     const obs = snapOf(next, this.haUnit()).snap;
+    const before = prev ? snapOf(prev, this.haUnit()).snap : null;
     for (const r of rows) {
       const d = this.lastDesired.get(r.key);
       if (!d || !r.desired) continue;
       if (d.userSetpointAttr) {
-        this.checkManual(d, r, obs, now);
+        this.checkManual(d, r, obs, before, now);
         continue;
       }
       // a person or an automation; a device reporting by itself (a restart, its own watchdog) is no fight
@@ -658,17 +661,24 @@ export class ReconcilerService {
     }
   }
 
-  private checkManual(d: DesiredActuator, r: ActuatorRecord, obs: EntitySnap, now: EpochMs): void {
+  private checkManual(d: DesiredActuator, r: ActuatorRecord, obs: EntitySnap, prev: EntitySnap | null, now: EpochMs): void {
     if (r.status !== 'confirmed' || r.confirmedAt === null || now - r.confirmedAt <= MANUAL_AFTER_CONFIRM_MS) return;
     if (now < this.manualQuietUntil || !d.entityId || this.exercising(d.entityId)) return;
     if ((this.suppressUntil.get(d.key)?.until ?? 0) > now) return;
-    // «off» is sent as the mode alone, so an idle head keeps showing its last setpoint: that is no hand on
-    // the knob (a head switched back on against Klimo is simply put back off)
-    if (r.commanded?.kind === 'climate' && r.commanded.hvacMode === 'off') return;
-    if (obs.state === 'off') return;
     const commanded = r.commanded?.kind === 'climate' ? r.commanded.temperature : null;
     const value = attrNum(obs, 'temperature');
-    if (commanded === null || value === null || Math.abs(value - commanded) < MANUAL_MIN_DELTA_C) return;
+    let absolute = false;
+    if (r.commanded?.kind === 'climate' && r.commanded.hvacMode === 'off') {
+      // «off» is sent as the mode alone, so an idle head keeps showing its last setpoint: that is no hand on
+      // the knob (a head switched back on against Klimo is simply put back off). The knob moving that
+      // setpoint is one, and its number is what the person wants
+      const shown = prev ? attrNum(prev, 'temperature') : null;
+      if (value === null || shown === null || Math.abs(value - shown) < MANUAL_MIN_DELTA_C) return;
+      absolute = true;
+    } else {
+      if (obs.state === 'off') return;
+      if (commanded === null || value === null || Math.abs(value - commanded) < MANUAL_MIN_DELTA_C) return;
+    }
     const m: ManualChange = {
       key: d.key,
       entityId: d.entityId,
@@ -676,7 +686,8 @@ export class ReconcilerService {
       ownerType: d.owner.type,
       ownerId: d.owner.id,
       valueC: value,
-      commandedC: commanded,
+      commandedC: commanded ?? value,
+      absolute,
       userId: obs.context.userId,
       contextId: obs.context.id,
       at: now,
