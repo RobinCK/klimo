@@ -110,6 +110,8 @@ const STOP_WAIT_MS = 5 * SEC;
 const TOMBSTONE_MS = 5 * MIN_MS;
 /** A head turned by hand gets this long to be taken over as the room's new target before Klimo resends. */
 const MANUAL_HOLD_MS = 30 * SEC;
+/** A knob reports every step while it turns: its number is taken once it has rested this long. */
+const MANUAL_SETTLE_MS = 5 * SEC;
 /** Automatic airing for a humid room at most this often. */
 const AUTO_AIRING_COOLDOWN_MS = 6 * HOUR_MS;
 const TEST_DEFAULT_SEC = 120;
@@ -219,6 +221,7 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
   private readonly timers: { cancel(): void }[] = [];
   private haWaitTimer: { cancel(): void } | null = null;
   private dryRunTimer: { cancel(): void } | null = null;
+  private readonly turning = new Map<string, { m: ManualChange; timer: { cancel(): void } }>();
   private readonly offs: (() => void)[] = [];
 
   /** Values the engine adds to the core's: heads being handed back, removed sources told OFF. */
@@ -334,6 +337,8 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
     this.haWaitTimer = null;
     this.dryRunTimer?.cancel();
     this.dryRunTimer = null;
+    for (const t of this.turning.values()) t.timer.cancel();
+    this.turning.clear();
     for (const off of this.offs.splice(0)) off();
   }
 
@@ -1331,22 +1336,42 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
     }
   }
 
-  /** A head or an AC turned by hand: the room takes the value as its target (or Klimo puts its own back). */
+  /**
+   * A head or an AC turned by hand. Klimo stays away from it at once; the value is taken (or Klimo's own put
+   * back) once the knob rests, so a turn reported step by step counts with its last step, not its first.
+   */
   private onManual(m: ManualChange): void {
+    if (!m.roomId) return;
+    const room = this.config.engineConfig().rooms.find((r) => r.id === m.roomId);
+    if (!room) return;
+    const before = this.turning.get(m.key);
+    before?.timer.cancel();
+    // what Klimo had sent before the first step is what the turn is measured against
+    const turn: ManualChange = before ? { ...m, commandedC: before.m.commandedC, absolute: before.m.absolute || m.absolute } : m;
+    const revert = room.trv.manualPolicy === 'revert';
+    this.reconciler.suppress(m.key, m.at + MANUAL_SETTLE_MS + (revert ? room.trv.revertAfterSec * SEC : MANUAL_HOLD_MS), revert);
+    const timer = this.clock.setTimeout(() => {
+      this.turning.delete(m.key);
+      this.onManualSettled(turn);
+    }, MANUAL_SETTLE_MS);
+    this.turning.set(m.key, { m: turn, timer });
+  }
+
+  /** The knob has rested: the room takes the value as its target (or Klimo puts its own back). */
+  private onManualSettled(m: ManualChange): void {
     if (!m.roomId) return;
     const cfg = this.config.engineConfig();
     const room = cfg.rooms.find((r) => r.id === m.roomId);
     if (!room) return;
-    const now = m.at;
+    const now = this.clock.now();
     const policy = room.trv.manualPolicy;
     const state = this.result?.rooms.find((r) => r.roomId === room.id);
     const current = state?.target.displayC ?? state?.target.heatC ?? null;
-    // heads in on/off or valve mode and ACs in on/off show fixed setpoints: the hand's number is the target
-    // (a room's AC is a `local` actuator)
-    // so does a head Klimo holds closed, at frost or at its safe value: 7° turned to 21° means 21°
-    const head = m.ownerType === 'trv' ? state?.trvs.find((x) => x.entityId === m.entityId) : undefined;
-    const tracksTarget = !head || head.activity === 'heating' || head.activity === 'idle';
-    const absolute = m.absolute || current === null || (m.ownerType === 'trv' && (room.trv.strategy === 'onoff' || room.trv.strategy === 'valve' || !tracksTarget)) || (m.ownerType === 'local' && room.ac.control !== 'target');
+    // the number on a head is what the person reads and means: it becomes the target, whatever Klimo had
+    // the head show around it. An AC on the room target shows Klimo's corrected setpoint, so its turn moves
+    // the target by the same degrees; on fixed setpoints its number is the target (a room's AC is a `local`
+    // actuator)
+    const absolute = m.absolute || current === null || m.ownerType === 'trv' || (m.ownerType === 'local' && room.ac.control !== 'target');
     const valueC = round1(Math.min(32, Math.max(5, absolute ? m.valueC : current + (m.valueC - m.commandedC))));
     let userName: string | null = null;
     try {
@@ -1362,11 +1387,9 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
     this.pendingDetections.push({ kind: 'manual_override', dedupKey: `manual_override:${room.id}:${now}`, active: true, roomId: room.id, entityId: m.entityId, deviceKey, facts: { valueC, by, policy, ...(info?.name ? { name: info.name } : {}) } });
     this.log.log(`${room.name}: ${m.entityId} turned to ${m.valueC}° by hand (${policy})`);
     if (policy === 'revert') {
-      this.reconciler.suppress(m.key, now + room.trv.revertAfterSec * SEC, true);
       this.requestRun('trv.manual');
       return;
     }
-    this.reconciler.suppress(m.key, now + MANUAL_HOLD_MS, false);
     const actions = this.roomActions();
     if (!actions) return;
     actions.setTarget(room.id, { value: valueC, duration: policy === 'save' ? 'forever' : 'slot' }, actor).catch((e: unknown) => {

@@ -45,6 +45,8 @@ const CONTEXTS_KEPT = 5;
 const MANUAL_AFTER_CONFIRM_MS = 10 * SEC;
 /** Changes of a setpoint smaller than this are the device's rounding, not a hand on the knob. */
 const MANUAL_MIN_DELTA_C = 0.5;
+/** A further step of a knob still being turned (anything smaller is noise). */
+const MANUAL_STEP_C = 0.05;
 const DEFAULT_CONFLICT: SafetySettings['conflict'] = { count: 2, windowMin: 30, backoffMin: 10 };
 /**
  * A house in °F sees a climate's target rounded by HA (whole degrees unless the integration says
@@ -664,11 +666,15 @@ export class ReconcilerService {
   private checkManual(d: DesiredActuator, r: ActuatorRecord, obs: EntitySnap, prev: EntitySnap | null, now: EpochMs): void {
     if (r.status !== 'confirmed' || r.confirmedAt === null || now - r.confirmedAt <= MANUAL_AFTER_CONFIRM_MS) return;
     if (now < this.manualQuietUntil || !d.entityId || this.exercising(d.entityId)) return;
-    if ((this.suppressUntil.get(d.key)?.until ?? 0) > now) return;
     const commanded = r.commanded?.kind === 'climate' ? r.commanded.temperature : null;
     const value = attrNum(obs, 'temperature');
     let absolute = false;
-    if (r.commanded?.kind === 'climate' && r.commanded.hvacMode === 'off') {
+    if ((this.suppressUntil.get(d.key)?.until ?? 0) > now) {
+      // the knob is still under the hand: every further step is reported, the last one is what counts
+      const shown = prev ? attrNum(prev, 'temperature') : null;
+      if (value === null || shown === null || Math.abs(value - shown) < MANUAL_STEP_C) return;
+      absolute = r.commanded?.kind === 'climate' && r.commanded.hvacMode === 'off';
+    } else if (r.commanded?.kind === 'climate' && r.commanded.hvacMode === 'off') {
       // «off» is sent as the mode alone, so an idle head keeps showing its last setpoint: that is no hand on
       // the knob (a head switched back on against Klimo is simply put back off). The knob moving that
       // setpoint is one, and its number is what the person wants

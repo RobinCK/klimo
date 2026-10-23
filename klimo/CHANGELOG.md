@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.8
+
+- **A head turned by hand keeps the number it was turned to.** Heads such as the Aqara E1 report every
+  step while the knob turns; Klimo took the first step (20.5 → 21) as the new target and, half a
+  minute later, wrote it back over the head that already showed 23. Klimo now waits until the knob has
+  rested for 5 s and takes the last step; it writes nothing to the head meanwhile.
+- **The number turned is the room's target.** It used to move the target by the same degrees — a
+  head showing 21.5 for a target of 21, turned to 23, gave 22.5. Now it gives 23, in the app and on the
+  cards. While the room heats the head shows half a degree more (23.5), while it rests half a degree
+  less — that is how Klimo opens and closes it around its band.
+
 ## 0.2.7
 
 - **The room's «Today» chart shows the humidity too** — a thin pale line on a scale of its own, behind

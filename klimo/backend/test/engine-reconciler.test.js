@@ -232,6 +232,34 @@ test('a head turned by hand is reported once its own value was confirmed for a w
   assert.equal(out.decisions.find((x) => x.code === 'trv.manual_reverted').params.from, 23);
 });
 
+test('a knob still under the hand: every further step is reported, measured against what Klimo had sent', async () => {
+  const s = setup();
+  const manual = [];
+  s.rec.onManualChange((m) => manual.push(m));
+  await s.run([head(21.5)]);
+  s.clock.t += MIN;
+  await s.run([head(21.5)]);
+  const turn = (v) => {
+    const prev = s.ha.getState('climate.living_trv');
+    s.ha.foreign('climate.living_trv', 'heat', { temperature: v }, null);
+    s.rec.onStateChanged('climate.living_trv', s.ha.getState('climate.living_trv'), CONFLICT, prev);
+  };
+  turn(22);
+  assert.equal(manual.length, 1);
+  s.rec.suppress('climate.living_trv', s.clock.now() + 35 * SEC, false);
+  s.clock.t += SEC;
+  turn(22.5);
+  s.clock.t += SEC;
+  turn(23);
+  assert.deepEqual(manual.map((m) => [m.valueC, m.commandedC]), [[22, 21.5], [22.5, 21.5], [23, 21.5]]);
+  // a report that does not move the setpoint (its own temperature, its battery) is no further step
+  s.clock.t += SEC;
+  const prev = s.ha.getState('climate.living_trv');
+  s.ha.set('climate.living_trv', 'heat', { temperature: 23, current_temperature: 20.4 });
+  s.rec.onStateChanged('climate.living_trv', s.ha.getState('climate.living_trv'), CONFLICT, prev);
+  assert.equal(manual.length, 3);
+});
+
 test('a head that already shows the wanted value: its later reports are measured against that value, not an older command', async () => {
   const s = setup();
   const manual = [];

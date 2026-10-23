@@ -96,13 +96,15 @@ test('a head turned by hand becomes the room target until the next slot', async 
   const sent = e.engine.ledger()['climate.living_trv'].commanded.temperature;
   e.ha.foreign('climate.living_trv', 'heat', { temperature: sent + 2 }, 'user');
   await e.advance(SEC);
+  assert.equal(e.roomActionsCalls.length, 0, 'the knob may still be turning');
+  await e.advance(5 * SEC);
   assert.equal(e.roomActionsCalls.length, 1);
   const call = e.roomActionsCalls[0];
   assert.equal(call.roomId, 'r_living');
-  assert.deepEqual(call.req, { value: 23, duration: 'slot' }, 'the room target moved by the same 2°');
+  assert.deepEqual(call.req, { value: sent + 2, duration: 'slot' }, 'the number on the head is the room target');
   assert.equal(call.actor.via, 'trv');
   await e.advance(10 * SEC);
-  assert.ok(e.journal.entries.some((x) => x.code === 'trv.manual' && x.params.valueC === 23 && x.params.policy === 'slot'));
+  assert.ok(e.journal.entries.some((x) => x.code === 'trv.manual' && x.params.valueC === sent + 2 && x.params.policy === 'slot'));
   assert.ok(e.ingested.some((x) => x.dets.some((d) => d.kind === 'manual_override')));
   e.engine.onModuleDestroy();
 });
@@ -348,7 +350,7 @@ test('a head Klimo holds off turned by hand: the number on the head becomes the 
   assert.deepEqual([row.commanded.hvacMode, row.status], ['off', 'confirmed']);
   const shown = e.ha.getState('climate.living_trv').attributes.temperature;
   e.ha.foreign('climate.living_trv', 'off', { temperature: shown + 3 }, null);
-  await e.advance(SEC);
+  await e.advance(6 * SEC);
   assert.equal(e.roomActionsCalls.length, 1);
   assert.deepEqual(e.roomActionsCalls[0].req, { value: shown + 3, duration: 'slot' });
   e.engine.onModuleDestroy();
@@ -363,9 +365,30 @@ test('a head Klimo holds closed at its frost floor turned by hand: the number, n
   head.activity = 'closed';
   const sent = e.engine.ledger()['climate.living_trv'].commanded.temperature;
   e.ha.foreign('climate.living_trv', 'heat', { temperature: sent + 2 }, 'user');
-  await e.advance(SEC);
+  await e.advance(6 * SEC);
   assert.equal(e.roomActionsCalls.length, 1);
   assert.deepEqual(e.roomActionsCalls[0].req, { value: sent + 2, duration: 'slot' });
+  e.engine.onModuleDestroy();
+});
+
+test('a knob reported step by step: the room takes the last step once the knob rests, and Klimo stays away meanwhile', async () => {
+  const e = h.makeEngine({ safety: NO_DRY_RUN });
+  await e.boot();
+  await e.advance(3 * MIN);
+  const sent = e.engine.ledger()['climate.living_trv'].commanded.temperature;
+  const calls = e.callsTo('climate.living_trv').length;
+  for (const v of [sent + 0.5, sent + 1, sent + 1.5]) {
+    e.ha.foreign('climate.living_trv', 'heat', { temperature: v }, null);
+    await e.advance(2 * SEC);
+  }
+  assert.equal(e.roomActionsCalls.length, 0, 'still turning');
+  await e.advance(4 * SEC);
+  assert.equal(e.roomActionsCalls.length, 1);
+  assert.deepEqual(e.roomActionsCalls[0].req, { value: sent + 1.5, duration: 'slot' });
+  await e.advance(20 * SEC);
+  assert.deepEqual(e.journal.entries.filter((x) => x.code === 'trv.manual').map((x) => x.params.valueC), [sent + 1.5], 'one turn, one line');
+  assert.equal(e.callsTo('climate.living_trv').length, calls, 'nothing written over the hand meanwhile');
+  assert.equal(e.ha.getState('climate.living_trv').attributes.temperature, sent + 1.5);
   e.engine.onModuleDestroy();
 });
 
@@ -385,7 +408,7 @@ test('an AC on fixed on/off setpoints turned by hand: the number on the AC becom
   const target = e.engine.room('r_living').target.heatC;
   assert.notEqual(target, 26);
   e.ha.foreign('climate.living_ac', 'heat', { temperature: 26 }, 'user');
-  await e.advance(SEC);
+  await e.advance(6 * SEC);
   assert.equal(e.roomActionsCalls.length, 1);
   assert.deepEqual(e.roomActionsCalls[0].req, { value: 26, duration: 'slot' });
   e.engine.onModuleDestroy();

@@ -1,5 +1,5 @@
 name: Klimo
-version: "0.2.7"
+version: "0.2.8"
 slug: klimo
 description: Room-by-room heating and cooling with flexible climate sources, schedules and native HA entities
 url: https://github.com/RobinCK/klimo
