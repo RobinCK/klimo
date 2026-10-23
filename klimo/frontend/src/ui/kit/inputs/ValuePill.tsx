@@ -68,14 +68,23 @@ function EditorPill({ pill, text, name }: { pill: NumberPillProps | RangePillPro
   const [open, setOpen] = useState(false);
   const { ariaLabel } = pill;
   return (
-    <Popover opened={open} onChange={setOpen} position="bottom-end" offset={6} withinPortal trapFocus returnFocus shadow="md">
+    // Escape closes the popup here, after a value being typed had its chance to cancel only the typing
+    <Popover opened={open} onChange={setOpen} position="bottom-end" offset={6} withinPortal trapFocus returnFocus closeOnEscape={false} shadow="md">
       <Popover.Target>
         <button type="button" className={s.valuePill} aria-label={name} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
           {text}
           <Icon name="pencil" size={14} />
         </button>
       </Popover.Target>
-      <Popover.Dropdown className={s.popover} aria-label={ariaLabel ?? text}>
+      <Popover.Dropdown
+        className={s.popover}
+        aria-label={ariaLabel ?? text}
+        onKeyDown={(e) => {
+          if (e.key !== 'Escape') return;
+          e.stopPropagation();
+          setOpen(false);
+        }}
+      >
         {isNumber(pill) ? (
           <Stepper
             variant="square"

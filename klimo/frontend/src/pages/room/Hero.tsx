@@ -46,8 +46,8 @@ function TargetBlock({ ed, state }: { ed: TargetEditor; state: RoomState }) {
             disabled={!ed.canEdit}
             editing={editing}
             label={bound === 'lo' ? t('Not colder than') : t('Not warmer than')}
-            ariaDec={t('Lower by {d}', { d: fmtDelta(ed.stepC) })}
-            ariaInc={t('Raise by {d}', { d: fmtDelta(ed.stepC) })}
+            ariaDec={t('Lower by {delta}', { delta: fmtDelta(ed.stepC) })}
+            ariaInc={t('Raise by {delta}', { delta: fmtDelta(ed.stepC) })}
           />
         }
       />
@@ -67,8 +67,8 @@ function TargetBlock({ ed, state }: { ed: TargetEditor; state: RoomState }) {
           disabled={!ed.canEdit}
           editing={editing}
           label={t('Target')}
-          ariaDec={t('Lower the target by {d}', { d: fmtDelta(ed.stepC) })}
-          ariaInc={t('Raise the target by {d}', { d: fmtDelta(ed.stepC) })}
+          ariaDec={t('Lower the target by {delta}', { delta: fmtDelta(ed.stepC) })}
+          ariaInc={t('Raise the target by {delta}', { delta: fmtDelta(ed.stepC) })}
         />
       }
     />

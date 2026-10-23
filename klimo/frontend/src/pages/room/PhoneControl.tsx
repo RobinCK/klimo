@@ -183,8 +183,8 @@ export function PhoneControl({ p, ed, profiles, now }: { p: SectionProps; ed: Ta
           slider: t('Target'),
           lo: t('Not colder than'),
           hi: t('Not warmer than'),
-          dec: t('Lower the target by {d}', { d: fmtDelta(ed.stepC) }),
-          inc: t('Raise the target by {d}', { d: fmtDelta(ed.stepC) }),
+          dec: t('Lower the target by {delta}', { delta: fmtDelta(ed.stepC) }),
+          inc: t('Raise the target by {delta}', { delta: fmtDelta(ed.stepC) }),
           locked: t('View only'),
           valueText: (x) => fmtTemp(x),
         }}
