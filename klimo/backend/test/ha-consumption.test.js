@@ -189,6 +189,7 @@ test('the house today: a shared meter counts once, gas in kWh as soon as one met
   assert.equal(h.sources.length, 2);
   near(h.sources[1].gas, gasToday, 0.01);
   near(h.cost, gasToday * 8, 0.05);
+  near(h.unassigned.gas, gasToday, 0.01, 'the shared meter is shared out once, not per boiler');
 
   config.sources.push({ ...newSourceConfig('gas_boiler', { id: 's_boiler3', name: 'Котел 3', now: 1 }), meters: [{ kind: 'gas', entityId: 'sensor.gas_kwh', unit: 'kWh' }] });
   h = await service.house({ date: '2026-10-20' });
@@ -238,6 +239,62 @@ test('a pump with the energy meter of its plug: its own row, the house electrici
   assert.equal(m.buckets.length, 31);
   near(m.pumps[0].electricity, (24 + 14) * 0.05);
   await assert.rejects(() => service.house({ range: 'decade' }), (e) => e.status === 400);
+});
+
+test('the gas shared between rooms: each hour by how long each room asked while the boiler ran; the rest unassigned', async () => {
+  const demand = (id, roomId, from, to) => ({ id, subject: 'room', subjectId: roomId, kind: 'demand', mode: 'heat', startTs: from, endTs: to, meta: null });
+  const { service, config, meter } = setup({
+    extraSpans: [
+      demand('d1', 'r_a', MIDNIGHT + 6 * HOUR, MIDNIGHT + 7 * HOUR),
+      demand('d2', 'r_b', MIDNIGHT + 6.5 * HOUR, MIDNIGHT + 7 * HOUR),
+      demand('d3', 'r_b', MIDNIGHT + 14 * HOUR, null),
+      // asked while the boiler was off: no share of the gas, still counted as asking
+      demand('d4', 'r_c', MIDNIGHT + 9 * HOUR, MIDNIGHT + 10 * HOUR),
+    ],
+  });
+  config.rooms = [{ id: 'r_a' }, { id: 'r_b' }, { id: 'r_c' }];
+  config.circuits = [{ id: 'c_rad', sourceIds: ['s_boiler'] }];
+  config.emitters = ['r_a', 'r_b', 'r_c'].map((roomId) => ({ id: `e_${roomId}`, roomId, enabled: true, sourceId: null, circuitId: 'c_rad' }));
+  config.list = (c) => ({ sources: config.sources, rooms: config.rooms, circuits: config.circuits, emitters: config.emitters })[c] ?? [];
+
+  const h = await service.house();
+  const room = (id) => h.rooms.find((r) => r.roomId === id);
+  // 06–07 the boiler ran: r_a asked all hour, r_b the second half → 2/3 and 1/3 of that hour's gas
+  const six = meter.hour(MIDNIGHT + 6 * HOUR) * FT3;
+  near(room('r_a').gas, (six * 2) / 3, 0.002);
+  // since 14:00 it runs again and only r_b asks: the running hour is all r_b's
+  near(room('r_b').gas, six / 3 + h.buckets[14].gas, 0.002);
+  assert.equal(room('r_c').gas, 0, 'asked only while the boiler was off');
+  assert.deepEqual(h.rooms.map((r) => [r.roomId, r.demandMin]), [['r_a', 60], ['r_b', 60], ['r_c', 60]]);
+  near(room('r_a').gas + room('r_b').gas + h.unassigned.gas, h.gas, 0.002);
+  assert.ok(h.unassigned.gas > room('r_a').gas, 'the hours nobody asked (the stove, the run tail) stay unassigned');
+  near(room('r_a').cost, ((six * 2) / 3) * 8, 0.02);
+});
+
+test('a floor that runs with the boiler takes its share while its pump runs (with no pump, while the boiler runs)', async () => {
+  const { service, config, meter } = setup({
+    extraSpans: [{ id: 'p', subject: 'pump', subjectId: 'p_floor', kind: 'run', mode: 'heat', startTs: MIDNIGHT + 6 * HOUR, endTs: MIDNIGHT + 7 * HOUR + 10 * MIN, meta: null }],
+  });
+  config.rooms = [{ id: 'r_f' }, { id: 'r_g' }];
+  config.circuits = [
+    { id: 'c_floor', mode: 'follow_source', manifoldId: null, sourceIds: ['s_boiler'] },
+    { id: 'c_bare', mode: 'follow_source', manifoldId: null, sourceIds: ['s_boiler'] },
+  ];
+  config.emitters = [
+    { id: 'e_f', roomId: 'r_f', enabled: true, sourceId: null, circuitId: 'c_floor' },
+    { id: 'e_g', roomId: 'r_g', enabled: true, sourceId: null, circuitId: 'c_bare' },
+  ];
+  config.pumps = [{ id: 'p_floor', circuitId: 'c_floor', manifoldId: null, enabled: true }];
+  config.list = (c) => ({ sources: config.sources, rooms: config.rooms, circuits: config.circuits, emitters: config.emitters, pumps: config.pumps })[c] ?? [];
+
+  const h = await service.house();
+  const room = (id) => h.rooms.find((r) => r.roomId === id);
+  const six = meter.hour(MIDNIGHT + 6 * HOUR) * FT3;
+  // 06–07 both floors took the boiler's heat; since 14:00 only the one without a pump (its pump did not run)
+  near(room('r_f').gas, six / 2, 0.002);
+  near(room('r_g').gas, six / 2 + h.buckets[14].gas, 0.002);
+  assert.equal(room('r_f').demandMin, 70);
+  assert.equal(room('r_g').demandMin, 90);
 });
 
 test('unknown sources and ranges are refused', async () => {

@@ -427,6 +427,15 @@ row for every source and pump — its gas, electricity, cost and running time. A
 sources counts in both rows and once in the house. A row without a meter says so; a source's row opens
 its page, where its meters are chosen.
 
+**By room** shares the sources' gas and electricity out between the rooms. Each hour a source ran (each
+day in a year), what its meter counted goes to the rooms that took its heat or cooling meanwhile, by how
+long each took it: a room takes it while it asks, and a floor that runs with the source while its pump
+runs (with no pump of its own, its collector's; with none, while the source runs). Two rooms asking the
+whole hour get half each; one asking the whole hour and one for half of it, two thirds and one third.
+What ran while no room took it (run-on, frost protection, a stove on the same gas meter, standby) stays
+under *No room took it*. Pumps are not shared out; their meters stay in their own rows. A room's asking
+is kept 400 days; before version 0.2.15 it was kept 30 days, so older periods go under *No room took it*.
+
 **Prices** are set in *Settings → Energy prices*: the currency, the price of a kWh of electricity, the
 price of gas per m³ or per kWh, and the calorific value of the gas (10.5 kWh per m³ unless the bill says
 otherwise). The **Energy** tile of the overview adds today's gas, electricity and cost of all sources
@@ -635,7 +644,8 @@ back within seconds and its incident closes at once; going offline still waits f
 Every decision is journaled with its reason: sources started, stopped, failed over and recovered, pumps
 and their run-on, valves confirmed or retried, windows, profile changes, triggers, manual changes (with
 who made them), restarts. Filter by sources, rooms, devices or system. Kept for 30 days; run periods of
-sources, pumps and profiles (the **Today** strips and runtime statistics) for up to 400 days.
+sources, pumps and profiles (the **Today** strips and runtime statistics) and when rooms asked for heat
+(the **By room** split of consumption) for up to 400 days.
 
 ## Lovelace cards
 

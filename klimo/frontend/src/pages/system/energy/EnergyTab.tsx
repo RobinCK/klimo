@@ -86,6 +86,7 @@ export function EnergyTab({ d, phone, nav }: { d: SystemData; phone: boolean; na
           <Text>{t('Loading…')}</Text>
         )}
       </Section>
+      {c.data?.configured ? <ByRoom d={d} data={c.data} phone={phone} /> : null}
       <Consumers d={d} data={c.data} phone={phone} reload={() => void c.reload()} />
     </Stack>
   );
@@ -179,6 +180,77 @@ function HouseBody({ data, range, pending, setDate }: { data: HouseConsumptionDt
         />
       ) : null}
     </Stack>
+  );
+}
+
+/* ---------------- by room ---------------- */
+
+/** The sources' gas and electricity shared out between the rooms that took their heat, with what no room took. */
+function ByRoom({ d, data, phone }: { d: SystemData; data: HouseConsumptionDto; phone: boolean }) {
+  const units = data.units;
+  const withGas = units.gas != null;
+  const withElectricity = units.electricity != null;
+  const priced = data.rooms.some((r) => r.cost != null) || data.unassigned.cost != null;
+  const rooms = [...data.rooms].sort((a, b) => (b.cost ?? b.gas ?? b.electricity ?? -1) - (a.cost ?? a.gas ?? a.electricity ?? -1));
+  const amounts = (v: { gas: number | null; electricity: number | null; cost: number | null }) =>
+    [
+      withGas && v.gas != null ? fmtAmount(v.gas, units.gas) : '',
+      withElectricity && v.electricity != null ? fmtAmount(v.electricity, units.electricity) : '',
+      v.cost != null ? fmtMoney(v.cost, units.currency) : '',
+    ].filter(Boolean);
+  const cell = (v: number | null, unit: string | null) => (v == null ? '—' : fmtAmount(v, unit));
+  const who = (name: string, caption: string) => (
+    <Stack gap="3xs">
+      <Text>{name}</Text>
+      <Text variant="caption">{caption}</Text>
+    </Stack>
+  );
+  const cols: DataColumn[] = phone
+    ? [
+        { key: 'who', label: t('Room'), width: '1.4fr' },
+        { key: 'used', label: t('Used'), width: '1fr', align: 'end' },
+      ]
+    : [
+        { key: 'who', label: t('Room'), width: '1.8fr' },
+        ...(withGas ? [{ key: 'gas', label: `${kindLabel('gas')}, ${unitLabel(units.gas)}`, width: '1fr', align: 'end' as const }] : []),
+        ...(withElectricity ? [{ key: 'electricity', label: `${kindLabel('electricity')}, ${unitLabel('kWh')}`, width: '1fr', align: 'end' as const }] : []),
+        ...(priced ? [{ key: 'cost', label: t('Cost'), width: '1fr', align: 'end' as const }] : []),
+      ];
+  const row = (key: string, name: string, caption: string, v: { gas: number | null; electricity: number | null; cost: number | null }, open?: () => void): DataRow => ({
+    key,
+    onClick: open,
+    ariaLabel: `${name}, ${caption}`,
+    cells: {
+      who: who(name, caption),
+      gas: cell(v.gas, null),
+      electricity: cell(v.electricity, null),
+      cost: v.cost == null ? '—' : fmtMoney(v.cost, units.currency),
+      used: (
+        <Stack gap="3xs">
+          {amounts(v).map((a) => (
+            <Text key={a}>{a}</Text>
+          ))}
+        </Stack>
+      ),
+    },
+  });
+  const table: DataRow[] = [
+    ...rooms.map((r) =>
+      row(r.roomId, d.roomName(r.roomId) ?? r.roomId, r.demandMin > 0 ? t('heated or cooled {dur}', { dur: fmtDur(r.demandMin) }) : t('not heated or cooled'), r, () =>
+        navigate(paths.room(r.roomId)),
+      ),
+    ),
+    row('unassigned', t('No room took it'), t('run-on, frost protection, a stove on the gas meter, standby'), data.unassigned),
+  ];
+  return (
+    <Section
+      variant="plain"
+      level={3}
+      title={t('By room')}
+      subtitle={t('each hour a source ran, what it used is split between the rooms that took its heat meanwhile, by how long each took it: a room that asked, or a floor while its pump ran; pumps are not split')}
+    >
+      <DataTable columns={cols} rows={table} minWidth={phone ? 0 : 520} ariaLabel={t('By room')} empty={t('No room yet.')} />
+    </Section>
   );
 }
 

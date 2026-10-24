@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.15
+
+- **What each room cost.** *System → Consumption* has a **By room** block: each hour a source ran,
+  what its meter counted is shared out between the rooms that took its heat meanwhile, by how long each
+  took it — two rooms asking the whole hour get half each, one for the whole hour and one for half of
+  it two thirds and one third. A warm floor that runs with the source counts while its pump runs. What
+  ran while no room took it (run-on, frost protection, a stove on the gas meter) is shown apart; pumps
+  keep their own rows. A row opens its room. When rooms asked for heat is now kept 400 days instead of
+  30, so a year can be shared out too.
+
 ## 0.2.14
 
 - **The room cards' 6-hour chart shows the humidity too, and reads better.** On the dashboard cards and

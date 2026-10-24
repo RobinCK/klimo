@@ -14,7 +14,7 @@ const RUN_AT_MINUTE = 3 * 60 + 30; // 03:30 local, when nothing interesting happ
 export const RETENTION = {
   journalDays: 30,
   journalMaxRows: 20_000,
-  /** Source, pump and profile spans feed year-over-year runtime statistics. */
+  /** Source, pump, profile and room-demand spans feed year-over-year runtime statistics and the split of the use between rooms. */
   longSpanDays: 400,
   shortSpanDays: 30,
   resolvedIncidentDays: 90,
@@ -90,8 +90,8 @@ export class RetentionService implements OnApplicationBootstrap, OnModuleDestroy
 
         // only closed spans (NULL never compares lower): an open span is a run in progress, however old
         const closedBefore = (subjects: string[], days: number) => em.delete(RunSpanRow, { subject: In(subjects), endTs: LessThan(now - days * DAY) });
-        report.spans += (await closedBefore(['source', 'pump', 'profile'], RETENTION.longSpanDays)).affected ?? 0;
-        report.spans += (await closedBefore(['room', 'rule', 'trigger'], RETENTION.shortSpanDays)).affected ?? 0;
+        report.spans += (await closedBefore(['source', 'pump', 'profile', 'room'], RETENTION.longSpanDays)).affected ?? 0;
+        report.spans += (await closedBefore(['rule', 'trigger'], RETENTION.shortSpanDays)).affected ?? 0;
 
         report.incidents +=
           (await em.delete(IncidentRow, { status: 'resolved', resolvedAt: LessThan(now - RETENTION.resolvedIncidentDays * DAY) })).affected ?? 0;

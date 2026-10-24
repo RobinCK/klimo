@@ -3395,6 +3395,16 @@ export interface ConsumerUse {
   meters: ConsumptionMeterDto[];
 }
 
+/** A room's share of what the sources used (see HouseConsumptionDto.rooms). */
+export interface RoomUse {
+  roomId: Id;
+  gas: number | null;
+  electricity: number | null;
+  cost: number | null;
+  /** Minutes the room took heat or cooling in the period: it asked, or the floor it is on ran with the source. */
+  demandMin: number;
+}
+
 /**
  * GET /api/energy/consumption?range=day|week|month|year&date=YYYY-MM-DD — what the house used in a
  * period and who used it: the overview energy tile (today) and the «Споживання» page.
@@ -3423,6 +3433,15 @@ export interface HouseConsumptionDto {
   sources: ({ sourceId: Id } & ConsumerUse)[];
   /** Pumps with a meter. */
   pumps: ({ pumpId: Id } & ConsumerUse)[];
+  /**
+   * Every room, with its share of the sources' meters: each hour (each day of a year) a source ran, what
+   * its meters counted is split between the rooms that took its heat or cooling meanwhile — those that
+   * asked, and the rooms of a floor that runs with the source while its pump ran — by how long each took
+   * it. Pumps are not shared out.
+   */
+  rooms: RoomUse[];
+  /** What the sources' meters counted while none of their rooms asked: run-on, frost protection, a stove on the gas meter, standby. */
+  unassigned: ConsumptionValues;
   /** At least one source or pump has a meter (otherwise the tile invites to bind one). */
   configured: boolean;
   recorder: 'ok' | 'unavailable';

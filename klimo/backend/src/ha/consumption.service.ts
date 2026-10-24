@@ -16,6 +16,7 @@ import type {
   ConsumptionValues,
   ConsumerUse,
   EnergyTariffs,
+  RoomUse,
   EntityId,
   EpochMs,
   GasPriceUnit,
@@ -246,14 +247,154 @@ export class ConsumptionService implements IConsumption {
     });
   }
 
-  private async runSpans(from: EpochMs, to: EpochMs, subject: 'source' | 'pump', subjectId?: Id): Promise<RunSpan[]> {
+  private async runSpans(from: EpochMs, to: EpochMs, subject: 'source' | 'pump' | 'room', subjectId?: Id): Promise<RunSpan[]> {
+    const kind = subject === 'room' ? 'demand' : 'run';
     try {
-      return (await this.spans.range(from, to, subject, subjectId)).filter((s) => s.kind === 'run');
+      return (await this.spans.range(from, to, subject, subjectId)).filter((s) => s.kind === kind);
     } catch (e) {
       this.once.warn('spans', `run spans unavailable: ${errorText(e)}`);
 
       return [];
     }
+  }
+
+  /** The rooms each source heats or cools: through an emitter of its own, or a circuit it (or its manifold) feeds. */
+  private roomsBySource(): Map<Id, Set<Id>> {
+    const out = new Map<Id, Set<Id>>();
+    const add = (sourceId: Id, roomId: Id) => {
+      const set = out.get(sourceId) ?? new Set<Id>();
+      set.add(roomId);
+      out.set(sourceId, set);
+    };
+    const circuits = new Map(this.config.list('circuits').map((c) => [c.id, c]));
+    for (const e of this.config.list('emitters')) {
+      if (!e.enabled) {
+        continue;
+      }
+
+      if (e.sourceId) {
+        add(e.sourceId, e.roomId);
+      }
+
+      for (const id of (e.circuitId ? circuits.get(e.circuitId)?.sourceIds : null) ?? []) {
+        add(id, e.roomId);
+      }
+    }
+
+    for (const s of this.config.list('sources')) {
+      if (s.scope === 'room' && s.roomId) {
+        add(s.id, s.roomId);
+      }
+    }
+
+    return out;
+  }
+
+  /**
+   * The sources' meters shared out between rooms. Each meter once (two boilers on one gas meter share it
+   * as one); each hour (each day of a year) what it counted goes to the rooms that took their heat or
+   * cooling while one of them ran, by how long each took it; with no room taking it, it stays unassigned.
+   * A room takes it while it asks, and while the pump of a floor that runs with the source runs (such a
+   * floor warms its rooms whether they ask or not).
+   */
+  private splitByRoom(
+    sources: { id: Id; refs: MeterRef[] }[],
+    reading: Reading,
+    house: MeterValues,
+    tariffs: EnergyTariffs,
+    spans: { source: RunSpan[]; pump: RunSpan[]; room: RunSpan[] },
+    edges: EpochMs[],
+    now: EpochMs,
+  ): { rooms: RoomUse[]; unassigned: ConsumptionValues } {
+    const from = edges[0];
+    const until = edges[edges.length - 1];
+    const served = this.roomsBySource();
+    const sourceSpans = spans.source;
+    const withSource = new Map(this.config.list('circuits').filter((c) => c.mode === 'follow_source').map((c) => [c.id, c]));
+    const pumps = this.config.list('pumps').filter((p) => p.enabled);
+    // the floor's own pumps; with none, its manifold's; with none either, the sources' runs themselves
+    const floorPumps = new Map<Id, Set<Id>>();
+    const floorSources = new Map<Id, Set<Id>>();
+    for (const e of this.config.list('emitters')) {
+      const c = e.enabled && e.circuitId ? withSource.get(e.circuitId) : undefined;
+      if (!c) {
+        continue;
+      }
+
+      const own = pumps.filter((p) => p.circuitId === c.id);
+      const used = own.length ? own : pumps.filter((p) => c.manifoldId && p.manifoldId === c.manifoldId);
+      if (used.length) {
+        floorPumps.set(e.roomId, new Set([...(floorPumps.get(e.roomId) ?? []), ...used.map((p) => p.id)]));
+      } else {
+        floorSources.set(e.roomId, new Set([...(floorSources.get(e.roomId) ?? []), ...c.sourceIds]));
+      }
+    }
+
+    const demand = new Map<Id, Interval[]>();
+    for (const r of this.config.list('rooms')) {
+      const byPump = floorPumps.get(r.id) ?? new Set<Id>();
+      const bySource = floorSources.get(r.id) ?? new Set<Id>();
+      const taken = [
+        ...spans.room.filter((s) => s.subjectId === r.id),
+        ...spans.pump.filter((s) => byPump.has(s.subjectId)),
+        ...sourceSpans.filter((s) => bySource.has(s.subjectId)),
+      ];
+      demand.set(r.id, intervalsOf(taken, from, until, now));
+    }
+
+    const acc = new Map<Id, { gas: number | null; electricity: number | null }>([...demand.keys()].map((id) => [id, { gas: null, electricity: null }]));
+    const left: { gas: number | null; electricity: number | null } = { gas: null, electricity: null };
+    const meters = new Map<string, { ref: MeterRef; owners: Id[] }>();
+    for (const s of sources) {
+      for (const ref of s.refs) {
+        const key = `${ref.meter.kind}|${ref.meter.entityId}`;
+        const m = meters.get(key) ?? { ref, owners: [] };
+        m.owners.push(s.id);
+        meters.set(key, m);
+      }
+    }
+
+    for (const { ref, owners } of meters.values()) {
+      const kind = ref.meter.kind === 'gas' ? 'gas' : 'electricity';
+      const own = new MeterValues([ref], reading, tariffs);
+      const runs = intervalsOf(sourceSpans.filter((s) => owners.includes(s.subjectId)), from, until, now);
+      const rooms = [...new Set(owners.flatMap((id) => [...(served.get(id) ?? [])]))].filter((id) => demand.has(id));
+      const weights = rooms.map((id) => binned(intersect(runs, demand.get(id) ?? []), edges));
+      for (let i = 0; i < edges.length - 1; i++) {
+        const v = own.between(edges[i], edges[i + 1]);
+        const amount = kind === 'gas' ? own.gasIn(v.gas, house.gasUnit()) : v.electricity;
+        if (amount === null) {
+          continue;
+        }
+
+        // a room this meter's sources heat used nothing of it rather than an unknown amount
+        for (const id of rooms) {
+          const a = acc.get(id) as { gas: number | null; electricity: number | null };
+          a[kind] = a[kind] ?? 0;
+        }
+
+        const total = weights.reduce((sum, w) => sum + w[i], 0);
+        if (total <= 0) {
+          left[kind] = (left[kind] ?? 0) + amount;
+          continue;
+        }
+
+        rooms.forEach((id, k) => {
+          const a = acc.get(id) as { gas: number; electricity: number };
+          a[kind] += (amount * weights[k][i]) / total;
+        });
+      }
+    }
+
+    const rooms = [...acc.entries()].map(([roomId, a]) => ({
+      roomId,
+      gas: roundTo(a.gas, 3),
+      electricity: roundTo(a.electricity, 3),
+      cost: roundTo(house.cost(a.gas, a.electricity), 2),
+      demandMin: Math.round(total(demand.get(roomId) ?? []) / MIN),
+    }));
+
+    return { rooms, unassigned: { gas: roundTo(left.gas, 3), electricity: roundTo(left.electricity, 3), heat: null, cost: roundTo(house.cost(left.gas, left.electricity), 2) } };
   }
 
   /* ── reading Home Assistant ───────────────────────────────────────────────────────────────── */
@@ -448,8 +589,13 @@ export class ConsumptionService implements IConsumption {
       .filter((s) => s.refs.length);
     const pumps = this.config.list('pumps').flatMap((p) => (p.meter ? [{ id: p.id, refs: counted([p.meter]) }] : []));
     const all = [...sources, ...pumps].flatMap((x) => x.refs);
-    const [sourceSpans, pumpSpans] = await Promise.all([this.runSpans(plan.from, plan.to, 'source'), this.runSpans(plan.from, plan.to, 'pump')]);
-    const reading = await this.read(all, { from: prevPlan.from, to: until }, range === 'year' ? 'day' : 'hour', null, false, now);
+    const [sourceSpans, pumpSpans, roomSpans] = await Promise.all([
+      this.runSpans(plan.from, plan.to, 'source'),
+      this.runSpans(plan.from, plan.to, 'pump'),
+      this.runSpans(plan.from, plan.to, 'room'),
+    ]);
+    const fine: Fine = range === 'year' ? 'day' : 'hour';
+    const reading = await this.read(all, { from: prevPlan.from, to: until }, fine, null, false, now);
     const house = new MeterValues(all, reading, tariffs);
     const use = (refs: MeterRef[], spans: RunSpan[]): ConsumerUse => {
       const own = new MeterValues(refs, reading, tariffs);
@@ -464,6 +610,7 @@ export class ConsumptionService implements IConsumption {
       };
     };
     const total = house.between(plan.from, until);
+    const byRoom = this.splitByRoom(sources, reading, house, tariffs, { source: sourceSpans, pump: pumpSpans, room: roomSpans }, fineEdges(plan, until, fine, tz), now);
 
     return {
       range,
@@ -488,6 +635,8 @@ export class ConsumptionService implements IConsumption {
       tariffs,
       sources: sources.map((s) => ({ sourceId: s.id, ...use(s.refs, sourceSpans.filter((x) => x.subjectId === s.id)) })),
       pumps: pumps.map((p) => ({ pumpId: p.id, ...use(p.refs, pumpSpans.filter((x) => x.subjectId === p.id)) })),
+      rooms: byRoom.rooms,
+      unassigned: byRoom.unassigned,
       configured: all.length > 0,
       recorder: reading.ok ? 'ok' : 'unavailable',
       now,
@@ -710,6 +859,93 @@ function valueIn(series: MeterSeries | null, a: EpochMs, b: EpochMs): number | n
   }
 
   return known ? sum : null;
+}
+
+type Interval = [EpochMs, EpochMs];
+
+/** Spans as sorted, merged intervals inside [from, to); an open span lasts until `now`. */
+function intervalsOf(spans: readonly RunSpan[], from: EpochMs, to: EpochMs, now: EpochMs): Interval[] {
+  const list = spans
+    .map((s): Interval => [Math.max(from, s.startTs), Math.min(to, s.endTs ?? now)])
+    .filter(([a, b]) => b > a)
+    .sort((x, y) => x[0] - y[0]);
+  const out: Interval[] = [];
+  for (const [a, b] of list) {
+    const last = out[out.length - 1];
+    if (last && a <= last[1]) {
+      last[1] = Math.max(last[1], b);
+    } else {
+      out.push([a, b]);
+    }
+  }
+
+  return out;
+}
+
+/** Where two sorted, merged interval lists overlap. */
+function intersect(x: readonly Interval[], y: readonly Interval[]): Interval[] {
+  const out: Interval[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < x.length && j < y.length) {
+    const a = Math.max(x[i][0], y[j][0]);
+    const b = Math.min(x[i][1], y[j][1]);
+    if (b > a) {
+      out.push([a, b]);
+    }
+
+    if (x[i][1] < y[j][1]) {
+      i++;
+    } else {
+      j++;
+    }
+  }
+
+  return out;
+}
+
+/** Milliseconds of the intervals inside each [edges[k], edges[k + 1]). */
+function binned(list: readonly Interval[], edges: readonly EpochMs[]): number[] {
+  const out = new Array<number>(Math.max(0, edges.length - 1)).fill(0);
+  let k = 0;
+  for (const [a, b] of list) {
+    while (k < out.length && edges[k + 1] <= a) {
+      k++;
+    }
+
+    for (let m = k; m < out.length && edges[m] < b; m++) {
+      out[m] += Math.max(0, Math.min(b, edges[m + 1]) - Math.max(a, edges[m]));
+    }
+  }
+
+  return out;
+}
+
+function total(list: readonly Interval[]): number {
+  return list.reduce((sum, [a, b]) => sum + (b - a), 0);
+}
+
+/** The steps the house's use is shared out in: hours, or days for a year (the statistics' own rows). */
+function fineEdges(plan: PeriodPlan, until: EpochMs, fine: Fine, tz: string): EpochMs[] {
+  const edges: EpochMs[] = [];
+  if (fine === 'hour') {
+    for (let t = plan.from; t < until; t += HOUR) {
+      edges.push(t);
+    }
+  } else {
+    for (let d = plan.date; ; d = addDays(d, 1)) {
+      const t = fromLocal(d, 0, tz);
+      if (t >= until) {
+        break;
+      }
+
+      edges.push(t);
+    }
+  }
+
+  edges.push(until);
+
+  return edges;
 }
 
 function rounded(v: ConsumptionValues): ConsumptionValues {
