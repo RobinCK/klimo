@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.16
+
+- **Each room's own consumption.** A room's page has a **Consumption** section under the hero (on a
+  phone, the *Consumption* row of the room): its gas, electricity and cost for a day, a week, a month or
+  a year, against the period before; how long it was heated or cooled; its part of what all the sources
+  used; a chart per hour, day or month with the outdoor temperature and the heated time under the bars;
+  and **Where it came from** — the boiler's gas, its plug, the heat pump, the room's own air conditioner — with
+  the room's part of each and how long it took heat while that source ran. The numbers are the same as
+  in *System → Consumption → By room*, whose rows now open the room on the same period. A meter only the
+  room's own sources have is all the room's, standby included.
+- **A Zigbee2MQTT instance you removed stays removed.** Every bridge on the broker announces itself with a
+  retained message, so a removed second Zigbee2MQTT (say, the garden's) came back after each update or
+  restart. Klimo now remembers the base topic of an instance removed by hand and does not add it again;
+  adding an instance with that topic by hand brings it back. One removed before this version comes back
+  once more — remove it again.
+- The consumption charts keep their tooltip inside the screen on a phone. A date outside the years
+  2000–2099 in a consumption link is refused instead of failing.
+
 ## 0.2.15
 
 - **What each room cost.** *System → Consumption* has a **By room** block: each hour a source ran,

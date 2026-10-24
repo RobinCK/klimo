@@ -1,9 +1,10 @@
 import { useEffect } from 'react';
-import type { EpochMs, ProfileDto, RoomSummary } from '@api/model';
+import type { EpochMs, LocalDate, ProfileDto, RoomSummary } from '@api/model';
 import { AutoGrid, Page, RoomTabs, Section, Stack, type Tone } from '@ui';
 import { paths } from '@app';
 import { fmtTemp, t } from '@i18n';
 import { Hero } from './Hero';
+import { RangeControl, RoomConsumption } from './RoomConsumption';
 import { SectionBody } from './SectionBody';
 import { DangerZone, LEFT_SECTIONS, RIGHT_SECTIONS, SETUP_SECTION, type SectionDef, type SectionProps } from './sections';
 import type { TargetEditor } from './useTargetEditor';
@@ -35,7 +36,7 @@ function SectionCard({ def, p }: { def: SectionDef; p: SectionProps }) {
   );
 }
 
-/** Desktop and tablet: room tabs, the hero with today's chart, then every setting in two columns. */
+/** Desktop and tablet: room tabs, the hero with today's chart, the room's consumption, then every setting in two columns. */
 export function RoomDesktop({
   p,
   ed,
@@ -43,6 +44,7 @@ export function RoomDesktop({
   profiles,
   now,
   section,
+  startDate,
 }: {
   p: SectionProps;
   ed: TargetEditor;
@@ -50,9 +52,11 @@ export function RoomDesktop({
   profiles: readonly ProfileDto[] | undefined;
   now: EpochMs;
   section: string | undefined;
+  /** The consumption's first period (a link from System → Consumption); null: the current one. */
+  startDate: LocalDate | null;
 }) {
   const { room, state } = p;
-  // «#/rooms/<id>/settings?section=win» opens the room page at that section
+  // «#/rooms/<id>/settings?section=win» opens the room page at that section, «#/rooms/<id>/use» at the consumption
   useEffect(() => {
     if (!section) return;
     const timer = window.setTimeout(() => document.getElementById(`section-${section}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
@@ -68,6 +72,15 @@ export function RoomDesktop({
         addLabel={t('Add a room')}
       />
       <Hero room={room} state={state} ed={ed} ctx={p.ctx} now={now} profiles={profiles} />
+      <Section
+        id="section-use"
+        title={t('Consumption')}
+        subtitle={t('The room’s share of its sources’ meters, by how long it took their heat.')}
+        action={<RangeControl />}
+      >
+        {/* another room starts on the date of its own link, or on the current period */}
+        <RoomConsumption key={room.config.id} roomId={room.config.id} phone={false} startDate={startDate} />
+      </Section>
       <SectionCard def={SETUP_SECTION} p={p} />
       <AutoGrid min={560} gap="xl">
         <Stack gap="xl">

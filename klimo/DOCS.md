@@ -435,6 +435,18 @@ whole hour get half each; one asking the whole hour and one for half of it, two 
 What ran while no room took it (run-on, frost protection, a stove on the same gas meter, standby) stays
 under *No room took it*. Pumps are not shared out; their meters stay in their own rows. A room's asking
 is kept 400 days; before version 0.2.15 it was kept 30 days, so older periods go under *No room took it*.
+A meter only a room's own sources have (an air conditioner or a heater on its own plug) is that room's
+whole, standby included. In a year each day is shared as a whole, so a month there can differ a little
+from the same month viewed on its own.
+
+**A room's own consumption** is on its page, under the hero (on a phone: the *Consumption* row of the room,
+or a row of *By room*): its gas, electricity and cost for a day, a week, a month or a year against the
+period before, the time it was heated or cooled, its part of what all the sources used, a chart per
+hour, day or month with the outdoor temperature and the heated time under the bars, and **Where it came from**
+— each meter of the sources that serve it, the room's part of it and how long the room took heat while
+that source ran. A source serving the room without a meter is named, its use not counted. The change
+against the period before is left out while that period is recorded only in part: Klimo's records of
+when rooms asked begin at its install and are kept 400 days.
 
 **Prices** are set in *Settings → Energy prices*: the currency, the price of a kWh of electricity, the
 price of gas per m³ or per kWh, and the calorific value of the gas (10.5 kWh per m³ unless the bill says
@@ -627,6 +639,12 @@ signal (6-hour median LQI), last report and the entities. **Notify me when**: ba
 connection for longer than 1 h 30 min (mains devices 10 min, integrations 3 min), a valve did not confirm
 after 3 attempts, signal steadily below LQI 60. Zigbee2MQTT instances (several are supported) can resend
 all targets, and do so automatically after a restart.
+
+**Zigbee2MQTT instances are found by themselves**: every bridge announcing itself on the broker
+(`<base topic>/bridge/state`) is added as an instance. One you remove is remembered and not added again,
+however often its bridge announces itself (after every restart of Klimo or of the bridge) — say, a
+second Zigbee2MQTT for the garden that has nothing Klimo uses. To bring it back, add an instance by hand
+with its base topic.
 
 **Last seen and signal.** The last report is the freshest sign of life of the device: the newest report
 of any of its entities in Home Assistant, or Zigbee2MQTT's own last seen. A sensor that repeats the same

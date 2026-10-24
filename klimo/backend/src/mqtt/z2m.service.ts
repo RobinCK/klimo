@@ -326,6 +326,8 @@ export class Z2mService {
   /** A bridge on a base topic Klimo does not know yet: remember it as a Zigbee2MQTT instance. */
   private async adopt(baseTopic: string, online: boolean | null): Promise<void> {
     if (this.creating.has(baseTopic) || this.instances().some((i) => i.baseTopic === baseTopic)) return;
+    // an instance removed by hand stays removed, however often its bridge announces itself
+    if (this.ignoredTopics().includes(baseTopic)) return;
     this.creating.add(baseTopic);
     try {
       const taken = new Set(this.instances().map((i) => i.id));
@@ -369,6 +371,14 @@ export class Z2mService {
   private instances(): Z2mInstance[] {
     try {
       return this.config.list('z2m');
+    } catch {
+      return [];
+    }
+  }
+
+  private ignoredTopics(): string[] {
+    try {
+      return this.config.singleton('settings').z2mIgnoredTopics ?? [];
     } catch {
       return [];
     }

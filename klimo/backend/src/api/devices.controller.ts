@@ -85,14 +85,23 @@ export class DevicesController {
   @Post('z2m/instances')
   @AdminOnly()
   async createInstance(@Body() body: unknown, @CurrentActor() actor: Actor): Promise<Z2mInstanceDto> {
-    const created = await this.config.create('z2m', parse(body, z2mCreateRequest) as Omit<Z2mInstance, 'id'>, actor);
+    const req = parse(body, z2mCreateRequest) as Omit<Z2mInstance, 'id'>;
+    const created = await this.config.transaction(async (tx) => {
+      const z = await tx.create('z2m', req, actor);
+      await this.unignore(tx, z.baseTopic, actor);
+      return z;
+    });
     return this.instance(created.id);
   }
 
   @Patch('z2m/instances/:id')
   @AdminOnly()
   async patchInstance(@Param('id') id: Id, @Body() body: unknown, @CurrentActor() actor: Actor): Promise<Z2mInstanceDto> {
-    await this.config.update('z2m', id, parse(body, z2mPatch), actor);
+    const patch = parse(body, z2mPatch);
+    await this.config.transaction(async (tx) => {
+      const z = await tx.update('z2m', id, patch, actor);
+      await this.unignore(tx, z.baseTopic, actor);
+    });
     return this.instance(id);
   }
 
@@ -100,7 +109,19 @@ export class DevicesController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @AdminOnly()
   async removeInstance(@Param('id') id: Id, @CurrentActor() actor: Actor): Promise<void> {
-    await this.config.remove('z2m', id, actor);
+    const z = found(this.config.get('z2m', id), 'Zigbee2MQTT instance');
+    // its bridge keeps announcing itself (a retained message, again after every restart): remember not to add it back
+    await this.config.transaction(async (tx) => {
+      const ignored = tx.singleton('settings').z2mIgnoredTopics;
+      if (!ignored.includes(z.baseTopic)) await tx.patchSingleton('settings', { z2mIgnoredTopics: [...ignored, z.baseTopic] }, actor);
+      await tx.remove('z2m', id, actor);
+    });
+  }
+
+  /** An instance added or moved by hand onto a topic removed earlier: that topic is wanted again. */
+  private async unignore(tx: IConfigStore, baseTopic: string, actor: Actor): Promise<void> {
+    const ignored = tx.singleton('settings').z2mIgnoredTopics;
+    if (ignored.includes(baseTopic)) await tx.patchSingleton('settings', { z2mIgnoredTopics: ignored.filter((t) => t !== baseTopic) }, actor);
   }
 
   /** Resends the desired state of every device behind this bridge (what a bridge restart does by itself). */

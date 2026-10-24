@@ -347,6 +347,10 @@ function makeFakes(opts = {}) {
       return { sourceId, range: q.range, date: q.date ?? '2026-10-21', buckets: [], runs: null };
     },
     house: async (date) => ({ date: date ?? '2026-10-21', gas: null, electricity: null, cost: null, configured: false }),
+    room: async (roomId, q) => {
+      if (roomId !== 'r_living' && roomId !== 'vitalnia') throw notFound('Room');
+      return { roomId: 'r_living', range: q.range ?? 'day', date: q.date ?? '2026-10-21', buckets: [], meters: [], configured: false };
+    },
   });
   const inputs = recorder(calls, 'inputs', {
     renderTemplate: async (template) => ({ result: template.length, error: null }),
@@ -371,6 +375,7 @@ function makeFakes(opts = {}) {
     apply: async () => [],
     open: () => [],
     range: async () => [],
+    earliestStart: async () => null,
     closeDangling: async () => 0,
   });
   const preview = recorder(calls, 'preview', {

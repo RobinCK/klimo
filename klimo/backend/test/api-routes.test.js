@@ -36,6 +36,7 @@ PATCH  /api/rooms/:id                                        A
 DELETE /api/rooms/:id                                        A
 GET    /api/rooms/:id/day                                    U
 GET    /api/rooms/:id/durations                              U
+GET    /api/rooms/:id/consumption                            U
 POST   /api/rooms/:id/sensors                                A
 PATCH  /api/rooms/:id/sensors/:sensorId                      A
 DELETE /api/rooms/:id/sensors/:sensorId                      A

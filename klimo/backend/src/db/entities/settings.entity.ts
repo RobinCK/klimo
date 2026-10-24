@@ -34,6 +34,7 @@ export class SettingsRow {
   @JsonCol() presence: GeneralSettings['presence'];
   @JsonCol() defaults: GeneralSettings['defaults'];
   @JsonCol() tariffs: GeneralSettings['tariffs'];
+  @JsonCol() z2mIgnoredTopics: GeneralSettings['z2mIgnoredTopics'];
   @BoolCol() onboardingDismissed: boolean;
   @TsCol() updatedAt: number;
 }

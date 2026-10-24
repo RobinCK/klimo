@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { useUiText } from '../../UiTextContext';
 import { fmtNum, pct } from '../internal/util';
 import { useSize } from '../internal/useSize';
@@ -46,6 +46,9 @@ const COLOR: Record<ConsumptionSeriesColor, string> = {
   heat: 'var(--ui-series-heat)',
 };
 
+// px between the tooltip and the column it describes
+const TIP_GAP = 6;
+
 /** A readable top and step for 0…max: 1, 2, 2.5 or 5 × 10ⁿ, at most four gridlines. */
 export function consumptionScale(max: number): { top: number; step: number; decimals: number } {
   if (!(max > 0) || !Number.isFinite(max)) return { top: 1, step: 0.5, decimals: 1 };
@@ -79,6 +82,8 @@ export function ConsumptionChart({ buckets, series, outdoor, runtime, ariaLabel,
   const [table, setTable] = useState(false);
   const plot = useRef<HTMLDivElement>(null);
   const hits = useRef<(HTMLButtonElement | null)[]>([]);
+  const tipEl = useRef<HTMLDivElement>(null);
+  const [tipWidth, setTipWidth] = useState(0);
   const { width } = useSize(plot);
   const n = buckets.length;
 
@@ -189,10 +194,22 @@ export function ConsumptionChart({ buckets, series, outdoor, runtime, ariaLabel,
   const labelShown = (i: number) => (shown == null ? i % stride === 0 : i === shown || (i % stride === 0 && Math.abs(i - shown) >= stride));
   const tip = shown != null ? buckets[shown] : null;
   const tipAt = shown != null ? ((shown + 0.5) / n) * 100 : 0;
-  // beside the column, on the side with more room, so it never covers the bar it describes
+  // beside the column, on the side with more room, so it never covers the bar it describes;
+  // once measured it is kept inside the plot (a middle column on a phone has no room on either side)
   const tipStyle: CSSProperties | undefined =
-    shown == null ? undefined : tipAt <= 50 ? { left: `calc(${pct(((shown + 1) / n) * 100)} + 6px)` } : { right: `calc(${pct(((n - shown) / n) * 100)} + 6px)` };
+    shown == null
+      ? undefined
+      : width > 0 && tipWidth > 0
+        ? { left: Math.max(0, Math.min(width - tipWidth, tipAt <= 50 ? ((shown + 1) / n) * width + TIP_GAP : (shown / n) * width - TIP_GAP - tipWidth)) }
+        : tipAt <= 50
+          ? { left: `calc(${pct(((shown + 1) / n) * 100)} + ${TIP_GAP}px)` }
+          : { right: `calc(${pct(((n - shown) / n) * 100)} + ${TIP_GAP}px)` };
   const detailLabels = Array.from(new Set(buckets.flatMap((b) => (b.details ?? []).map((d) => d.label))));
+  // the tooltip's own width (its content, not its place: see .tip), read before the frame is painted
+  useLayoutEffect(() => {
+    const w = tipEl.current?.offsetWidth ?? 0;
+    setTipWidth((old) => (w > 0 && w !== old ? w : old));
+  }, [shown, buckets, width]);
 
   return (
     <figure className={s.figure} data-pending={pending ? '' : undefined} style={{ '--c': color, '--n': n } as CSSProperties}>
@@ -377,7 +394,7 @@ export function ConsumptionChart({ buckets, series, outdoor, runtime, ariaLabel,
               />
             ))}
             {tip && shown != null ? (
-              <div className={s.tip} style={tipStyle} aria-hidden="true">
+              <div ref={tipEl} className={s.tip} style={tipStyle} aria-hidden="true">
                 <span className={s.tipTitle}>
                   {tip.title}
                   {tip.partial ? ` · ${ut('so far')}` : ''}

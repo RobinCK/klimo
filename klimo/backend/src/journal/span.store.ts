@@ -101,6 +101,13 @@ export class SpanStore implements ISpanStore, Rewindable {
     return rows.map(toSpan);
   }
 
+  /** One MIN over the indexed start column, however many spans there are. */
+  async earliestStart(): Promise<EpochMs | null> {
+    const row = await this.db.ds.getRepository(RunSpanRow).createQueryBuilder('s').select('MIN(s.startTs)', 'ts').getRawOne<{ ts: number | string | null }>();
+    const ts = row?.ts ?? null;
+    return ts === null ? null : Number(ts);
+  }
+
   /** Spans that began after `at` go; one still running then ends there. */
   async forgetAfter(at: EpochMs): Promise<number> {
     const removed = await this.db.tx(async (em) => {

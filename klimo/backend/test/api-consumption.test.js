@@ -50,3 +50,27 @@ test('house consumption: today for the overview unless a period is given', async
     assert.equal(res.status, 400);
   });
 });
+
+test('room consumption: by id or slug, any panel user, range and date validated, today by default', async () => {
+  await withApi(async (api) => {
+    let res = await api.request('GET', '/api/rooms/r_living/consumption?range=month&date=2026-10-15', { headers: MEMBER });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.roomId, 'r_living');
+    assert.deepEqual(api.calls.of('consumption.room')[0], ['r_living', { range: 'month', date: '2026-10-15' }]);
+
+    res = await api.request('GET', '/api/rooms/vitalnia/consumption');
+    assert.equal(res.status, 200);
+    assert.deepEqual(api.calls.of('consumption.room')[1], ['vitalnia', {}]);
+
+    res = await api.request('GET', '/api/rooms/r_living/consumption?range=decade');
+    assert.equal(res.status, 400);
+    assert.equal(res.body.issues[0].path, 'range');
+    res = await api.request('GET', '/api/rooms/r_living/consumption?date=21.10.2026');
+    assert.equal(res.status, 400);
+    assert.equal(res.body.issues[0].path, 'date');
+    assert.equal(api.calls.count('consumption.room'), 2);
+
+    res = await api.request('GET', '/api/rooms/nope/consumption?range=day');
+    assert.equal(res.status, 404);
+  });
+});

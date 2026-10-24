@@ -1,6 +1,6 @@
 import { Controller, Get, Inject, Param, Query } from '@nestjs/common';
 import { parse } from '../common/validate';
-import type { HouseConsumptionDto, IConsumption, SourceConsumptionDto } from '../shared/model';
+import type { HouseConsumptionDto, IConsumption, RoomConsumptionDto, SourceConsumptionDto } from '../shared/model';
 import { CONSUMPTION } from '../tokens';
 import { consumptionQuery } from './schemas';
 
@@ -22,5 +22,11 @@ export class ConsumptionController {
   source(@Param('id') id: string, @Query() query: unknown): Promise<SourceConsumptionDto> {
     const q = parse(query, consumptionQuery);
     return this.consumption.source(id, { range: q.range ?? 'day', date: q.date });
+  }
+
+  /** One room's share of the sources' meters, the same split as the house's list; `:id` is the room id or its slug. */
+  @Get('rooms/:id/consumption')
+  room(@Param('id') idOrSlug: string, @Query() query: unknown): Promise<RoomConsumptionDto> {
+    return this.consumption.room(idOrSlug, parse(query, consumptionQuery));
   }
 }

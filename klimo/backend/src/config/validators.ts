@@ -1431,6 +1431,7 @@ export function validateSettings(s: ConfigGraph['settings'], g: ConfigGraph): Is
     v.oneOf('tariffs.gasPriceUnit', tr.gasPriceUnit, GAS_PRICE_UNITS);
     v.num('tariffs.gasKwhPerM3', tr.gasKwhPerM3, 5, 15);
   }
+  if (v.arr('z2mIgnoredTopics', s.z2mIgnoredTopics, 50)) s.z2mIgnoredTopics.forEach((topic, i) => v.str(`z2mIgnoredTopics.${i}`, topic, 1, 120));
   v.bool('onboardingDismissed', s.onboardingDismissed);
   return v.issues;
 }

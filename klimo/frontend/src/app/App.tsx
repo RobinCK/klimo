@@ -39,6 +39,7 @@ function pageFor(name: RouteName, phone: boolean): PageKey {
       return 'wizard';
     case 'room':
     case 'roomSettings':
+    case 'roomUse':
       return 'room';
     case 'schedule':
     case 'scheduleProfiles':
@@ -79,7 +80,7 @@ function useRoomsRedirect(route: Route, phone: boolean): void {
   const rooms = useRoomSummaries();
   const loaded = useRoomsLoaded();
   useEffect(() => {
-    if (route.name === 'room' || route.name === 'roomSettings') setPref('lastRoom', route.params.id ?? null);
+    if (route.name === 'room' || route.name === 'roomSettings' || route.name === 'roomUse') setPref('lastRoom', route.params.id ?? null);
   }, [route]);
   useEffect(() => {
     if (phone || route.name !== 'rooms' || !loaded || !rooms.length) return;

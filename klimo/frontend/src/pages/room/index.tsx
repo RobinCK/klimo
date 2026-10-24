@@ -1,7 +1,7 @@
 /**
- * Room page. Wide screens: room tabs, the hero (temperature, target editor, why, today's chart)
- * and every setting in two columns. Phones: the dial page, and the settings as accordions on
- * `#/rooms/<id>/settings`.
+ * Room page. Wide screens: room tabs, the hero (temperature, target editor, why, today's chart),
+ * the room's consumption and every setting in two columns. Phones: the dial page, the settings as
+ * accordions on `#/rooms/<id>/settings` and the consumption on `#/rooms/<id>/use`.
  */
 import { useCallback, useEffect, useMemo } from 'react';
 import type { RoomDetailDto, RoomPatch } from '@api/model';
@@ -10,10 +10,11 @@ import { isApiError } from '@api/client';
 import { useCodeContext, useLayout, useMe, useNow, useResource, useRoom, useRoomSummaries, useRoomsLoaded } from '@data';
 import { EmptyState, Skeleton, Stack } from '@ui';
 import { paths, useRoute } from '@app';
-import { errorText, t, type CodeContext } from '@i18n';
+import { errorText, isCalendarDate, t, type CodeContext } from '@i18n';
 import { closeDialog } from './dialogs';
 import { PhoneControl } from './PhoneControl';
 import { PhoneSettings } from './PhoneSettings';
+import { PhoneConsumption } from './RoomConsumption';
 import { RoomDesktop } from './RoomDesktop';
 import type { SectionProps } from './sections';
 import { useTargetEditor } from './useTargetEditor';
@@ -114,8 +115,21 @@ export default function RoomPage(): JSX.Element {
     profiles: profiles.data,
   };
   const section = route.query.section;
+  // «#/rooms/<id>/use?date=2026-09-01»: the consumption opens on that period (a link from System → Consumption)
+  const date = route.name === 'roomUse' && isCalendarDate(route.query.date ?? '') ? route.query.date : null;
   if (phone) {
+    if (route.name === 'roomUse') return <PhoneConsumption room={room} startDate={date} />;
     return route.name === 'roomSettings' ? <PhoneSettings p={p} section={section} /> : <PhoneControl p={p} ed={ed} profiles={profiles.data} now={now} />;
   }
-  return <RoomDesktop p={p} ed={ed} rooms={rooms} profiles={profiles.data} now={now} section={route.name === 'roomSettings' ? section : undefined} />;
+  return (
+    <RoomDesktop
+      p={p}
+      ed={ed}
+      rooms={rooms}
+      profiles={profiles.data}
+      now={now}
+      section={route.name === 'roomSettings' ? section : route.name === 'roomUse' ? 'use' : undefined}
+      startDate={date}
+    />
+  );
 }

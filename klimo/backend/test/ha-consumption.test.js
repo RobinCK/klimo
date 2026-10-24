@@ -3,6 +3,7 @@ const test = require('node:test');
 const { FakeClock, FakeHa, state } = require('./ha-harness');
 const { ConsumptionService } = require('../dist/ha/consumption.service');
 const { defaultSettings, newSourceConfig } = require('../dist/shared/defaults');
+const { addDays, fromLocal, toLocal } = require('../dist/engine/core/time');
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -31,7 +32,7 @@ function gasMeter() {
   return { readings, before, hour };
 }
 
-function setup({ meterUnit = 'ft³', failRecorder = false, extraSpans = [] } = {}) {
+function setup({ meterUnit = 'ft³', failRecorder = false, extraSpans = [], installedAt = MIDNIGHT - 90 * DAY } = {}) {
   const clock = new FakeClock(NOW);
   const ha = new FakeHa();
   const meter = gasMeter();
@@ -66,6 +67,7 @@ function setup({ meterUnit = 'ft³', failRecorder = false, extraSpans = [] } = {
     sources: [boiler],
     settings,
     get: (c, id) => (c === 'sources' ? config.sources.find((s) => s.id === id) : undefined),
+    room: (idOrSlug) => (config.rooms ?? []).find((r) => r.id === idOrSlug || r.slug === idOrSlug),
     list: (c) => (c === 'sources' ? config.sources : []),
     singleton: (k) => config[k],
     revision: () => 1,
@@ -73,9 +75,14 @@ function setup({ meterUnit = 'ft³', failRecorder = false, extraSpans = [] } = {
   const spanList = [
     { id: 'a', subject: 'source', subjectId: 's_boiler', kind: 'run', mode: 'heat', startTs: MIDNIGHT + 6 * HOUR, endTs: MIDNIGHT + 7 * HOUR, meta: null },
     { id: 'b', subject: 'source', subjectId: 's_boiler', kind: 'run', mode: 'heat', startTs: MIDNIGHT + 14 * HOUR, endTs: null, meta: null },
+    // the house profile has been active since the install
+    { id: 'pr', subject: 'profile', subjectId: 'pr_home', kind: 'active', mode: null, startTs: installedAt, endTs: null, meta: { profileId: 'pr_home' } },
     ...extraSpans,
   ];
-  const spans = { range: async (from, to, subject, id) => spanList.filter((s) => s.startTs < to && (s.endTs ?? NOW) > from && (!id || s.subjectId === id)) };
+  const spans = {
+    range: async (from, to, subject, id) => spanList.filter((s) => s.startTs < to && (s.endTs ?? NOW) > from && (!id || s.subjectId === id)),
+    earliestStart: async () => Math.min(...spanList.map((s) => s.startTs)),
+  };
   return { service: new ConsumptionService(ha, config, spans, clock), ha, config, meter };
 }
 
@@ -297,8 +304,290 @@ test('a floor that runs with the boiler takes its share while its pump runs (wit
   assert.equal(room('r_g').demandMin, 90);
 });
 
+const demandSpan = (id, roomId, from, to) => ({ id, subject: 'room', subjectId: roomId, kind: 'demand', mode: 'heat', startTs: from, endTs: to, meta: null });
+const runSpan = (id, sourceId, from, to) => ({ id, subject: 'source', subjectId: sourceId, kind: 'run', mode: 'heat', startTs: from, endTs: to, meta: null });
+const shareOf = (d) => ({ roomId: d.roomId, gas: d.gas, electricity: d.electricity, cost: d.cost, demandMin: d.demandMin });
+
+/** Three rooms on the boiler's radiators: today as in the house's split above, and yesterday 08:00–09:00 and 15:00–16:00. */
+function roomsSetup(opts = {}) {
+  const y = MIDNIGHT - DAY;
+  const fixture = setup({
+    ...opts,
+    extraSpans: [
+      demandSpan('d1', 'r_a', MIDNIGHT + 6 * HOUR, MIDNIGHT + 7 * HOUR),
+      demandSpan('d2', 'r_b', MIDNIGHT + 6.5 * HOUR, MIDNIGHT + 7 * HOUR),
+      demandSpan('d3', 'r_b', MIDNIGHT + 14 * HOUR, null),
+      runSpan('y1', 's_boiler', y + 8 * HOUR, y + 9 * HOUR),
+      demandSpan('y2', 'r_a', y + 8 * HOUR, y + 9 * HOUR),
+      demandSpan('y3', 'r_b', y + 8 * HOUR, y + 8.5 * HOUR),
+      // after this time of day: the whole of yesterday has it, «so far» does not
+      runSpan('y4', 's_boiler', y + 15 * HOUR, y + 16 * HOUR),
+      demandSpan('y5', 'r_b', y + 15 * HOUR, y + 16 * HOUR),
+    ],
+  });
+  const { config } = fixture;
+  config.rooms = [
+    { id: 'r_a', slug: 'vitalnia' },
+    { id: 'r_b', slug: 'spalnia' },
+    { id: 'r_c', slug: 'kukhnia' },
+  ];
+  config.circuits = [{ id: 'c_rad', sourceIds: ['s_boiler'] }];
+  config.emitters = ['r_a', 'r_b', 'r_c'].map((roomId) => ({ id: `e_${roomId}`, roomId, enabled: true, sourceId: null, circuitId: 'c_rad' }));
+  config.list = (c) => ({ sources: config.sources, rooms: config.rooms, circuits: config.circuits, emitters: config.emitters })[c] ?? [];
+  return { ...fixture, y };
+}
+
+test('one room in detail: the same share as in the house list, hour by hour, meter by meter, from one reading', async () => {
+  const { service, ha, meter } = roomsSetup();
+  const h = await service.house();
+  const reads = ha.statisticsCalls.length;
+  const histories = ha.historyCalls.length;
+  for (const r of h.rooms) {
+    assert.deepEqual(shareOf(await service.room(r.roomId)), r);
+  }
+  // the house's reading is shared out once: the rooms only ask for the outdoor means, once
+  assert.equal(ha.statisticsCalls.length, reads + 1);
+  assert.equal(ha.historyCalls.length, histories);
+
+  const d = await service.room('spalnia');
+  assert.equal(d.roomId, 'r_b');
+  assert.equal(d.date, '2026-10-21');
+  assert.equal(d.bucket, 'hour');
+  assert.equal(d.buckets.length, 24);
+  assert.deepEqual(d.units, h.units);
+  assert.equal(d.configured, true);
+  assert.equal(d.recorder, 'ok');
+  // 06–07: the second half of the hour of the three r_a and r_b asked; since 14:00 it is all r_b's
+  const six = meter.hour(MIDNIGHT + 6 * HOUR) * FT3;
+  near(d.buckets[6].gas, six / 3, 0.002);
+  assert.equal(d.buckets[6].demandMin, 30);
+  near(d.buckets[14].gas, h.buckets[14].gas, 0.002);
+  assert.equal(d.buckets[14].partial, true);
+  assert.equal(d.buckets[14].demandMin, 30);
+  assert.equal(d.buckets[3].gas, 0, 'the meter counted, the room took none of it');
+  assert.equal(d.buckets[15].future, true);
+  assert.equal(d.buckets[15].gas, null);
+  assert.equal(d.buckets[15].outdoorAvgC, null);
+  near(d.buckets.reduce((s, b) => s + (b.gas ?? 0), 0), d.gas, 0.003);
+  near(d.buckets.reduce((s, b) => s + (b.cost ?? 0), 0), d.cost, 0.05);
+  assert.equal(d.buckets.reduce((s, b) => s + b.demandMin, 0), d.demandMin);
+  // the outdoor means of the compiled hours
+  assert.equal(d.buckets[3].outdoorAvgC, 5);
+  assert.equal(d.buckets[14].outdoorAvgC, null);
+  assert.equal(d.outdoorAvgC, 5);
+
+  assert.equal(d.meters.length, 1);
+  const [gas] = d.meters;
+  assert.deepEqual([gas.sourceIds, gas.kind, gas.entityId, gas.own], [['s_boiler'], 'gas', 'sensor.gas', false]);
+  assert.equal(gas.amount, d.gas);
+  assert.equal(gas.cost, d.cost);
+  near(gas.meterTotal, h.gas, 0.002);
+  assert.equal(gas.minutes, 60, '06:30–07:00 and 14:00–14:30 while the boiler ran');
+  assert.deepEqual(d.unmetered, []);
+  near(d.sourcesTotal.gas, h.gas, 0.002);
+  near(d.sourcesTotal.gas, h.rooms.reduce((s, r) => s + r.gas, 0) + h.unassigned.gas, 0.003);
+  near(d.sourcesTotal.cost, h.cost, 0.02);
+});
+
+test('a room against the period before: yesterday up to this time, shared out the same way', async () => {
+  const { service, meter, y } = roomsSetup();
+  const eight = meter.hour(y + 8 * HOUR) * FT3;
+  const b = await service.room('r_b');
+  assert.equal(b.previousDate, '2026-10-20');
+  assert.equal(b.previousComplete, true);
+  // 08:00–09:00 r_a asked all hour, r_b half of it; 15:00–16:00 is past 14:30
+  near(b.previous.gas, eight / 3, 0.002);
+  near(b.previous.cost, (eight / 3) * 8, 0.02);
+  assert.equal(b.previous.demandMin, 30);
+  const a = await service.room('r_a');
+  near(a.previous.gas, (eight * 2) / 3, 0.002);
+  assert.equal(a.previous.demandMin, 60);
+  assert.equal((await service.room('r_c')).previous.gas, 0);
+
+  // the whole of yesterday has 15:00 too, and its own outdoor means
+  const whole = await service.room('r_b', { date: '2026-10-20' });
+  near(whole.gas, eight / 3 + meter.hour(y + 15 * HOUR) * FT3, 0.002);
+  assert.equal(whole.demandMin, 90);
+  assert.equal(whole.outdoorAvgC, 10);
+  assert.equal(whole.previous.gas, 0, 'the meter came in at 22:00 the day before, nobody asked');
+  assert.equal(whole.previousComplete, false);
+
+  // every range adds up the house's numbers
+  for (const range of ['day', 'week', 'month', 'year']) {
+    const h = await service.house({ range });
+    for (const r of h.rooms) {
+      const d = await service.room(r.roomId, { range });
+      assert.deepEqual(shareOf(d), r, `${range} ${r.roomId}`);
+      assert.equal(d.buckets.length, h.buckets.length);
+    }
+  }
+
+  const month = await service.room('r_b', { range: 'month' });
+  assert.equal(month.bucket, 'day');
+  assert.equal(month.previousDate, '2026-09-01');
+  near(month.buckets[20].gas, b.gas, 0.002, 'today in the month is today');
+  near(month.buckets[19].gas, whole.gas, 0.002);
+  assert.equal(month.buckets[19].demandMin, 90);
+  assert.equal(month.buckets[17].gas, null, 'no readings yet');
+});
+
+test('a room against a period before the install: the meters reach back, who asked and what ran then is not known', async () => {
+  const { service, y } = roomsSetup({ installedAt: MIDNIGHT - DAY + 7 * HOUR });
+  const b = await service.room('r_b');
+  assert.equal(b.previousComplete, false, 'Klimo has been recording since 07:00 yesterday');
+  assert.equal((await service.house()).previousComplete, true, 'the house compares its meters alone');
+
+  // installed within the first hour of yesterday: as complete as the meters
+  const early = roomsSetup({ installedAt: y + 30 * MIN });
+  assert.equal((await early.service.room('r_b')).previousComplete, true);
+});
+
+test('a year against the one before: Klimo keeps its spans 400 days, so the year before is not complete however far the meters reach', async () => {
+  const { service, ha } = roomsSetup({ installedAt: Date.UTC(2024, 0, 1) });
+  const tz = 'Europe/Kyiv';
+  // the gas meter has statistics since 2024: a row per local day once it is over, hours up to the last compiled one
+  ha.statisticsFn = (ids, start, end, period) => {
+    const rows = [];
+    if (period === 'day') {
+      for (let d = toLocal(start, tz).date; fromLocal(addDays(d, 1), 0, tz) <= Math.min(end, NOW); d = addDays(d, 1)) rows.push({ start: fromLocal(d, 0, tz), change: 1 });
+    } else {
+      for (let h = Math.floor(start / HOUR) * HOUR; h < end && h + HOUR <= NOW; h += HOUR) rows.push({ start: h, change: 0.04 });
+    }
+    return ids.includes('sensor.gas') ? { 'sensor.gas': rows } : {};
+  };
+
+  const year = await service.room('r_b', { range: 'year' });
+  assert.equal(year.previousDate, '2025-01-01');
+  assert.equal((await service.house({ range: 'year' })).previousComplete, true, 'the meters reach back to 2025');
+  assert.equal(year.previousComplete, false, 'the spans of early 2025 are cleaned up');
+  // a day more than 400 days ago: the same
+  assert.equal((await service.house({ date: '2025-08-01' })).previousComplete, true);
+  assert.equal((await service.room('r_b', { date: '2025-08-01' })).previousComplete, false);
+  // the month before is well within them
+  assert.equal((await service.room('r_b', { range: 'month' })).previousComplete, true);
+});
+
+test('two dates of the same period share one reading of the house', async () => {
+  const { service, ha } = roomsSetup();
+  const h = await service.house({ range: 'month', date: '2026-10-15' });
+  const reads = ha.statisticsCalls.length;
+  const histories = ha.historyCalls.length;
+  assert.deepEqual(await service.house({ range: 'month', date: '2026-10-03' }), h);
+  assert.equal(ha.statisticsCalls.length, reads);
+  const d = await service.room('r_b', { range: 'month', date: '2026-10-02' });
+  assert.deepEqual(await service.room('r_b', { range: 'month', date: '2026-10-31' }), d);
+  assert.deepEqual(shareOf(d), h.rooms.find((r) => r.roomId === 'r_b'));
+  // the rooms only ask for the outdoor means, once for the month
+  assert.equal(ha.statisticsCalls.length, reads + 1);
+  assert.equal(ha.historyCalls.length, histories);
+});
+
+test('a meter only the own AC of a room has is all that room has, standby included', async () => {
+  const { service, ha, config } = setup({
+    extraSpans: [
+      { ...runSpan('ac', 's_ac', MIDNIGHT + 10 * HOUR, MIDNIGHT + 11 * HOUR), mode: 'cool' },
+      demandSpan('d1', 'r_a', MIDNIGHT + 10 * HOUR, MIDNIGHT + 10.5 * HOUR),
+      demandSpan('d2', 'r_a', MIDNIGHT + 6 * HOUR, MIDNIGHT + 7 * HOUR),
+    ],
+  });
+  ha.set(state('sensor.ac_energy', '321.5', { unit_of_measurement: 'kWh', state_class: 'total_increasing', device_class: 'energy' }));
+  const gasStats = ha.statisticsFn;
+  ha.statisticsFn = (ids, start, end, period, types) => {
+    const out = gasStats(ids, start, end, period, types);
+    if (ids.includes('sensor.ac_energy')) {
+      const rows = [];
+      for (let h = Math.floor(start / HOUR) * HOUR; h < end && h + HOUR <= NOW; h += HOUR) if (h >= MIDNIGHT - DAY) rows.push({ start: h, change: h === MIDNIGHT + 10 * HOUR ? 0.8 : 0.01 });
+      out['sensor.ac_energy'] = rows;
+    }
+    return out;
+  };
+  config.settings.tariffs = { ...config.settings.tariffs, electricityPerKwh: 4 };
+  config.sources.push(
+    { ...newSourceConfig('ac', { id: 's_ac', name: 'Кондиціонер', now: 1, scope: 'room', roomId: 'r_a' }), meters: [{ kind: 'electricity', entityId: 'sensor.ac_energy', unit: 'kWh' }] },
+    { ...newSourceConfig('electric_radiator', { id: 's_conv', name: 'Конвектор', now: 2, scope: 'room', roomId: 'r_a' }), enabled: true, meters: [] },
+    { ...newSourceConfig('electric_radiator', { id: 's_old', name: 'Старий конвектор', now: 3, scope: 'room', roomId: 'r_a' }), enabled: false, meters: [] },
+  );
+  config.rooms = [{ id: 'r_a' }, { id: 'r_b' }];
+  config.circuits = [{ id: 'c_rad', sourceIds: ['s_boiler'] }];
+  config.emitters = [
+    ...['r_a', 'r_b'].map((roomId) => ({ id: `e_${roomId}`, roomId, enabled: true, sourceId: null, circuitId: 'c_rad' })),
+    { id: 'e_ac', roomId: 'r_a', enabled: true, sourceId: 's_ac', circuitId: null },
+  ];
+  config.list = (c) => ({ sources: config.sources, rooms: config.rooms, circuits: config.circuits, emitters: config.emitters })[c] ?? [];
+
+  const h = await service.house();
+  const a = h.rooms.find((r) => r.roomId === 'r_a');
+  // 14 compiled hours: 0.8 kWh while it cooled, 0.01 of standby in each of the other 13
+  near(a.electricity, 0.8 + 13 * 0.01);
+  assert.equal(h.unassigned.electricity, 0, 'nothing of an own meter is left over');
+  assert.equal(h.rooms.find((r) => r.roomId === 'r_b').electricity, null, 'no meter of r_b counts electricity');
+
+  const d = await service.room('r_a');
+  assert.deepEqual(shareOf(d), a);
+  assert.deepEqual(
+    d.meters.map((m) => [m.kind, m.entityId, m.own]),
+    [
+      ['gas', 'sensor.gas', false],
+      ['electricity', 'sensor.ac_energy', true],
+    ],
+  );
+  const ac = d.meters[1];
+  assert.deepEqual(ac.sourceIds, ['s_ac']);
+  near(ac.amount, 0.8 + 13 * 0.01);
+  assert.equal(ac.meterTotal, ac.amount);
+  near(ac.cost, ac.amount * 4, 0.01);
+  assert.equal(ac.minutes, 30, 'asked 10:00–10:30 while the AC ran');
+  assert.equal(d.meters[0].minutes, 60);
+  near(d.buckets[3].electricity, 0.01, 1e-6, 'standby while it did not ask');
+  near(d.buckets[10].electricity, 0.8);
+  assert.deepEqual(d.unmetered, ['s_conv'], 'a convector without a meter: not counted; a disabled one is not listed');
+  near(d.sourcesTotal.electricity, ac.meterTotal);
+
+  const b = await service.room('r_b');
+  assert.deepEqual(b.meters.map((m) => m.entityId), ['sensor.gas']);
+  assert.equal(b.electricity, null);
+  assert.deepEqual(b.unmetered, []);
+});
+
+test('a room nobody heats has no meter; a recorder that does not answer leaves a share unknown, the minutes still count', async () => {
+  const { service, config } = setup({ failRecorder: true, extraSpans: [demandSpan('d1', 'r_a', MIDNIGHT + 6 * HOUR, MIDNIGHT + 7 * HOUR)] });
+  config.rooms = [{ id: 'r_a' }, { id: 'r_x' }];
+  config.circuits = [{ id: 'c_rad', sourceIds: ['s_boiler'] }];
+  config.emitters = [{ id: 'e_a', roomId: 'r_a', enabled: true, sourceId: null, circuitId: 'c_rad' }];
+  config.list = (c) => ({ sources: config.sources, rooms: config.rooms, circuits: config.circuits, emitters: config.emitters })[c] ?? [];
+  const d = await service.room('r_a');
+  assert.equal(d.recorder, 'unavailable');
+  assert.equal(d.gas, null);
+  assert.equal(d.meters[0].amount, null);
+  assert.equal(d.meters[0].meterTotal, null);
+  assert.equal(d.demandMin, 60);
+  assert.equal(d.meters[0].minutes, 60);
+  assert.equal(d.outdoorAvgC, null);
+  const x = await service.room('r_x');
+  assert.equal(x.configured, false);
+  assert.deepEqual(x.meters, []);
+  assert.equal(x.gas, null);
+});
+
 test('unknown sources and ranges are refused', async () => {
   const { service } = setup();
   await assert.rejects(() => service.source('nope', { range: 'day' }), (e) => e.status === 404);
   await assert.rejects(() => service.source('s_boiler', { range: 'decade' }), (e) => e.status === 400);
+  // a date the period arithmetic cannot step past is refused, not a server error
+  for (const date of ['9999-12-31', '0001-01-01']) {
+    await assert.rejects(() => service.house({ range: 'month', date }), (e) => e.status === 400);
+    await assert.rejects(() => service.source('s_boiler', { range: 'day', date }), (e) => e.status === 400);
+  }
+});
+
+test('unknown rooms and ranges are refused; a room is found by its slug too', async () => {
+  const { service, config } = setup();
+  config.rooms = [{ id: 'r_a', slug: 'vitalnia' }];
+  await assert.rejects(() => service.room('nope'), (e) => e.status === 404);
+  await assert.rejects(() => service.room('r_a', { range: 'decade' }), (e) => e.status === 400);
+  await assert.rejects(() => service.room('r_a', { date: '21.10.2026' }), (e) => e.status === 400);
+  const d = await service.room('vitalnia', { range: 'week' });
+  assert.equal(d.roomId, 'r_a');
+  assert.equal(d.range, 'week');
+  assert.equal(d.date, '2026-10-19');
 });

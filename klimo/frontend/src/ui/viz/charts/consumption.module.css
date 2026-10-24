@@ -367,6 +367,8 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
+  /* as wide as its content, wherever it is placed: the chart measures it to keep it inside */
+  width: max-content;
   min-width: 132px;
   max-width: min(240px, 70%);
   padding: 8px 10px;

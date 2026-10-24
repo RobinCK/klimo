@@ -292,6 +292,9 @@ class FakeSpans {
   async range() {
     return [];
   }
+  async earliestStart() {
+    return null;
+  }
   async closeDangling(at, stillOn) {
     const gone = this.openSpans.filter((s) => !stillOn(s));
     this.closed.push(...gone.map((s) => ({ ...s, endTs: at })));

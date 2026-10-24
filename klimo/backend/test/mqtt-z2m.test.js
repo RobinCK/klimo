@@ -72,6 +72,21 @@ test('a bridge on an unknown base topic becomes a new Zigbee2MQTT instance', asy
   assert.equal(h.config.created.length, 1);
 });
 
+test('a bridge on a base topic removed by hand is not added again', async () => {
+  const h = await withBridge();
+  h.config.cfg.settings.z2mIgnoredTopics = ['zigbee2mqtt_2'];
+  // the retained state on every connection and the bridge's own restarts
+  h.transport.deliver('zigbee2mqtt_2/bridge/state', 'online');
+  h.transport.deliver('zigbee2mqtt_2/bridge/state', '{"state":"online"}');
+  await settle();
+  assert.equal(h.config.created.length, 0);
+  assert.ok(!h.transport.subs.includes('zigbee2mqtt_2/#'));
+  // another unknown bridge is still found
+  h.transport.deliver('zigbee2mqtt_3/bridge/state', 'online');
+  await settle();
+  assert.deepEqual(h.config.created.map((x) => x.value.baseTopic), ['zigbee2mqtt_3']);
+});
+
 test('the device list yields model, power source and TRV capabilities', async () => {
   const h = await withBridge();
   h.transport.deliver(

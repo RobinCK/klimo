@@ -176,6 +176,7 @@ export function defaultSettings(lang: Lang = 'en'): GeneralSettings {
     },
     defaults: deepClone(DEFAULT_ROOM_DEFAULTS),
     tariffs: defaultTariffs(),
+    z2mIgnoredTopics: [],
     onboardingDismissed: false,
     updatedAt: 0,
   };

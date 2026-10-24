@@ -164,6 +164,7 @@ test('spans: start and end edges, ranges, dangling spans after a crash', async (
   const s = await openStores();
   try {
     const t0 = s.clock.now();
+    assert.equal(await s.spans.earliestStart(), null);
     await s.spans.apply([{ subject: 'source', subjectId: 's_boiler', kind: 'run', mode: 'heat', edge: 'start', at: t0 }]);
     await s.spans.apply([{ subject: 'source', subjectId: 's_boiler', kind: 'run', mode: 'heat', edge: 'start', at: t0 + 10 }]);
     assert.equal(s.spans.open().length, 1);
@@ -180,6 +181,7 @@ test('spans: start and end edges, ranges, dangling spans after a crash', async (
     const range = await s.spans.range(t0, t0 + 3_600_000);
     assert.equal(range.length, 3);
     assert.equal((await s.spans.range(t0, t0 + 3_600_000, 'source')).length, 1);
+    assert.equal(await s.spans.earliestStart(), t0);
     assert.equal(await s.spans.closeDangling(t0 + 9000, () => false), 1);
     assert.equal(s.spans.open().length, 0);
   } finally {

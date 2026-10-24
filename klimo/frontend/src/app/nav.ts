@@ -11,6 +11,7 @@ const AREA: Record<RouteName, AreaKey> = {
   wizard: 'rooms',
   room: 'rooms',
   roomSettings: 'rooms',
+  roomUse: 'rooms',
   schedule: 'schedule',
   scheduleProfiles: 'schedule',
   scheduleProfile: 'schedule',

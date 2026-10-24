@@ -472,3 +472,18 @@ test('control modes over REST: any panel user, by id or slug, validated, idempot
     assert.deepEqual(res.body, { mode: 'schedule', since: null });
   });
 });
+
+test('a removed Zigbee2MQTT instance is remembered so it is not found again; adding it by hand takes it back', async () => {
+  await withApi({}, async (api) => {
+    api.config.put('z2m', { id: 'z2m2', name: 'Вулиця', baseTopic: 'zigbee2mqtt_street', frontendUrl: null, bridgeEntityId: null, resendOnRestart: true });
+    const del = await api.request('DELETE', '/api/z2m/instances/z2m2', { headers: ADMIN });
+    assert.equal(del.status, 204);
+    assert.equal(api.config.get('z2m', 'z2m2'), undefined);
+    assert.deepEqual(api.config.singleton('settings').z2mIgnoredTopics, ['zigbee2mqtt_street']);
+    assert.equal((await api.request('DELETE', '/api/z2m/instances/z2m2', { headers: ADMIN })).status, 404);
+
+    const add = await api.request('POST', '/api/z2m/instances', { body: { name: 'Вулиця', baseTopic: 'zigbee2mqtt_street' }, headers: ADMIN });
+    assert.equal(add.status, 201);
+    assert.deepEqual(api.config.singleton('settings').z2mIgnoredTopics, []);
+  });
+});

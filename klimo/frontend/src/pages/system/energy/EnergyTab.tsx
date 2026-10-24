@@ -15,6 +15,7 @@ import {
   ConsumptionChart,
   DataTable,
   EmptyState,
+  Icon,
   MobileTopBar,
   Page,
   PeriodNav,
@@ -29,10 +30,24 @@ import {
   type DataColumn,
   type DataRow,
 } from '@ui';
-import { fmtAmount, fmtDur, fmtMoney, t, unitLabel, zonedParts } from '@i18n';
+import {
+  bucketLabels,
+  changeAgainst,
+  fmtAmount,
+  fmtDur,
+  fmtMoney,
+  hasPrice,
+  kindLabel,
+  nextPeriod,
+  periodLabel,
+  periodStart,
+  priceText,
+  t,
+  unitLabel,
+  zonedParts,
+} from '@i18n';
 import type { SystemData } from '../shared';
 import { useManifolds } from '../Manifolds';
-import { bucketLabels, changeAgainst, hasPrice, kindLabel, nextPeriod, periodLabel, periodStart, priceText } from '../sources/consumption';
 import { PumpMetersTable } from './pumpMeters';
 
 const FIVE_MIN = 5 * 60_000;
@@ -44,7 +59,7 @@ const RANGE_LABEL = (r: ConsumptionRange) => (r === 'day' ? t('Day') : r === 'we
 /** The house in a period; the period before stays on screen (dimmed) while the next one loads. */
 function useHouseConsumption(range: ConsumptionRange, date: LocalDate | null) {
   const res = useResource(`house-consumption:${range}:${date ?? 'now'}`, () => api.energy.consumption({ range, date: date ?? undefined }), {
-    reloadOn: ['source', 'pump', 'settings'],
+    reloadOn: ['source', 'circuit', 'emitter', 'pump', 'manifold', 'room', 'settings'],
   });
   const last = useRef<HouseConsumptionDto | null>(null);
   if (res.data) last.current = res.data;
@@ -199,28 +214,35 @@ function ByRoom({ d, data, phone }: { d: SystemData; data: HouseConsumptionDto; 
       v.cost != null ? fmtMoney(v.cost, units.currency) : '',
     ].filter(Boolean);
   const cell = (v: number | null, unit: string | null) => (v == null ? '—' : fmtAmount(v, unit));
+  // a room opens on the period looked at here (the range is shared); the current one needs no date
+  const date = data.from <= data.now && data.now < data.to ? undefined : data.date;
   const who = (name: string, caption: string) => (
     <Stack gap="3xs">
       <Text>{name}</Text>
       <Text variant="caption">{caption}</Text>
     </Stack>
   );
+  // a room's row opens its consumption: a chevron at the end, as on the other rows that open something
+  const opens: DataColumn = { key: 'open', label: t('Open'), width: 'auto', hideLabel: true, align: 'end' };
   const cols: DataColumn[] = phone
     ? [
         { key: 'who', label: t('Room'), width: '1.4fr' },
         { key: 'used', label: t('Used'), width: '1fr', align: 'end' },
+        opens,
       ]
     : [
         { key: 'who', label: t('Room'), width: '1.8fr' },
         ...(withGas ? [{ key: 'gas', label: `${kindLabel('gas')}, ${unitLabel(units.gas)}`, width: '1fr', align: 'end' as const }] : []),
         ...(withElectricity ? [{ key: 'electricity', label: `${kindLabel('electricity')}, ${unitLabel('kWh')}`, width: '1fr', align: 'end' as const }] : []),
         ...(priced ? [{ key: 'cost', label: t('Cost'), width: '1fr', align: 'end' as const }] : []),
+        opens,
       ];
   const row = (key: string, name: string, caption: string, v: { gas: number | null; electricity: number | null; cost: number | null }, open?: () => void): DataRow => ({
     key,
     onClick: open,
     ariaLabel: `${name}, ${caption}`,
     cells: {
+      open: open ? <Icon name="chevronRight" size={16} tone="muted" /> : null,
       who: who(name, caption),
       gas: cell(v.gas, null),
       electricity: cell(v.electricity, null),
@@ -237,7 +259,7 @@ function ByRoom({ d, data, phone }: { d: SystemData; data: HouseConsumptionDto; 
   const table: DataRow[] = [
     ...rooms.map((r) =>
       row(r.roomId, d.roomName(r.roomId) ?? r.roomId, r.demandMin > 0 ? t('heated or cooled {dur}', { dur: fmtDur(r.demandMin) }) : t('not heated or cooled'), r, () =>
-        navigate(paths.room(r.roomId)),
+        navigate(paths.roomUse(r.roomId, date)),
       ),
     ),
     row('unassigned', t('No room took it'), t('run-on, frost protection, a stove on the gas meter, standby'), data.unassigned),

@@ -261,10 +261,14 @@ export function singletonFromRow<K extends ConfigSingletonName>(k: K, row: Objec
     return value;
   }
 
-  // a settings row saved before tariffs existed holds NULL in that column
+  // a settings row saved before tariffs (or the ignored Zigbee2MQTT topics) existed holds NULL in that column
   const settings = value as ConfigSingletons['settings'];
 
-  return { ...settings, tariffs: withDefaults(settings.tariffs, defaultTariffs()) } as ConfigSingletons[K];
+  return {
+    ...settings,
+    tariffs: withDefaults(settings.tariffs, defaultTariffs()),
+    z2mIgnoredTopics: Array.isArray(settings.z2mIgnoredTopics) ? settings.z2mIgnoredTopics : [],
+  } as ConfigSingletons[K];
 }
 
 /** One database table: how to compute its rows from the graph. */

@@ -108,6 +108,7 @@ import type {
   PumpPatch,
   Reason,
   ResolvedDayDto,
+  RoomConsumptionDto,
   RoomControl,
   RoomControlRequest,
   RoomControlResult,
@@ -262,6 +263,8 @@ export const api = {
     remove: (id: Id, opts: { releaseTrvs?: boolean } = {}) =>
       http.del<void>(`${r(id)}${qs({ releaseTrvs: opts.releaseTrvs === undefined ? undefined : String(opts.releaseTrvs) })}`),
     day: (id: Id, date?: LocalDate) => http.get<RoomDayDto>(`${r(id)}/day${qs({ date })}`),
+    /** The room's share of its sources' meters in a period. */
+    consumption: (id: Id, q: ConsumptionQuery) => http.get<RoomConsumptionDto>(`${r(id)}/consumption${qs({ range: q.range, date: q.date })}`),
     durations: (id: Id) => http.get<DurationOption[]>(`${r(id)}/durations`),
     /** Room editing in the wizard's terms: a device by role, replaced or removed by its binding key. */
     bindings: {

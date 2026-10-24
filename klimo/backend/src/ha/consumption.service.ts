@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { notFound, validationError } from '../common/http';
 import { errorText, LogOnce } from '../common/logger';
+import { RETENTION } from '../db/retention.service';
 import { addDays, fromLocal, isLocalDate, toLocal } from '../engine/core/time';
 import { HDD_BASE_C } from '../shared/defaults';
 import { CONSUMPTION_RANGES, METER_KINDS, meterUnit, METER_QUANTITIES, outdoorSensorIds } from '../shared/model';
@@ -29,6 +30,9 @@ import type {
   LocalDate,
   MeterKind,
   MeterUnitInfo,
+  RoomConsumptionBucket,
+  RoomConsumptionDto,
+  RoomMeterUse,
   RunSpan,
   SourceConfig,
   SourceConsumptionDto,
@@ -63,6 +67,8 @@ const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 const CACHE_MS = MIN;
+/** Where Klimo's own records begin moves once a day at most (the clean-up at night): asked again after this. */
+const RECORDS_CACHE_MS = HOUR;
 /** The latest compiled hour is looked for this far back. */
 const RECENT_MS = 3 * HOUR;
 /** The recorder keeps ten days of states by default: state history is not asked for further back. */
@@ -104,6 +110,62 @@ interface Window {
   to: EpochMs;
 }
 
+/** Gas and electricity of a room's share (gas in the house's unit). */
+interface Share {
+  gas: number | null;
+  electricity: number | null;
+}
+
+/** One meter of the sources shared out between rooms, bin by bin (see splitByRoom). */
+interface MeterSplit {
+  ref: MeterRef;
+  kind: 'gas' | 'electricity';
+  /** The sources that have it. */
+  owners: Id[];
+  /** The rooms that share it; for an own meter, the one room. */
+  rooms: Id[];
+  /** Only one room's own sources have it: everything it counted is that room's. */
+  own: boolean;
+  /** What it counted in each bin (gas in the house's unit); null where it is not known. */
+  amounts: (number | null)[];
+  /** Each room's part per bin. */
+  parts: Map<Id, number[]>;
+  /** What no room took per bin. */
+  left: number[];
+  /** Milliseconds each room took heat or cooling while one of the owners ran, per bin. */
+  taken: Map<Id, number[]>;
+}
+
+/** The sources' meters over a stretch of time shared out between rooms, in fine bins. */
+interface RoomSplit {
+  /** Bin k is [edges[k], edges[k + 1]): hours, or days for a year. */
+  edges: EpochMs[];
+  meters: MeterSplit[];
+  /** When each room took heat or cooling (every room, merged intervals). */
+  demand: Map<Id, Interval[]>;
+}
+
+/** The house's meters and spans over a period and the one before, read once for the house and each room. */
+interface HouseSplit {
+  plan: PeriodPlan;
+  prevPlan: PeriodPlan;
+  /** The period before cut at the same elapsed time. */
+  prevTo: EpochMs;
+  /** End of the period so far. */
+  until: EpochMs;
+  fine: Fine;
+  tariffs: EnergyTariffs;
+  sources: { id: Id; refs: MeterRef[] }[];
+  pumps: { id: Id; refs: MeterRef[] }[];
+  reading: Reading;
+  house: MeterValues;
+  spans: { source: RunSpan[]; pump: RunSpan[]; room: RunSpan[] };
+  /** The period so far and the period before up to the same time, shared out between rooms. */
+  current: RoomSplit;
+  /** Made on first use and kept with the split: only a room's detail compares against the period before. */
+  previous: () => RoomSplit;
+}
+
 const EMPTY_VALUES: ConsumptionValues = { gas: null, electricity: null, heat: null, cost: null };
 
 /** End of the period the window is cut at while it is still running: the same time elapsed («so far»). */
@@ -141,6 +203,7 @@ export class ConsumptionService implements IConsumption {
   private readonly log = new Logger('Consumption');
   private readonly once = new LogOnce(this.log);
   private readonly cache = new Map<string, { at: EpochMs; value: Promise<unknown> }>();
+  private records: { at: EpochMs; value: Promise<EpochMs | null> } | null = null;
 
   constructor(
     @Inject(HA_PORT) private readonly ha: HaPort,
@@ -180,10 +243,30 @@ export class ConsumptionService implements IConsumption {
     return this.cached(key, () => this.buildHouse(range, date, now));
   }
 
+  async room(roomId: Id, q: Partial<ConsumptionQuery> = {}): Promise<RoomConsumptionDto> {
+    // the id or the slug, like the other /api/rooms/:id routes
+    const room = this.config.room(roomId);
+    if (!room) {
+      throw notFound('Room');
+    }
+
+    const range = q.range ?? 'day';
+    if (!CONSUMPTION_RANGES.includes(range)) {
+      throw validationError([{ path: 'range', code: 'enum', params: { values: CONSUMPTION_RANGES.join('|') } }]);
+    }
+
+    const now = this.clock.now();
+    const date = this.dateOf(q.date, now);
+    const key = `room|${room.id}|${range}|${date}|${Math.floor(now / MIN)}|${this.config.revision()}`;
+
+    return this.cached(key, () => this.buildRoom(room.id, range, date, now));
+  }
+
   /* ── plumbing ─────────────────────────────────────────────────────────────────────────────── */
 
   private dateOf(date: LocalDate | undefined, now: EpochMs): LocalDate {
-    if (date !== undefined && !isLocalDate(date)) {
+    // years outside 2000–2099 break the period arithmetic (9999-12-31 + 1 day has five digits) and hold no readings
+    if (date !== undefined && (!isLocalDate(date) || date < '2000-01-01' || date > '2099-12-31')) {
       throw validationError([{ path: 'date', code: 'date' }]);
     }
 
@@ -258,6 +341,24 @@ export class ConsumptionService implements IConsumption {
     }
   }
 
+  /** Start of Klimo's own records: the oldest span (profile spans run from the install on); null with none. */
+  private recordsFrom(): Promise<EpochMs | null> {
+    const now = this.clock.now();
+    if (this.records && now - this.records.at < RECORDS_CACHE_MS) {
+      return this.records.value;
+    }
+
+    const value = this.spans.earliestStart().catch((e) => {
+      this.once.warn('spans', `run spans unavailable: ${errorText(e)}`);
+      this.records = null;
+
+      return null;
+    });
+    this.records = { at: now, value };
+
+    return value;
+  }
+
   /** The rooms each source heats or cools: through an emitter of its own, or a circuit it (or its manifold) feeds. */
   private roomsBySource(): Map<Id, Set<Id>> {
     const out = new Map<Id, Set<Id>>();
@@ -295,7 +396,9 @@ export class ConsumptionService implements IConsumption {
    * as one); each hour (each day of a year) what it counted goes to the rooms that took their heat or
    * cooling while one of them ran, by how long each took it; with no room taking it, it stays unassigned.
    * A room takes it while it asks, and while the pump of a floor that runs with the source runs (such a
-   * floor warms its rooms whether they ask or not).
+   * floor warms its rooms whether they ask or not). A meter only one room's own sources have (an AC, a
+   * heater on its plug) is that room's whole, standby included. Kept bin by bin, meter by meter, so the
+   * house's list and a room's detail add up the same numbers.
    */
   private splitByRoom(
     sources: { id: Id; refs: MeterRef[] }[],
@@ -305,10 +408,11 @@ export class ConsumptionService implements IConsumption {
     spans: { source: RunSpan[]; pump: RunSpan[]; room: RunSpan[] },
     edges: EpochMs[],
     now: EpochMs,
-  ): { rooms: RoomUse[]; unassigned: ConsumptionValues } {
+  ): RoomSplit {
     const from = edges[0];
     const until = edges[edges.length - 1];
     const served = this.roomsBySource();
+    const configs = new Map(this.config.list('sources').map((s) => [s.id, s]));
     const sourceSpans = spans.source;
     const withSource = new Map(this.config.list('circuits').filter((c) => c.mode === 'follow_source').map((c) => [c.id, c]));
     const pumps = this.config.list('pumps').filter((p) => p.enabled);
@@ -342,8 +446,6 @@ export class ConsumptionService implements IConsumption {
       demand.set(r.id, intervalsOf(taken, from, until, now));
     }
 
-    const acc = new Map<Id, { gas: number | null; electricity: number | null }>([...demand.keys()].map((id) => [id, { gas: null, electricity: null }]));
-    const left: { gas: number | null; electricity: number | null } = { gas: null, electricity: null };
     const meters = new Map<string, { ref: MeterRef; owners: Id[] }>();
     for (const s of sources) {
       for (const ref of s.refs) {
@@ -354,47 +456,57 @@ export class ConsumptionService implements IConsumption {
       }
     }
 
+    const bins = edges.length - 1;
+    const out: MeterSplit[] = [];
     for (const { ref, owners } of meters.values()) {
       const kind = ref.meter.kind === 'gas' ? 'gas' : 'electricity';
       const own = new MeterValues([ref], reading, tariffs);
       const runs = intervalsOf(sourceSpans.filter((s) => owners.includes(s.subjectId)), from, until, now);
-      const rooms = [...new Set(owners.flatMap((id) => [...(served.get(id) ?? [])]))].filter((id) => demand.has(id));
+      // the room of the owners when every one of them is a room's own source, of the same room
+      const homes = new Set(owners.map((id) => (configs.get(id)?.scope === 'room' ? (configs.get(id)?.roomId ?? null) : null)));
+      const home = homes.size === 1 ? [...homes][0] : null;
+      const whole = home !== null && demand.has(home) ? home : null;
+      const rooms = whole !== null ? [whole] : [...new Set(owners.flatMap((id) => [...(served.get(id) ?? [])]))].filter((id) => demand.has(id));
       const weights = rooms.map((id) => binned(intersect(runs, demand.get(id) ?? []), edges));
-      for (let i = 0; i < edges.length - 1; i++) {
+      const split: MeterSplit = {
+        ref,
+        kind,
+        owners,
+        rooms,
+        own: whole !== null,
+        amounts: [],
+        parts: new Map(rooms.map((id) => [id, new Array<number>(bins).fill(0)])),
+        left: new Array<number>(bins).fill(0),
+        taken: new Map(rooms.map((id, k) => [id, weights[k]])),
+      };
+      for (let i = 0; i < bins; i++) {
         const v = own.between(edges[i], edges[i + 1]);
         const amount = kind === 'gas' ? own.gasIn(v.gas, house.gasUnit()) : v.electricity;
+        split.amounts.push(amount);
         if (amount === null) {
           continue;
         }
 
-        // a room this meter's sources heat used nothing of it rather than an unknown amount
-        for (const id of rooms) {
-          const a = acc.get(id) as { gas: number | null; electricity: number | null };
-          a[kind] = a[kind] ?? 0;
+        if (whole !== null) {
+          (split.parts.get(whole) as number[])[i] = amount;
+          continue;
         }
 
         const total = weights.reduce((sum, w) => sum + w[i], 0);
         if (total <= 0) {
-          left[kind] = (left[kind] ?? 0) + amount;
+          split.left[i] = amount;
           continue;
         }
 
         rooms.forEach((id, k) => {
-          const a = acc.get(id) as { gas: number; electricity: number };
-          a[kind] += (amount * weights[k][i]) / total;
+          (split.parts.get(id) as number[])[i] = (amount * weights[k][i]) / total;
         });
       }
+
+      out.push(split);
     }
 
-    const rooms = [...acc.entries()].map(([roomId, a]) => ({
-      roomId,
-      gas: roundTo(a.gas, 3),
-      electricity: roundTo(a.electricity, 3),
-      cost: roundTo(house.cost(a.gas, a.electricity), 2),
-      demandMin: Math.round(total(demand.get(roomId) ?? []) / MIN),
-    }));
-
-    return { rooms, unassigned: { gas: roundTo(left.gas, 3), electricity: roundTo(left.electricity, 3), heat: null, cost: roundTo(house.cost(left.gas, left.electricity), 2) } };
+    return { edges, meters: out, demand };
   }
 
   /* ── reading Home Assistant ───────────────────────────────────────────────────────────────── */
@@ -571,11 +683,20 @@ export class ConsumptionService implements IConsumption {
 
   /* ── the house ────────────────────────────────────────────────────────────────────────────── */
 
+  /** The house's reading and its split between rooms, once a minute for the house and every room's detail (any date of the period). */
+  private houseSplit(range: ConsumptionRange, date: LocalDate, now: EpochMs): Promise<HouseSplit> {
+    const first = planPeriod(range, date, this.clock.tz()).date;
+    const key = `split|${range}|${first}|${Math.floor(now / MIN)}|${this.config.revision()}`;
+
+    return this.cached(key, () => this.readHouse(range, first, now));
+  }
+
   /**
-   * Every source and pump with a meter over the period, read in one go: the house counts each meter
-   * once (a gas meter shared by two boilers is not doubled), each row counts its own meters whole.
+   * Every source and pump with a meter over the period and the one before, read in one go; the
+   * sources' meters shared out between rooms for both (a room's detail compares against the one before),
+   * the one before only once a room asks for it.
    */
-  private async buildHouse(range: ConsumptionRange, date: LocalDate, now: EpochMs): Promise<HouseConsumptionDto> {
+  private async readHouse(range: ConsumptionRange, date: LocalDate, now: EpochMs): Promise<HouseSplit> {
     const tz = this.clock.tz();
     const plan = planPeriod(range, date, tz);
     const prevPlan = planPeriod(range, shiftPeriod(range, plan.date, -1), tz);
@@ -589,15 +710,39 @@ export class ConsumptionService implements IConsumption {
       .filter((s) => s.refs.length);
     const pumps = this.config.list('pumps').flatMap((p) => (p.meter ? [{ id: p.id, refs: counted([p.meter]) }] : []));
     const all = [...sources, ...pumps].flatMap((x) => x.refs);
-    const [sourceSpans, pumpSpans, roomSpans] = await Promise.all([
-      this.runSpans(plan.from, plan.to, 'source'),
-      this.runSpans(plan.from, plan.to, 'pump'),
-      this.runSpans(plan.from, plan.to, 'room'),
+    // from the start of the period before: it is shared out between rooms too
+    const [source, pump, room] = await Promise.all([
+      this.runSpans(prevPlan.from, plan.to, 'source'),
+      this.runSpans(prevPlan.from, plan.to, 'pump'),
+      this.runSpans(prevPlan.from, plan.to, 'room'),
     ]);
+    const spans = { source, pump, room };
     const fine: Fine = range === 'year' ? 'day' : 'hour';
     const reading = await this.read(all, { from: prevPlan.from, to: until }, fine, null, false, now);
     const house = new MeterValues(all, reading, tariffs);
-    const use = (refs: MeterRef[], spans: RunSpan[]): ConsumerUse => {
+    let previous: RoomSplit | null = null;
+
+    return {
+      plan,
+      prevPlan,
+      prevTo,
+      until,
+      fine,
+      tariffs,
+      sources,
+      pumps,
+      reading,
+      house,
+      spans,
+      current: this.splitByRoom(sources, reading, house, tariffs, spans, fineEdges(plan, until, fine, tz), now),
+      previous: () => (previous ??= this.splitByRoom(sources, reading, house, tariffs, spans, fineEdges(prevPlan, prevTo, fine, tz), now)),
+    };
+  }
+
+  /** The house counts each meter once (a gas meter shared by two boilers is not doubled), each row counts its own meters whole. */
+  private async buildHouse(range: ConsumptionRange, date: LocalDate, now: EpochMs): Promise<HouseConsumptionDto> {
+    const { plan, prevPlan, prevTo, until, tariffs, sources, pumps, reading, house, spans, current } = await this.houseSplit(range, date, now);
+    const use = (refs: MeterRef[], runs: RunSpan[]): ConsumerUse => {
       const own = new MeterValues(refs, reading, tariffs);
       const v = own.between(plan.from, until);
 
@@ -605,12 +750,12 @@ export class ConsumptionService implements IConsumption {
         gas: roundTo(own.gasIn(v.gas, house.gasUnit()), 3),
         electricity: roundTo(v.electricity, 3),
         cost: roundTo(v.cost, 2),
-        runtimeMin: Math.round(runtimeMin(spans, plan.from, until, now)),
+        runtimeMin: Math.round(runtimeMin(runs, plan.from, until, now)),
         meters: refs.map((r) => r.dto),
       };
     };
     const total = house.between(plan.from, until);
-    const byRoom = this.splitByRoom(sources, reading, house, tariffs, { source: sourceSpans, pump: pumpSpans, room: roomSpans }, fineEdges(plan, until, fine, tz), now);
+    const left = shareOf(current.meters, null, 0, current.edges.length - 1);
 
     return {
       range,
@@ -633,14 +778,120 @@ export class ConsumptionService implements IConsumption {
       previousComplete: house.knownFrom(prevPlan.from, range === 'year' ? DAY : HOUR),
       units: house.units(),
       tariffs,
-      sources: sources.map((s) => ({ sourceId: s.id, ...use(s.refs, sourceSpans.filter((x) => x.subjectId === s.id)) })),
-      pumps: pumps.map((p) => ({ pumpId: p.id, ...use(p.refs, pumpSpans.filter((x) => x.subjectId === p.id)) })),
-      rooms: byRoom.rooms,
-      unassigned: byRoom.unassigned,
-      configured: all.length > 0,
+      sources: sources.map((s) => ({ sourceId: s.id, ...use(s.refs, spans.source.filter((x) => x.subjectId === s.id)) })),
+      pumps: pumps.map((p) => ({ pumpId: p.id, ...use(p.refs, spans.pump.filter((x) => x.subjectId === p.id)) })),
+      rooms: [...current.demand.keys()].map((roomId) => roomUse(current, roomId, house)),
+      unassigned: { gas: roundTo(left.gas, 3), electricity: roundTo(left.electricity, 3), heat: null, cost: roundTo(house.cost(left.gas, left.electricity), 2) },
+      configured: [...sources, ...pumps].some((x) => x.refs.length > 0),
       recorder: reading.ok ? 'ok' : 'unavailable',
       now,
     };
+  }
+
+  /* ── one room ─────────────────────────────────────────────────────────────────────────────── */
+
+  /** A room's share from the house's split: the same numbers as the house's list, by bucket and by meter. */
+  private async buildRoom(roomId: Id, range: ConsumptionRange, date: LocalDate, now: EpochMs): Promise<RoomConsumptionDto> {
+    const { plan, prevPlan, until, fine, tariffs, sources, reading, house, current, previous } = await this.houseSplit(range, date, now);
+    const [outdoor, recordsFrom] = await Promise.all([this.outdoor(range, plan.date, { from: plan.from, to: until }, fine, now), this.recordsFrom()]);
+    const mine = current.meters.filter((m) => m.rooms.includes(roomId));
+    const bins = current.edges.length - 1;
+    const taken = binned(current.demand.get(roomId) ?? [], current.edges);
+    const totals = roomUse(current, roomId, house);
+    const before = roomUse(previous(), roomId, house);
+    const slack = range === 'year' ? DAY : HOUR;
+    // the share of the period before is made of Klimo's spans too: there are none before the install, nor past the clean-up
+    const recorded = prevPlan.from >= now - RETENTION.longSpanDays * DAY && recordsFrom !== null && recordsFrom <= prevPlan.from + slack;
+    const buckets = plan.edges.slice(0, -1).map((start, k): RoomConsumptionBucket => {
+      const end = plan.edges[k + 1];
+      const future = start >= now;
+      const [i, j] = binsIn(current.edges, start, end);
+      const v = shareOf(mine, roomId, i, j);
+
+      return {
+        start,
+        end,
+        gas: roundTo(v.gas, 3),
+        electricity: roundTo(v.electricity, 3),
+        cost: roundTo(house.cost(v.gas, v.electricity), 2),
+        demandMin: Math.round(taken.slice(i, j).reduce((sum, ms) => sum + ms, 0) / MIN),
+        outdoorAvgC: future ? null : roundTo(outdoorMean(outdoor, start, Math.min(end, now)), 1),
+        partial: start < now && now < end,
+        future,
+      };
+    });
+    const meters = mine
+      .map((m): RoomMeterUse => {
+        const amount = shareOf([m], roomId, 0, bins)[m.kind];
+
+        return {
+          sourceIds: m.owners,
+          kind: m.kind,
+          entityId: m.ref.meter.entityId,
+          amount: roundTo(amount, 3),
+          cost: roundTo(m.kind === 'gas' ? house.cost(amount, null) : house.cost(null, amount), 2),
+          meterTotal: roundTo(sumValues(m.amounts), 3),
+          minutes: Math.round((m.taken.get(roomId) ?? []).reduce((sum, ms) => sum + ms, 0) / MIN),
+          own: m.own,
+        };
+      })
+      .sort((a, b) => (a.kind === b.kind ? (b.amount ?? -1) - (a.amount ?? -1) : a.kind === 'gas' ? -1 : 1));
+    const all = (kind: 'gas' | 'electricity') => sumValues(current.meters.filter((m) => m.kind === kind).flatMap((m) => m.amounts));
+    const sourcesGas = all('gas');
+    const sourcesElectricity = all('electricity');
+    const served = this.roomsBySource();
+    const metered = new Set(sources.map((s) => s.id));
+
+    return {
+      roomId,
+      range,
+      date: plan.date,
+      from: plan.from,
+      to: plan.to,
+      bucket: plan.bucket,
+      buckets,
+      gas: totals.gas,
+      electricity: totals.electricity,
+      cost: totals.cost,
+      demandMin: totals.demandMin,
+      previous: { gas: before.gas, electricity: before.electricity, cost: before.cost, demandMin: before.demandMin },
+      previousDate: prevPlan.date,
+      previousComplete: recorded && new MeterValues(mine.map((m) => m.ref), reading, tariffs).knownFrom(prevPlan.from, slack),
+      sourcesTotal: { gas: roundTo(sourcesGas, 3), electricity: roundTo(sourcesElectricity, 3), cost: roundTo(house.cost(sourcesGas, sourcesElectricity), 2) },
+      outdoorAvgC: roundTo(outdoorMean(outdoor, plan.from, until), 1),
+      meters,
+      unmetered: this.config
+        .list('sources')
+        .filter((s) => s.enabled && served.get(s.id)?.has(roomId) && !metered.has(s.id))
+        .map((s) => s.id),
+      units: house.units(),
+      tariffs,
+      configured: mine.length > 0,
+      recorder: reading.ok ? 'ok' : 'unavailable',
+      now,
+    };
+  }
+
+  /** Outdoor means of the period for a room's detail (the house's reading leaves them out); none rather than a failed request. */
+  private outdoor(range: ConsumptionRange, date: LocalDate, w: Window, fine: Fine, now: EpochMs): Promise<OutdoorRow[]> {
+    const key = `outdoor|${range}|${date}|${Math.floor(now / MIN)}|${this.config.revision()}`;
+
+    return this.cached(key, async () => {
+      if (!this.ha.connected || w.to <= w.from) {
+        return [];
+      }
+
+      try {
+        const rows = await this.outdoorRows(w, fine);
+        this.once.reset('outdoor');
+
+        return rows;
+      } catch (e) {
+        this.once.warn('outdoor', `outdoor statistics for consumption failed: ${errorText(e)}`);
+
+        return [];
+      }
+    });
   }
 }
 
@@ -923,6 +1174,57 @@ function binned(list: readonly Interval[], edges: readonly EpochMs[]): number[] 
 
 function total(list: readonly Interval[]): number {
   return list.reduce((sum, [a, b]) => sum + (b - a), 0);
+}
+
+/** The bins [i, j) of `edges` that start inside [a, b). */
+function binsIn(edges: readonly EpochMs[], a: EpochMs, b: EpochMs): [number, number] {
+  const bins = edges.length - 1;
+  let i = 0;
+  while (i < bins && edges[i] < a) {
+    i++;
+  }
+
+  let j = i;
+  while (j < bins && edges[j] < b) {
+    j++;
+  }
+
+  return [i, j];
+}
+
+/**
+ * A room's part of the meters in bins [i, j) — with `roomId` null, what no room took. A meter with
+ * readings gives 0 where none of it went there; null only when none of the meters of a kind is known.
+ */
+function shareOf(meters: readonly MeterSplit[], roomId: Id | null, i: number, j: number): Share {
+  const out: Share = { gas: null, electricity: null };
+  for (const m of meters) {
+    const parts = roomId === null ? m.left : m.parts.get(roomId);
+    if (!parts) {
+      continue;
+    }
+
+    for (let k = i; k < j; k++) {
+      if (m.amounts[k] !== null) {
+        out[m.kind] = (out[m.kind] ?? 0) + parts[k];
+      }
+    }
+  }
+
+  return out;
+}
+
+/** A room's share over the whole split, as the house lists it. */
+function roomUse(split: RoomSplit, roomId: Id, house: MeterValues): RoomUse {
+  const a = shareOf(split.meters, roomId, 0, split.edges.length - 1);
+
+  return {
+    roomId,
+    gas: roundTo(a.gas, 3),
+    electricity: roundTo(a.electricity, 3),
+    cost: roundTo(house.cost(a.gas, a.electricity), 2),
+    demandMin: Math.round(total(split.demand.get(roomId) ?? []) / MIN),
+  };
 }
 
 /** The steps the house's use is shared out in: hours, or days for a year (the statistics' own rows). */

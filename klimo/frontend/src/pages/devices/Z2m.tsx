@@ -8,6 +8,7 @@ import type { Id, Z2mInstanceCreateRequest, Z2mInstanceDto } from '@api/model';
 import { api } from '@api/endpoints';
 import { useEntitySearch, useMutation } from '@data';
 import { Button, CheckboxRow, ConfirmDialog, DashedAddButton, Dialog, EmptyState, EntityPicker, InstanceRow, Row, Section, Stack, TextField } from '@ui';
+import { brand } from '@brand';
 import { fmtClock, t } from '@i18n';
 import { openExternal } from './actions';
 
@@ -105,7 +106,13 @@ function InstanceDialog({
       <ConfirmDialog
         open={confirmDelete}
         title={t('Remove «{name}»?', { name: v.name })}
-        consequences={[t('Its devices stay in their rooms, but restarts of this bridge are no longer noticed.')]}
+        consequences={[
+          t('Its devices stay in their rooms, but restarts of this bridge are no longer noticed.'),
+          t('{product} will not add it back by itself when the bridge announces itself again; to bring it back, add an instance with the base topic «{topic}».', {
+            product: brand.productName,
+            topic: v.baseTopic,
+          }),
+        ]}
         confirm={{ label: t('Remove'), tone: 'danger', loading: remove.pending, onClick: () => editing && void remove.run(editing) }}
         onCancel={() => setConfirmDelete(false)}
       />

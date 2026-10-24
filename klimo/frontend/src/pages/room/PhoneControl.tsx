@@ -67,7 +67,7 @@ function nextLine(p: SectionProps, now: EpochMs): string | null {
 
 function settingsRows(
   p: SectionProps,
-): { key: string; icon: Parameters<typeof SourceRow>[0]['icon']; name: string; meta: string; chip: { tone: Tone; label: string } }[] {
+): { key: string; icon: Parameters<typeof SourceRow>[0]['icon']; name: string; meta: string; chip: { tone: Tone; label: string }; to?: string }[] {
   const { room, state } = p;
   const a = state.aggregation;
   const temps = state.sensors
@@ -94,6 +94,15 @@ function settingsRows(
       name: t('What heats'),
       meta: heating.join(' · ') || t('nothing heats'),
       chip: state.demand.served ? { tone: state.tone, label: roomStateLabel(state.state) } : { tone: 'off', label: t('idle') },
+    },
+    {
+      // not a setting: the room's share of the sources' meters, on a page of its own
+      key: 'use',
+      icon: 'gauge',
+      name: t('Consumption'),
+      meta: t('gas, electricity, cost'),
+      chip: { tone: 'hold', label: t('Open') },
+      to: paths.roomUse(room.config.id),
     },
     {
       key: 'temp',
@@ -235,7 +244,7 @@ export function PhoneControl({ p, ed, profiles, now }: { p: SectionProps; ed: Ta
       </BottomSheet>
       <RowList ariaLabel={t('Room settings')}>
         {settingsRows(p).map((r) => (
-          <SourceRow key={r.key} icon={r.icon} name={r.name} meta={r.meta} chip={r.chip} on={false} to={paths.roomSettings(room.config.id, r.key)} />
+          <SourceRow key={r.key} icon={r.icon} name={r.name} meta={r.meta} chip={r.chip} on={false} to={r.to ?? paths.roomSettings(room.config.id, r.key)} />
         ))}
       </RowList>
     </Stack>

@@ -13,6 +13,7 @@ export type RouteName =
   | 'wizard'
   | 'room'
   | 'roomSettings'
+  | 'roomUse'
   | 'schedule'
   | 'scheduleProfiles'
   | 'scheduleProfile'
@@ -44,6 +45,7 @@ const PATTERNS: [RouteName, RegExp, string[]][] = [
   ['rooms', /^\/rooms$/, []],
   ['wizard', /^\/rooms\/new$/, []],
   ['roomSettings', /^\/rooms\/([^/]+)\/settings$/, ['id']],
+  ['roomUse', /^\/rooms\/([^/]+)\/use$/, ['id']],
   ['room', /^\/rooms\/([^/]+)$/, ['id']],
   ['scheduleProfiles', /^\/schedule\/profiles$/, []],
   ['schedulePriority', /^\/schedule\/priority$/, []],
@@ -69,6 +71,8 @@ export const paths = {
   wizard: () => '/rooms/new',
   room: (id: string) => `/rooms/${encodeURIComponent(id)}`,
   roomSettings: (id: string, section?: string) => `/rooms/${encodeURIComponent(id)}/settings${section ? `?section=${encodeURIComponent(section)}` : ''}`,
+  /** The room's consumption; `date` opens a past period (any day inside it). */
+  roomUse: (id: string, date?: string) => withQuery(`/rooms/${encodeURIComponent(id)}/use`, { date }),
   schedule: (q: { scope?: string; day?: number } = {}) => withQuery('/schedule', { scope: q.scope, day: q.day }),
   scheduleProfiles: () => '/schedule/profiles',
   scheduleProfile: (id: string) => `/schedule/profiles/${encodeURIComponent(id)}`,

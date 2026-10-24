@@ -43,25 +43,28 @@ import {
   type DataRow,
   type EntityBindingRow,
 } from '@ui';
-import { fmtAmount, fmtDate, fmtDur, fmtMoney, fmtNum, fmtPct, fmtTemp, fmtTime, t, unitLabel, zonedParts } from '@i18n';
-import type { SystemData } from '../shared';
 import {
   bucketLabels,
-  changeText,
-  copHint,
-  degreeDayHint,
-  efficiencyHint,
-  firstKind,
+  fmtAmount,
+  fmtDate,
+  fmtDur,
+  fmtMoney,
+  fmtNum,
+  fmtPct,
+  fmtTemp,
+  fmtTime,
   hasPrice,
   kindLabel,
-  meterHint,
-  meterLabel,
-  naturalKinds,
   nextPeriod,
   periodLabel,
   periodStart,
   priceText,
-} from './consumption';
+  t,
+  unitLabel,
+  zonedParts,
+} from '@i18n';
+import type { SystemData } from '../shared';
+import { changeText, copHint, degreeDayHint, efficiencyHint, firstKind, meterHint, meterLabel, naturalKinds } from './consumption';
 
 const FIVE_MIN = 5 * 60_000;
 const RUNS_SHOWN = 6;
