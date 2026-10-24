@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.17
+
+- **Gas is blue and electricity yellow on the consumption charts** — of the house, a source and a room
+  (gas was plum, electricity grey).
+
 ## 0.2.16
 
 - **Each room's own consumption.** A room's page has a **Consumption** section under the hero (on a
