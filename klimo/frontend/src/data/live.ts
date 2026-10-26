@@ -371,6 +371,12 @@ export class LiveStore {
     this.set({ house, lastUpdateAt: house.now });
   }
 
+  /** A new room order shows at once (the reorder answers with every room). */
+  putRoomList(list: readonly RoomSummary[]): void {
+    const rooms = new Map(list.map((r) => [r.id, r] as const));
+    this.set({ rooms, roomList: sortRooms(rooms), roomsLoaded: true });
+  }
+
   /** A control change shows on the room's summary at once; the next evaluation push replaces it. */
   putRoomControl(roomId: Id, control: RoomControl): void {
     const summary = this.state.rooms.get(roomId);

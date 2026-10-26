@@ -309,3 +309,22 @@ test('two inputs of one trigger are named from Home Assistant, not both after th
     const rows = s.devices.list().devices.filter((x) => ids.includes(x.primary?.entityId ?? x.entityIds[0]));
     assert.deepEqual(rows.map((x) => x.name).sort(), ['Мережа', 'Фаза B']);
   }));
+
+test('a head set up before its sensor switch was recognised gets it filled in; what it has is never replaced', () =>
+  withHouse(async (s, { trv }) => {
+    s.search.details.set('climate.bathroom_towel_trv', {
+      trv: {
+        siblings: { ...DEFAULT_TRV_SIBLINGS, sensorSelect: 'select.bathroom_towel_trv_sensor', externalTemp: 'number.towel_external', battery: 'sensor.other_battery' },
+      },
+    });
+    await s.devices.completeTrvSiblings();
+    const after = s.config.get('emitterDevices', trv.id).siblings;
+    assert.equal(after.sensorSelect, 'select.bathroom_towel_trv_sensor');
+    assert.equal(after.externalTemp, 'number.towel_external');
+    assert.equal(after.battery, 'sensor.towel_battery', 'a sibling already set stays');
+    assert.equal(after.linkquality, 'sensor.towel_linkquality');
+    // nothing new: no write
+    const rev = s.config.revision();
+    await s.devices.completeTrvSiblings();
+    assert.equal(s.config.revision(), rev);
+  }));

@@ -40,6 +40,7 @@ import type {
   SensorRole,
   SourceConfig,
   Tone,
+  TrvSiblings,
 } from '../../shared/model';
 import { outdoorSensorIds } from '../../shared/model';
 import { BUS, CLOCK, CONFIG_STORE, ENTITY_SEARCH, EVENTS, HA_INPUTS, HA_PORT, HISTORY, JOURNAL } from '../../tokens';
@@ -1058,8 +1059,35 @@ export class DeviceHealthService implements IDeviceHealth, OnModuleInit, OnModul
   private scheduleRegression(delayMs: number): void {
     this.regressionTimer?.cancel();
     this.regressionTimer = this.clock.setTimeout(() => {
+      void this.completeTrvSiblings();
       void this.refreshBatteryEstimates().finally(() => this.scheduleRegression(this.untilNextRun()));
     }, delayMs);
+  }
+
+  /**
+   * Sibling entities a head has that were not recognised when it was set up (an Aqara E1's sensor switch
+   * is called plainly «sensor»): filled in where empty, never replaced. Without that switch a head fed the
+   * room temperature keeps regulating on its own sensor by the hot radiator and closes too early.
+   */
+  async completeTrvSiblings(): Promise<void> {
+    if (!this.ha.connected) return;
+    const actor: Actor = { via: 'system', userId: null, userName: null, contextId: null };
+    for (const d of this.config.list('emitterDevices')) {
+      if (d.kind !== 'trv' || !d.siblings) continue;
+      const found = this.search.detail(d.entityId)?.trv?.siblings;
+      if (!found) continue;
+      const have = d.siblings;
+      const missing = (Object.keys(found) as (keyof TrvSiblings)[]).filter((k) => have[k] == null && found[k] != null);
+      if (!missing.length) continue;
+      const siblings: TrvSiblings = { ...have };
+      for (const k of missing) siblings[k] = found[k];
+      try {
+        await this.config.update('emitterDevices', d.id, { siblings }, actor);
+        this.log.log(`${d.name}: found ${missing.join(', ')}`);
+      } catch (e) {
+        this.log.warn(`${d.name}: cannot add ${missing.join(', ')}: ${errorText(e)}`);
+      }
+    }
   }
 
   /** Next 04:00 local — after the night's discharge is recorded and before anyone looks. */

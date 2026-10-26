@@ -5,6 +5,7 @@ export { haDarkMode, haLanguage, inHomeAssistant } from './haBridge';
 export { applyPanelLanguage, languagePref, resolveLanguage, setLanguagePref, type LangPref } from './lang';
 export { areaOf, desktopNav, phoneNav, phoneTabOf, type AreaKey } from './nav';
 export { getJsonPref, getPref, setJsonPref, setPref, usePref } from './prefs';
+export { RoomOrderDialog, roomDemand } from './RoomOrder';
 export {
   RouteScope,
   bootRouter,

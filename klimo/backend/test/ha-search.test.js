@@ -438,3 +438,11 @@ test('wizard search for a device group: temperature, humidity and combined senso
   // a combined sensor leads with its temperature entity
   assert.ok(ids.indexOf('sensor.living_temperature') < ids.indexOf('sensor.living_humidity'));
 });
+
+test('an Aqara E1 calls its sensor switch plainly «sensor»: a select with an external option is the switch, another «…_sensor» select is not', () => {
+  const { siblingRole } = require('../dist/ha/classify');
+  const facts = (key, options) => ({ entityId: `select.office_trv_${key}`, domain: 'select', key, name: key, state: { entity_id: `select.office_trv_${key}`, state: options[0], attributes: { options } }, deviceClass: null, unit: null, entityCategory: 'config', model: 'SRTS-A01', areaName: null });
+  assert.equal(siblingRole(facts('sensor', ['internal', 'external'])), 'sensor_select');
+  assert.equal(siblingRole(facts('office_trv_sensor', ['internal', 'external'])), 'sensor_select');
+  assert.equal(siblingRole(facts('motion_sensor', ['low', 'high'])), 'other');
+});

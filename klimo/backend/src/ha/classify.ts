@@ -42,7 +42,12 @@ const has = (re: RegExp, ...texts: (string | null | undefined)[]) => texts.some(
 
 const SIBLING_RULES: { role: SiblingRole; domains: string[] | null; test: (f: EntityFacts) => boolean }[] = [
   { role: 'external_temp', domains: ['number', 'input_number'], test: (f) => has(/external_temp|ext_temp|external_sensor_temp|remote_temp/, f.key) },
-  { role: 'sensor_select', domains: ['select', 'input_select'], test: (f) => has(/sensor_select|temperature_sensor|sensor_mode|sensor_type/, f.key) },
+  // Aqara E1 calls it plainly «sensor» (internal / external): only with an «external» option is it the switch
+  {
+    role: 'sensor_select',
+    domains: ['select', 'input_select'],
+    test: (f) => has(/sensor_select|temperature_sensor|sensor_mode|sensor_type/, f.key) || (/(^|_)sensor$/.test(f.key) && stringList(f.state?.attributes.options).includes('external')),
+  },
   { role: 'calibration', domains: ['number', 'input_number'], test: (f) => has(/calibration|temperature_offset|temp_offset|local_temperature_correction/, f.key) },
   { role: 'valve_opening', domains: ['number', 'input_number'], test: (f) => has(/valve_opening|opening_degree|max_valve|valve_max/, f.key) },
   { role: 'valve_closing', domains: ['number', 'input_number'], test: (f) => has(/valve_closing|closing_degree|min_valve|valve_min/, f.key) },

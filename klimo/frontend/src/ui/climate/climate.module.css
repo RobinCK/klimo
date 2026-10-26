@@ -222,6 +222,11 @@
   color: var(--ui-text-3);
 }
 
+.tabDemand {
+  display: inline-flex;
+  margin-left: -2px;
+}
+
 .tabAdd {
   display: flex;
   align-items: center;
@@ -230,8 +235,11 @@
   min-height: 44px;
   border-radius: var(--ui-radius-lg);
   border: 1px dashed var(--ui-dot);
+  background: none;
+  padding: 0;
   color: var(--ui-text-2);
   text-decoration: none;
+  cursor: pointer;
 }
 
 /* ---------------- TargetStepper ---------------- */

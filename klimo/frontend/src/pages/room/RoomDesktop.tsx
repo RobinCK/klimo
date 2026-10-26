@@ -1,7 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { EpochMs, LocalDate, ProfileDto, RoomSummary } from '@api/model';
 import { AutoGrid, Page, RoomTabs, Section, Stack, type Tone } from '@ui';
-import { paths } from '@app';
+import { RoomOrderDialog, paths, roomDemand } from '@app';
 import { fmtTemp, t } from '@i18n';
 import { Hero } from './Hero';
 import { RangeControl, RoomConsumption } from './RoomConsumption';
@@ -56,6 +56,7 @@ export function RoomDesktop({
   startDate: LocalDate | null;
 }) {
   const { room, state } = p;
+  const [ordering, setOrdering] = useState(false);
   // «#/rooms/<id>/settings?section=win» opens the room page at that section, «#/rooms/<id>/use» at the consumption
   useEffect(() => {
     if (!section) return;
@@ -65,12 +66,14 @@ export function RoomDesktop({
   return (
     <Page>
       <RoomTabs
-        rooms={rooms.map((r) => ({ id: r.id, name: r.name, tempText: fmtTemp(r.tempC), dotTone: tabTone(r) }))}
+        rooms={rooms.map((r) => ({ id: r.id, name: r.name, tempText: fmtTemp(r.tempC), dotTone: tabTone(r), demand: roomDemand(r) }))}
         current={room.config.id}
         hrefFor={(id) => paths.room(id)}
         addTo={paths.wizard()}
         addLabel={t('Add a room')}
+        order={p.canEdit && rooms.length > 1 ? { label: t('Order of the rooms'), onClick: () => setOrdering(true) } : undefined}
       />
+      <RoomOrderDialog open={ordering} onClose={() => setOrdering(false)} />
       <Hero room={room} state={state} ed={ed} ctx={p.ctx} now={now} profiles={profiles} />
       <Section
         id="section-use"

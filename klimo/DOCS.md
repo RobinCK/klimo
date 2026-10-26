@@ -101,6 +101,11 @@ device with what it expects before it sends a command.
 
 ## Rooms
 
+The tabs above a room page show each room's temperature, a dot for its state and, while the room asks
+for heat, a flame (a snowflake when it asks for cooling). **Order of the rooms** — the button after
+**+** in the tabs, or beside it on the phone's *Rooms* — drags the rooms into the order the tabs, the
+overview and the cards use. The phone's list still puts rooms that need attention first.
+
 ### Adding and editing a room
 
 The add-room wizard has four steps: the name, the area and what heats or cools the room; the devices;
@@ -199,6 +204,9 @@ control method is chosen per room:
 | **On / off** | Setpoint 30° when the room heats, 5° when it does not. Works with any valve; the swings are larger. |
 | **Valve opening, %** | Klimo regulates the opening itself (PI control). The most precise; more commands drain the battery faster. |
 
+- With the room temperature sent into the valve, Klimo also switches the valve to its external sensor
+  (on an Aqara E1 the switch is called simply *sensor*). Without that switch the valve keeps
+  regulating on its own sensor beside the hot radiator and closes before the room is warm.
 - Every command is confirmed against what the valve reports: no answer in 2 min → retry, up to 3 times,
   then a warning, then a quiet retry every 15 min.
 - **Save the battery**: the room temperature is sent at most every 5 min and only on a change of 0.2° or

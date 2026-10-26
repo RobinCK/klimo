@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.18
+
+- **An Aqara E1 valve regulates on the room's sensor.** Klimo sent the room temperature into the valve but
+  did not find its switch to the external sensor — on the E1 it is called plainly *sensor* — so the valve
+  kept regulating on its own sensor by the hot radiator: it closed before the room was warm while the
+  boiler ran on. The switch is now recognised, and valves already set up get it filled in within two
+  minutes of the update (nothing they have is replaced).
+- **A flame or a snowflake on the room tabs** while a room asks for heat or for cooling.
+- **Order of the rooms**: a button after **+** in the room tabs (on the phone, beside it on *Rooms*) drags
+  the rooms into the order the tabs, the overview and the cards use.
+
 ## 0.2.17
 
 - **Gas is blue and electricity yellow on the consumption charts** — of the house, a source and a room
