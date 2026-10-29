@@ -62,7 +62,7 @@ test('one evaluation composes season, rooms, the plant and the rooms again into 
   assert.equal(room.state, 'wait');
   const keys = r.desired.map((d) => d.key);
   for (const k of ['switch.boiler_relay', 'switch.rad_pump', 'climate.living_trv']) assert.ok(keys.includes(k), k);
-  assert.equal(r.desired.find((d) => d.key === 'climate.living_trv').value.temperature, 21.5, 'open head: T + above, rounded up to the step');
+  assert.equal(r.desired.find((d) => d.key === 'climate.living_trv').value.temperature, 23, 'open head: 2° above what it reads itself, rounded up to the step');
   // memory: the room's latch, the smoothing state, the plant's pump timer
   assert.equal(r.memory.rooms.r_living.heat.on, true);
   assert.ok(r.memory.ema.rs_1 && r.memory.ema.rs_2);

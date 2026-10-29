@@ -247,7 +247,7 @@ export type ReasonCode =
   | 'why.window.lower' | 'why.window.notify' | 'why.window.delay' | 'why.window.resuming' | 'why.window.ignored'
   | 'why.window.virtual' | 'why.airing' | 'why.off.room' | 'why.off.profile' | 'why.off.house_mode'
   | 'why.off.frost_only' | 'why.frost' | 'why.overheat' | 'why.monitor.control_disabled' | 'why.monitor.no_emitter'
-  | 'why.monitor.dew_blocked' | 'why.season_blocks' | 'why.min_request' | 'why.served' | 'why.trvs_open' | 'why.rooms_asking'
+  | 'why.monitor.dew_blocked' | 'why.season_blocks' | 'why.min_request' | 'why.served' | 'why.trvs_open' | 'why.trvs_pushed' | 'why.rooms_asking'
   | 'why.trvs_closed' | 'why.ac_running' | 'why.ac_assist' | 'why.ac_dry' | 'why.trigger_heat' | 'why.preheat'
   | 'why.rule_offset' | 'why.weather_comp' | 'why.floor_limit' | 'why.eta.reach' | 'why.eta.cooling_down'
   | 'why.eta.warming_up' | 'why.cold_guard' | 'why.monitor.too_humid' | 'why.monitor.humidity_unknown'

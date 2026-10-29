@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.19
+
+- **A radiator valve no longer closes while its room still asks for heat.** An open valve got a setpoint of
+  the target plus the tolerance (22.5° for 22°): a valve that throttles near its setpoint (the Aqara E1
+  does) or reads its own sensor by the hot radiator closed short of the target, and the boiler ran on
+  with no heat going in. While the room asks, the setpoint now stays at least 2° above what the valve
+  reads itself — written again only when the reading comes within 1° — so the valve stays open until
+  Klimo closes it at the target.
+- **A safety net for a room that does not warm**: asking for heat for 40 min with a source running for it
+  while its temperature rises less than 0.2° an hour, its valves are opened fully and the room's
+  explanation says so.
+
 ## 0.2.18
 
 - **An Aqara E1 valve regulates on the room's sensor.** Klimo sent the room temperature into the valve but

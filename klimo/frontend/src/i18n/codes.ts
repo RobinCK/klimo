@@ -186,6 +186,7 @@ const REASONS: Record<ReasonCode, (p: P, c: Ctx) => string> = {
       ? t('{source} is working since {since}.', { source: source(p, c), since: clock(p, 'since', c) })
       : t('{source} is working.', { source: source(p, c) }),
   'why.trvs_open': (p) => t('Radiator valves open: {n} of {total}.', { n: num(p, 'n') ?? 0, total: num(p, 'total') ?? 0 }),
+  'why.trvs_pushed': (p, c) => t('Asking for heat since {since} without warming: the radiator valves are opened fully.', { since: clock(p, 'since', c) }),
   'why.rooms_asking': (p) => t('Rooms asking for heat: {n} of {total}.', { n: num(p, 'n') ?? 0, total: num(p, 'total') ?? 0 }),
   'why.trvs_closed': (p) => t('Radiator valves closed ({n}).', { n: num(p, 'n') ?? 0 }),
   'why.ac_running': (p, c) => t('{source} is running: {mode}.', { source: source(p, c), mode: sourceMode(p) }),

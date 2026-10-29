@@ -81,6 +81,10 @@ export const REASONS: Record<ReasonCode, Row> = {
   'why.min_request': ['Keeps asking at least until {until}.', 'Просить щонайменше до {until}.'],
   'why.served': ['{sourceId} is working[ since {since}].', '{sourceId} працює[ з {since}].'],
   'why.trvs_open': ['Radiator valves open: {n} of {total}.', 'Головки відкриті: {n} з {total}.'],
+  'why.trvs_pushed': [
+    'Asking for heat since {since} without warming: the radiator valves are opened fully.',
+    'Просить тепла з {since}, а не гріється: головки відкрито повністю.',
+  ],
   'why.rooms_asking': ['Rooms asking for heat: {n} of {total}.', 'Просять тепла кімнат: {n} з {total}.'],
   'why.trvs_closed': ['Radiator valves closed ({n}).', 'Головки закриті ({n}).'],
   'why.ac_running': ['{sourceId} is running: {mode}.', '{sourceId} працює: {mode}.'],

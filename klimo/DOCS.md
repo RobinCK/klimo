@@ -204,6 +204,13 @@ control method is chosen per room:
 | **On / off** | Setpoint 30° when the room heats, 5° when it does not. Works with any valve; the swings are larger. |
 | **Valve opening, %** | Klimo regulates the opening itself (PI control). The most precise; more commands drain the battery faster. |
 
+- **While the room asks for heat the valve is held open**: its setpoint stays at least 2° above what the
+  valve reads itself (raised again only when the reading comes within 1°, to spare the battery), so a
+  valve that throttles near its setpoint or reads its own sensor by the hot radiator does not close
+  before Klimo does. Once the room is warm Klimo lowers it below the target and the valve closes.
+- **A room that does not warm**: asking for heat for 40 min, a source running for it, while its
+  temperature rises less than 0.2° an hour — Klimo opens its valves fully and says so in the room's
+  explanation («asking for heat since … without warming»).
 - With the room temperature sent into the valve, Klimo also switches the valve to its external sensor
   (on an Aqara E1 the switch is called simply *sensor*). Without that switch the valve keeps
   regulating on its own sensor beside the hot radiator and closes before the room is warm.

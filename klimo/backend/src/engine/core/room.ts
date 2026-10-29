@@ -76,6 +76,9 @@ const EXERCISE_STAGGER_MS = 30_000;
 const SYNC_DONE_MS = 60_000;
 /** Humidity lost (or back) this long before the floor follows: one flaky sensor cannot short-cycle cooling. */
 const HUMIDITY_UNKNOWN_MS = 5 * MIN_MS;
+/** A room asking for heat this long, a source feeding it, while it warms slower than this, has its heads opened fully. */
+const STALL_MS = 40 * MIN_MS;
+const STALL_RISE_C_PER_H = 0.2;
 
 /** Context `evaluateRoom` hands to `finishRoom` for the same room in the same tick. */
 interface RoomInternals {
@@ -676,6 +679,15 @@ export const finishRoom: FinishRoomFn = (cfg, evIn, verdict, plant, inputs, ledg
     plant,
   });
   const blocked = i.windowPause || i.airing !== null || i.off !== null || i.overheat;
+  // the source runs for the room and the room does not warm: a head closed itself (or was turned down)
+  const stalled =
+    p.demand.mode === 'heat' &&
+    verdict.served &&
+    ev.memory.demandMode === 'heat' &&
+    ev.memory.demandSince !== null &&
+    now - ev.memory.demandSince >= STALL_MS &&
+    p.trendCPerH !== null &&
+    p.trendCPerH < STALL_RISE_C_PER_H;
 
   const trvStates: TrvState[] = [];
   const zoneIds: string[] = [];
@@ -707,6 +719,7 @@ export const finishRoom: FinishRoomFn = (cfg, evIn, verdict, plant, inputs, ledg
           overheat: i.overheat,
           exercise: exercise && !(heatOnly && verdict.heatOnlyBlocked),
           offsetOf: (id) => ev.memory.learned.trvOffsetC[id]?.value ?? null,
+          stalled,
           valveIntegral: memory.valveIntegral,
           dtMin,
           reqId: i.reqId,
@@ -793,6 +806,7 @@ export const finishRoom: FinishRoomFn = (cfg, evIn, verdict, plant, inputs, ledg
     verdict,
     plant,
     trvs: trvStates,
+    stalledSince: stalled ? ev.memory.demandSince : null,
     dewBlocked,
   });
 
