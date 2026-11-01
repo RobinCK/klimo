@@ -610,6 +610,10 @@ export function roomCardAttrs(ix: ViewIndex, room: RoomConfig): RoomCardAttrs | 
     }
   }
   const { sp, stg, sph } = sparkline(ix.view.sparks[room.id]);
+  const status = new Map(state.sensors.map((x) => [x.sensorId, x.status] as const));
+  const sen = [...(ix.view.cfg.sensorsByRoom[room.id] ?? [])]
+    .sort((a, b) => a.order - b.order)
+    .map((x) => ({ e: x.entityId, n: x.name, r: x.role, s: status.get(x.id) ?? 'ok' }));
   const card: RoomCardAttrs = {
     kv: 'klimo_room',
     v: 1,
@@ -646,6 +650,7 @@ export function roomCardAttrs(ix: ViewIndex, room: RoomConfig): RoomCardAttrs | 
     sp,
     stg,
     sph,
+    sen,
     next: next ? { t: ix.tx('card.next', { profile: ix.profileName(next.profileId), temp: r1(nextTemp ?? null), at: next.at }), at: next.at } : null,
     why,
     th: stableThermostat(th),
@@ -664,6 +669,8 @@ export function fitCard(card: RoomCardAttrs, cap = CARD_CAP): RoomCardAttrs {
   c = { ...c, sph: null };
   if (byteSize(c) <= cap) return c;
   c = { ...c, stg: null };
+  if (byteSize(c) <= cap) return c;
+  c = { ...c, sen: [] };
   if (byteSize(c) <= cap) return c;
   // pathological (very long names/texts): shorten the free texts, then the thermostat's day strip
   c = {

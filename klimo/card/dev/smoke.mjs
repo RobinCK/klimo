@@ -115,6 +115,8 @@ async function phone(browser, base) {
   const sheet = page.locator('klimo-room-sheet');
   check(await waitText(sheet.locator('.sh-title'), 'Дитяча'), 'room sheet opens for the tapped room');
   check(await waitText(sheet.locator('.iss'), 'Вологість 61%'), 'room sheet shows the issue');
+  check(await waitText(sheet.locator('.rows').last(), 'Датчик температури'), 'room sheet lists the room sensors');
+  check(await waitText(sheet.locator('.rows').last().locator('.es').first(), '3 хв тому'), 'each sensor says when it last reported');
   await page.waitForTimeout(300);
   await page.screenshot({ path: join(outDir, 'klimo-card-room-sheet-phone.png') });
   await sheet.locator('[data-act="dismiss"]').click();
@@ -122,6 +124,17 @@ async function phone(browser, base) {
   await page.keyboard.press('Escape');
   await sheet.waitFor({ state: 'detached', timeout: 2000 }).catch(() => {});
   check((await page.locator('klimo-room-sheet').count()) === 0, 'Escape closes the room sheet');
+
+  // a sensor of the sheet opens Home Assistant's own dialog with its history
+  await page.evaluate(() => {
+    window.__moreInfo = null;
+    window.addEventListener('hass-more-info', (e) => (window.__moreInfo = e.detail.entityId), { once: true });
+  });
+  await page.locator('klimo-rooms-card .item').nth(2).click();
+  await sheet.locator('.rows').last().locator('button.er').first().click();
+  await sheet.waitFor({ state: 'detached', timeout: 2000 }).catch(() => {});
+  check((await page.evaluate(() => window.__moreInfo)) === 'sensor.dytiacha_th_temperature', 'a sensor row opens its history in Home Assistant');
+  check((await page.locator('klimo-room-sheet').count()) === 0, 'the sheet steps aside for it');
 
   // the house profile, with consequences and undo
   await house.locator('[data-act="change"]').click();
@@ -217,6 +230,8 @@ async function tablet(browser, base) {
   check(await waitText(page.locator('klimo-room-card .src'), 'Ціль 20.0° · Дома до 23:00'), 'room card target line with the slot end');
   check(await waitText(page.locator('klimo-room-card .pill'), '1 з 3 датчиків не на зв’язку'), 'room card issue pill');
   check((await page.locator('klimo-room-card .spark .band').count()) >= 6, 'sparklines draw the target band');
+  check(await waitText(page.locator('klimo-room-card .upd').first(), '3 хв тому'), 'room card says how fresh its temperature is');
+  check((await page.locator('klimo-room-card .upd[data-stale]').count()) === 1, 'a room whose sensor went quiet shows its age as a warning');
   check(await waitText(page.locator('klimo-system-card .srow .chip'), 'Гріє'), 'system card source chips');
   check(await waitText(page.locator('klimo-system-card .energy'), 'батарея 78%'), 'system card energy strip');
   await page.locator('[data-layout="tablet"]').screenshot({ path: join(outDir, 'klimo-card-dashboard-tablet.png') });

@@ -3694,6 +3694,8 @@ export interface RoomCardAttrs {
   sp: (number | null)[]; // 13 points, 6 h
   stg: (number | null)[] | null;
   sph: (number | null)[] | null; // humidity %, the same 13 points; null = the room has none recorded
+  /** The room's sensors for the card's details; their value and last report the card reads live from HA. `s`: how the room counts it. */
+  sen: { e: EntityId; n: string; r: SensorRole; s: SensorStatus }[];
   next: { t: string; at: EpochMs } | null; // «Далі: {t} → Ніч 18.0°»
   why: string | null; // main «Чому» sentence
   th: ThermostatModel;

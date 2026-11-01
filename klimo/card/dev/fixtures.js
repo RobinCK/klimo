@@ -343,6 +343,16 @@
     return o.kind === 'room_off' ? 'off' : 'manual';
   }
 
+  /** The room's own sensors as the add-on lists them on the card, with their reading and how long ago each reported. */
+  function roomSensors(room) {
+    // the kitchen's sensor went quiet an hour and a half ago: the card shows its age in the warning colour
+    const quiet = room.id === 'r_kitchen';
+    const out = [{ e: `sensor.${room.slug}_th_temperature`, n: 'Датчик температури', r: 'temperature', s: quiet ? 'stale' : 'ok', ago: quiet ? 95 : 3, v: room.t }];
+    if (room.h != null) out.push({ e: `sensor.${room.slug}_th_humidity`, n: 'Датчик вологості', r: 'humidity', s: 'ok', ago: quiet ? 95 : 3, v: room.h });
+    if (room.win) out.push({ e: `binary_sensor.${room.slug}_window_contact`, n: 'Вікно', r: 'contact', s: 'ok', ago: 40, v: room.win.o ? 'on' : 'off' });
+    return out;
+  }
+
   function cardAttrs(room, hubPart) {
     return {
       kv: 'klimo_room',
@@ -367,6 +377,7 @@
       sp: room.sp,
       stg: room.stg,
       sph: room.sph || null,
+      sen: roomSensors(room).map(({ e, n, r, s }) => ({ e, n, r, s })),
       next: room.next,
       why: room.why,
       th: thermostat(room, hubPart),
@@ -412,9 +423,9 @@
   }
 
   /** A state object with its own copy of the attributes: published states never share the world's objects. */
-  function entity(id, state, attributes) {
-    const ts = new Date().toISOString();
-    return { entity_id: id, state: String(state), attributes: clone(attributes), last_changed: ts, last_updated: ts, context: { id: Math.random().toString(36).slice(2), user_id: null, parent_id: null } };
+  function entity(id, state, attributes, agoMin = 0) {
+    const ts = new Date(Date.now() - agoMin * MIN).toISOString();
+    return { entity_id: id, state: String(state), attributes: clone(attributes), last_changed: ts, last_updated: ts, last_reported: ts, context: { id: Math.random().toString(36).slice(2), user_id: null, parent_id: null } };
   }
 
   /** Every entity of the house, keyed by id. */
@@ -454,6 +465,10 @@
         out[`sensor.klimo_${r.slug}_dew_point`] = entity(`sensor.klimo_${r.slug}_dew_point`, dew, { unit_of_measurement: '°C', friendly_name: `${r.n} точка роси` });
       }
       if (r.win) out[`binary_sensor.klimo_${r.slug}_window`] = entity(`binary_sensor.klimo_${r.slug}_window`, r.win.o ? 'on' : 'off', { device_class: 'window', friendly_name: `${r.n} вікно` });
+      for (const s of roomSensors(r)) {
+        const attrs = s.r === 'humidity' ? { unit_of_measurement: '%', device_class: 'humidity' } : s.r === 'contact' ? { device_class: 'window' } : { unit_of_measurement: '°C', device_class: 'temperature' };
+        out[s.e] = entity(s.e, s.v, { ...attrs, friendly_name: `${r.n} ${s.n.toLowerCase()}` }, s.ago);
+      }
       out[`binary_sensor.klimo_${r.slug}_${world.cooling ? 'cool' : 'heat'}_demand`] = entity(
         `binary_sensor.klimo_${r.slug}_${world.cooling ? 'cool' : 'heat'}_demand`,
         r.st === 'heat' || r.st === 'cool' ? 'on' : 'off',

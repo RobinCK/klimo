@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.20
+
+- **The dashboard cards say how fresh a room's temperature is**: quietly, right of the temperature, when
+  the room's temperature sensors last reported («3 хв тому») — in the warning colour after an hour of
+  silence.
+- **Every sensor in a room's details**: the card's details list the room's own sensors under
+  **Sensors**, each with its reading, when it last reported and whether Klimo counts it.
+- **A tap on a value opens its chart**: every row of the details — the room's temperature, humidity,
+  target, a single sensor — opens Home Assistant's own dialog of that entity with its history.
+
 ## 0.2.19
 
 - **A radiator valve no longer closes while its room still asks for heat.** An open valve got a setpoint of

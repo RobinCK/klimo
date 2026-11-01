@@ -63,7 +63,7 @@
  * `klimo-room-sheet` and `klimo-open`).
  */
 
-const VERSION = '0.2.19';
+const VERSION = '0.2.20';
 
 /* ─────────────────────────────── 1 Tokens ──────────────────────────────────────────────────────
  * The same values as the panel's design tokens. `npm run tokens:card` in klimo/frontend copies
@@ -443,6 +443,17 @@ const STRINGS = {
     on_demand: 'так',
     off_demand: 'ні',
     unavailable: 'недоступно',
+    roomValues: 'Кімната',
+    updAgo: '{d} тому',
+    updNow: 'щойно',
+    updTitle: 'Датчики температури звітували {d} тому',
+    on_contact: 'відчинено',
+    off_contact: 'зачинено',
+    s_excluded: 'не враховується',
+    s_outlier: 'відхиляється від інших',
+    s_stale: 'давно не звітує',
+    s_unavailable: 'недоступний',
+    showHistory: 'Історія: {name}',
 
     min: '{n} хв',
     hm: '{h} год {m} хв',
@@ -670,6 +681,17 @@ const STRINGS = {
     e_cool_demand: 'Cool demand',
     on_window: 'open',
     off_window: 'closed',
+    roomValues: 'Room',
+    updAgo: '{d} ago',
+    updNow: 'just now',
+    updTitle: 'Temperature sensors reported {d} ago',
+    on_contact: 'open',
+    off_contact: 'closed',
+    s_excluded: 'not counted',
+    s_outlier: 'off from the others',
+    s_stale: 'silent for a while',
+    s_unavailable: 'unavailable',
+    showHistory: 'History: {name}',
     on_demand: 'yes',
     off_demand: 'no',
     unavailable: 'unavailable',
@@ -804,6 +826,33 @@ function fmtDuration(minutes, lang) {
   const d = Math.floor(m / 1440);
   return tr(lang, 'dh', { d, h: Math.floor((m % 1440) / 60) });
 }
+
+/** When an entity last reported: HA's last_reported (a repeat of the same value too), else its last update. */
+function reportedAt(st) {
+  const t = st && (st.last_reported || st.last_updated || st.last_changed);
+  const ms = t ? Date.parse(t) : NaN;
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** «2 хв тому», «щойно». */
+function agoText(ms, lang) {
+  const min = (Date.now() - ms) / 60000;
+  return min < 1 ? tr(lang, 'updNow') : tr(lang, 'updAgo', { d: fmtDuration(min, lang) });
+}
+
+/** The newest report of a room's temperature sensors: how fresh the temperature on the card is. */
+function roomUpdatedAt(hass, sen) {
+  let best = null;
+  for (const s of sen || []) {
+    if (s.r !== 'temperature') continue;
+    const at = reportedAt(hass && hass.states[s.e]);
+    if (at !== null && (best === null || at > best)) best = at;
+  }
+  return best;
+}
+
+/** A room temperature older than this shows its age in the warning colour. */
+const ROOM_STALE_MS = 60 * 60000;
 
 const LOCALES = { uk: 'uk-UA', en: 'en-GB' };
 const formatters = new Map();
@@ -1687,6 +1736,7 @@ function roomView(ctx, entity, row) {
     sp: a ? a.sp : null,
     stg: a ? a.stg : null,
     sph: a ? a.sph : null,
+    sen: a && Array.isArray(a.sen) ? a.sen : null,
     why: a ? a.why : null,
     sub,
     subColor: iss ? `var(--k-${iss.tone}-fg)` : 'var(--k-t3)',
@@ -1843,7 +1893,13 @@ function roomCardHtml(ctx, v, opts) {
     : '<div class="src"></div>';
   const spark = opts.sparkline ? `<div class="spark">${sparkline(v)}</div>` : '';
   const foot = opts.issue && v.iss ? issuePill(v.iss, ctx.lang) : `<span class="meta">${metaItems(ctx, v, opts.meta)}</span>`;
-  return `<div class="rc"><div class="hd"><span class="title ell">${esc(v.name)}</span>${stateChip(v.state)}</div><div class="val"><span class="temp">${esc(fmtTemp(v.t))}</span>${trend}</div>${src}${spark}<div class="foot">${foot}</div></div>`;
+  // how fresh the temperature is, quietly at the right: the newest report of the room's temperature sensors
+  const at = v.sen ? roomUpdatedAt(ctx.hass, v.sen) : null;
+  const upd =
+    at !== null
+      ? `<span class="upd"${Date.now() - at > ROOM_STALE_MS ? ' data-stale=""' : ''} title="${esc(tr(ctx.lang, 'updTitle', { d: fmtDuration((Date.now() - at) / 60000, ctx.lang) }))}">${esc(agoText(at, ctx.lang))}</span>`
+      : '';
+  return `<div class="rc"><div class="hd"><span class="title ell">${esc(v.name)}</span>${stateChip(v.state)}</div><div class="val"><span class="temp">${esc(fmtTemp(v.t))}</span>${trend}${upd}</div>${src}${spark}<div class="foot">${foot}</div></div>`;
 }
 
 function compactRowHtml(v) {
@@ -1862,6 +1918,8 @@ const ROOM_CSS = `
 .rc .val { display: flex; align-items: baseline; gap: 10px; min-height: 40px; }
 .rc .temp { font-size: 40px; font-weight: 500; letter-spacing: -1.2px; line-height: 1; }
 .rc .trend { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--k-t3); white-space: nowrap; }
+.rc .upd { margin-left: auto; font-size: 11px; color: var(--k-t3); opacity: .8; white-space: nowrap; }
+.rc .upd[data-stale] { color: var(--k-warn-fg); opacity: 1; }
 .rc .src { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 18px; font-size: 13px; color: var(--k-t2); }
 .rc .spark { position: relative; height: 40px; }
 .rc .spark svg { display: block; width: 100%; height: 40px; overflow: visible; }
@@ -4189,6 +4247,13 @@ const ROOM_SHEET_CSS = `${SHEET_CSS}
 .er + .er { border-top: 1px solid var(--k-div); }
 .er .en { flex: 1; min-width: 0; }
 .er .ev { flex: none; color: var(--k-t1); font-weight: 500; }
+button.er { width: 100%; padding: 0; border: 0; border-radius: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
+button.er + button.er { border-top: 1px solid var(--k-div); }
+.er .en2 { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 6px 0; }
+.er .es { font-size: 12px; color: var(--k-t3); }
+.er .es[data-warn] { color: var(--k-warn-fg); }
+.er .go { flex: none; color: var(--k-t3); }
+@media (hover: hover) { button.er:hover .ev { text-decoration: underline; } }
 .nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 44px; padding: 0 12px;
   border-radius: 12px; border: 1px solid var(--k-bd2); background: transparent; font-weight: 600; text-align: left; cursor: pointer; }
 .snote { font-size: 13px; font-weight: 500; }
@@ -4205,6 +4270,17 @@ const ROOM_ENTITIES = [
   ['binary_sensor', 'heat_demand', 'flame'],
   ['binary_sensor', 'cool_demand', 'snow'],
 ];
+
+/** A room sensor's reading as Home Assistant has it now. */
+function sensorValue(st, role, lang) {
+  if (!st || st.state === 'unavailable' || st.state === 'unknown') return tr(lang, 'unavailable');
+  if (role === 'contact') return tr(lang, st.state === 'on' ? 'on_contact' : 'off_contact');
+  const n = Number(st.state);
+  if (!Number.isFinite(n)) return st.state;
+  if (role === 'humidity') return `${Math.round(n)}%`;
+  const unit = st.attributes.unit_of_measurement || '°';
+  return `${n.toFixed(1)}${unit === '°C' || unit === '°F' ? '°' : ` ${unit}`}`;
+}
 
 function entityValue(st, kind, lang) {
   if (!st || st.state === 'unavailable' || st.state === 'unknown') return tr(lang, 'unavailable');
@@ -4278,11 +4354,16 @@ class KlimoRoomSheet extends KlimoSheet {
     }
     if (v.why) parts.push(`<div class="sh-sec">${esc(tr(lang, 'why'))}</div><div class="why">${esc(v.why)}</div>`);
     const rows = [];
+    // a row opens Home Assistant's own dialog of the entity, with its history chart
+    const histRow = (entityId, label, inner) =>
+      `<button type="button" class="er" data-act="hist" data-e="${esc(entityId)}" aria-label="${esc(tr(lang, 'showHistory', { name: label }))}">${inner}${ic('chevronRight', 14, 'go')}</button>`;
     if (v.slug) {
       for (const [domain, kind, icon] of ROOM_ENTITIES) {
-        const st = ctx.hass.states[`${domain}.klimo_${v.slug}_${kind}`];
+        const id = `${domain}.klimo_${v.slug}_${kind}`;
+        const st = ctx.hass.states[id];
         if (!st) continue;
-        rows.push(`<div class="er">${ic(kind === 'window' && st.state === 'on' ? 'windowOpen' : icon, 16)}<span class="en ell">${esc(tr(lang, `e_${kind}`))}</span><span class="ev">${esc(entityValue(st, kind, lang))}</span></div>`);
+        const label = tr(lang, `e_${kind}`);
+        rows.push(histRow(id, label, `${ic(kind === 'window' && st.state === 'on' ? 'windowOpen' : icon, 16)}<span class="en ell">${esc(label)}</span><span class="ev">${esc(entityValue(st, kind, lang))}</span>`));
       }
     }
     if (!rows.length && v.attrs) {
@@ -4291,15 +4372,39 @@ class KlimoRoomSheet extends KlimoSheet {
       if (isNum(v.h)) rows.push(`<div class="er">${ic('droplet', 16)}<span class="en">${esc(tr(lang, 'e_humidity'))}</span><span class="ev">${Math.round(v.h)}%</span></div>`);
       if (v.win) rows.push(`<div class="er">${ic(v.win.o ? 'windowOpen' : 'windowClosed', 16)}<span class="en">${esc(tr(lang, 'e_window'))}</span><span class="ev">${esc(fill(v.win.t, v.win.at, lang, ctx.tz))}</span></div>`);
     }
-    if (rows.length) parts.push(`<div class="sh-sec">${esc(tr(lang, 'sensors'))}</div><div class="rows">${rows.join('')}</div>`);
+    if (rows.length) parts.push(`<div class="sh-sec">${esc(tr(lang, v.sen && v.sen.length ? 'roomValues' : 'sensors'))}</div><div class="rows">${rows.join('')}</div>`);
+    // the room's own sensors: what each reads and when it last reported
+    const sensors = (v.sen || []).map((s) => {
+      const st = ctx.hass.states[s.e];
+      const at = reportedAt(st);
+      const name = s.n || (st && st.attributes.friendly_name) || s.e;
+      const note = s.s && s.s !== 'ok' ? tr(lang, `s_${s.s}`) : '';
+      const old = at !== null && Date.now() - at > ROOM_STALE_MS;
+      const caption = [at !== null ? agoText(at, lang) : '', note].filter(Boolean).join(' · ');
+      const icon = s.r === 'humidity' ? 'droplet' : s.r === 'contact' ? (st && st.state === 'on' ? 'windowOpen' : 'windowClosed') : 'thermometer';
+      return histRow(
+        s.e,
+        name,
+        `${ic(icon, 16)}<span class="en2"><span class="ell">${esc(name)}</span>${caption ? `<span class="es ell"${note || old ? ' data-warn=""' : ''}>${esc(caption)}</span>` : ''}</span><span class="ev">${esc(sensorValue(st, s.r, lang))}</span>`,
+      );
+    });
+    if (sensors.length) parts.push(`<div class="sh-sec">${esc(tr(lang, 'sensors'))}</div><div class="rows">${sensors.join('')}</div>`);
     parts.push(`<button type="button" class="nav" data-act="open"><span class="ell">${esc(tr(lang, 'openKlimo'))}</span>${ic('external', 18)}</button>`);
     setHtml(sk.rest, `<div style="display:flex;flex-direction:column;gap:12px">${parts.join('')}</div>`);
   }
 
-  _act(act) {
+  _act(act, el) {
     const ctx = this._c;
     const r = this._ref;
     const a = r && r.card && r.card.attrs;
+    if (act === 'hist') {
+      const entityId = el && el.dataset.e;
+      // Home Assistant opens its dialog from the dashboard the sheet came from; the sheet steps aside
+      const from = this.opener && this.opener.isConnected ? this.opener : document.querySelector('home-assistant');
+      this.close();
+      if (entityId && from) fire(from, 'hass-more-info', { entityId });
+      return;
+    }
     if (act === 'open') {
       openKlimo(ctx && ctx.hubAttrs, r && r.id ? `#/rooms/${r.id}` : '#/rooms');
       this.close();

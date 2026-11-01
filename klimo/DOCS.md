@@ -702,6 +702,13 @@ A target change waits 3 s for more taps, then offers an undo for 8 s. The thermo
 room between Schedule, Manual and Off; under manual control a new target asks no duration, and the
 house card's **Resume schedule for the whole house** works as on the house profile tile.
 
+A room card says quietly, right of the temperature, how fresh it is — when the room's temperature
+sensors last reported («3 хв тому»), in the warning colour after an hour of silence. A tap opens the
+room's details: under **Room** Klimo's own values (temperature, humidity, dew point, target, window,
+demand), under **Sensors** every sensor of the room with its reading, when it last reported and whether
+Klimo counts it (not counted, off from the others, silent for a while, unavailable). Any of these rows
+opens Home Assistant's own dialog of that entity, with its history chart.
+
 ## Native entities
 
 All entities belong to one **Klimo** device and use the notification language for their names. Entity
