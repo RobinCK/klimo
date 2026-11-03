@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.21
+
+- **A valve's card says what it was told and what it holds.** Room settings → *Radiator valves* shows,
+  beside the valve's own sensor, the setpoint Klimo sent and the setpoint the valve reports holding, the
+  valve's position when it reports one, and the room temperature sent into it with the external-sensor
+  method — so a valve that keeps its own number, or closes while told to open, shows it.
+
 ## 0.2.20
 
 - **The dashboard cards say how fresh a room's temperature is**: quietly, right of the temperature, when

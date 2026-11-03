@@ -151,6 +151,14 @@ function Body(p: SectionProps) {
                   compact={p.phone}
                   stats={[
                     { label: t('Valve sensor'), value: fmtTemp(s?.localTempC ?? null), sub: p.phone ? undefined : deltaToRoom(s?.deltaToRoomC ?? null) },
+                    // what was sent against what the valve holds: a valve that keeps its own number shows it here
+                    {
+                      label: t('Setpoint sent'),
+                      value: fmtTemp(s?.commandedSetpointC ?? null),
+                      sub: s?.reportedSetpointC != null ? t('valve holds {t}', { t: fmtTemp(s.reportedSetpointC) }) : undefined,
+                    },
+                    ...(s?.valvePct != null ? [{ label: t('Valve position'), value: fmtPct(s.valvePct) }] : []),
+                    ...(room.config.trv.strategy === 'external' && s?.externalTempSentC != null ? [{ label: t('Room temperature sent'), value: fmtTemp(s.externalTempSentC) }] : []),
                     { label: t('Battery'), value: fmtPct(s?.batteryPct ?? null) },
                     { label: t('Signal'), value: s?.lqi != null ? `LQI ${s.lqi}` : '—', sub: p.phone ? undefined : lqiWord(s?.lqi ?? null) },
                     ...(p.phone ? [] : [{ label: t('Last seen'), value: s?.lastSeenAt != null ? fmtAgo(s.lastSeenAt, p.now) : '—' }]),
