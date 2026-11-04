@@ -1,7 +1,7 @@
 // App wiring: router, navigation, colour scheme, language, per-browser preferences.
 export { App, Root } from './App';
 export { AppBanners, HouseSeasonPill, InboxBell } from './Chrome';
-export { haDarkMode, haLanguage, inHomeAssistant } from './haBridge';
+export { haDarkMode, haLanguage, inHomeAssistant, openHaMoreInfo } from './haBridge';
 export { applyPanelLanguage, languagePref, resolveLanguage, setLanguagePref, type LangPref } from './lang';
 export { areaOf, desktopNav, phoneNav, phoneTabOf, type AreaKey } from './nav';
 export { getJsonPref, getPref, setJsonPref, setPref, usePref } from './prefs';

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.23
+
+- **A room's device opens Home Assistant's own dialog.** In the room's settings, under *Room and devices*,
+  a tap on a device's name or value — a valve, a temperature or humidity sensor, a window contact, an
+  air conditioner — opens Home Assistant's dialog of that entity with the history of its state, over the
+  panel. Outside Home Assistant (the add-on's own port) the rows stay as they were.
+
 ## 0.2.22
 
 - **A radiator valve is opened fully while its room asks for heat.** The room started at 19.7°, warmed to

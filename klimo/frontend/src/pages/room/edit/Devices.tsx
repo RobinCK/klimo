@@ -4,6 +4,7 @@ import { api } from '@api/endpoints';
 import { useEntitySearch } from '@data';
 import { AddDeviceDialog, AutoGrid, Button, ConfirmDialog, DeviceRow, EntityFinder, Section, Stack, StatusBanner, Text, type DeviceRowAction } from '@ui';
 import { brand } from '@brand';
+import { inHomeAssistant, openHaMoreInfo } from '@app';
 import {
   DEVICE_GROUP_ORDER,
   DEVICE_ROLE_ICON,
@@ -140,6 +141,9 @@ function DeviceBlock({ p, k, list, edit, write, onRemove, onAdd }: GroupProps) {
                 meta={mixed ? `${deviceRoleLabel(b.role)} · ${b.entityId}` : b.entityId}
                 value={liveValue(p, b)}
                 actions={actions}
+                // inside Home Assistant a device opens HA's own dialog of it, with the history of its state
+                onOpen={inHomeAssistant() ? () => openHaMoreInfo(b.entityId) : undefined}
+                openLabel={t('History of «{name}» in Home Assistant', { name: label })}
               />
               {replacing === b.key ? (
                 <Stack gap="xs">

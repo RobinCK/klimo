@@ -48,10 +48,13 @@ export interface DeviceRowProps {
   error?: string;
   /** Buttons on the second line, after «Use as…» (editing a room's bound devices). */
   actions?: DeviceRowAction[];
+  /** The name and the value open the device elsewhere (Home Assistant's dialog with its history); `openLabel` names that for a screen reader. */
+  onOpen?: () => void;
+  openLabel?: string;
 }
 
 /** One device of a list being assembled (the add-room wizard) or edited (room settings): what it is, its value, its role. */
-export function DeviceRow({ title, meta, value, checked, onCheck, disabled, role, onRemove, error, actions }: DeviceRowProps) {
+export function DeviceRow({ title, meta, value, checked, onCheck, disabled, role, onRemove, error, actions, onOpen, openLabel }: DeviceRowProps) {
   const ut = useUiText();
   const id = useId();
   const box = checked !== undefined;
@@ -77,15 +80,34 @@ export function DeviceRow({ title, meta, value, checked, onCheck, disabled, role
           onChange={(e) => onCheck?.(e.currentTarget.checked)}
         />
       ) : null}
-      <label htmlFor={box ? id : undefined} className={s.text}>
-        <span className={s.title}>{title}</span>
-        {meta ? (
-          <span id={`${id}-meta`} className={s.meta}>
-            {meta}
-          </span>
-        ) : null}
-      </label>
-      {value ? <span className={s.value}>{value}</span> : null}
+      {onOpen && !box ? (
+        <button type="button" className={`${s.text} ${s.open}`} onClick={onOpen} aria-label={openLabel}>
+          <span className={s.title}>{title}</span>
+          {meta ? (
+            <span id={`${id}-meta`} className={s.meta}>
+              {meta}
+            </span>
+          ) : null}
+        </button>
+      ) : (
+        <label htmlFor={box ? id : undefined} className={s.text}>
+          <span className={s.title}>{title}</span>
+          {meta ? (
+            <span id={`${id}-meta`} className={s.meta}>
+              {meta}
+            </span>
+          ) : null}
+        </label>
+      )}
+      {value ? (
+        onOpen && !box ? (
+          <button type="button" className={`${s.value} ${s.open}`} onClick={onOpen} tabIndex={-1} aria-hidden="true">
+            {value}
+          </button>
+        ) : (
+          <span className={s.value}>{value}</span>
+        )
+      ) : null}
       {/* beside the value, so a row without a role menu needs no second line just for it */}
       {remove ? (
         <span className={s.remove}>

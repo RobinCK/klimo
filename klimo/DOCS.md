@@ -133,7 +133,9 @@ name and the area, what heats or cools it, and each device — **Replace** keeps
 nor protect itself from frost); removing the last head leaves the room with ordinary radiators. A removed head gets its own sensor, a 20° target
 and an unlocked keypad back; a room that leaves the floor is taken off the floor pump and its zone valve
 is released. Switching between smart heads and ordinary radiators hands every head back and keeps the
-circuit. **Delete the room** hands the valves back the same way. Each change is journaled.
+circuit. **Delete the room** hands the valves back the same way. Each change is journaled. Inside Home
+Assistant a device's name or value opens Home Assistant's own dialog of that entity, with the history
+of its state.
 
 ### Sensors and aggregation
 

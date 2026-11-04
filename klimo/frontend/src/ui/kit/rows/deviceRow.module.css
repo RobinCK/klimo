@@ -56,6 +56,29 @@
   cursor: pointer;
 }
 
+/* the name and the value open the device's history: a plain button that keeps the row's look */
+.open {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.open.value {
+  text-align: right;
+}
+
+@media (hover: hover) {
+  .open:hover .title,
+  .open.value:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+
 .row[data-disabled] .text {
   cursor: not-allowed;
   color: var(--ui-text-3);

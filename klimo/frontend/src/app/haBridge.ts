@@ -22,6 +22,22 @@ export function parentHass(): ParentHass | null {
   }
 }
 
+/**
+ * Home Assistant's own dialog of an entity — its state, history chart and settings — over the panel.
+ * False outside HA (nothing was opened).
+ */
+export function openHaMoreInfo(entityId: string): boolean {
+  try {
+    if (window.parent === window) return false;
+    const el = window.parent.document.querySelector('home-assistant');
+    if (!el) return false;
+    el.dispatchEvent(new CustomEvent('hass-more-info', { detail: { entityId }, bubbles: true, composed: true }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Running inside the Home Assistant frontend. */
 export function inHomeAssistant(): boolean {
   return parentHass() !== null;
