@@ -76,9 +76,8 @@ const EXERCISE_STAGGER_MS = 30_000;
 const SYNC_DONE_MS = 60_000;
 /** Humidity lost (or back) this long before the floor follows: one flaky sensor cannot short-cycle cooling. */
 const HUMIDITY_UNKNOWN_MS = 5 * MIN_MS;
-/** A room asking for heat this long, a source feeding it, while it warms slower than this, has its heads opened fully. */
-const STALL_MS = 40 * MIN_MS;
-const STALL_RISE_C_PER_H = 0.2;
+/** A room asking for heat, a source feeding it, that has not been warmer than its peak for this long «is not warming». */
+const STALL_MS = 45 * MIN_MS;
 
 /** Context `evaluateRoom` hands to `finishRoom` for the same room in the same tick. */
 interface RoomInternals {
@@ -427,6 +426,8 @@ export const evaluateRoom: EvaluateRoomFn = (cfg, room, inputs, memory, ctx) => 
     humidityUnknown,
     demandMode: dem.mode,
     demandSince: dem.since,
+    // the warmest since the room began asking for heat: a sparse sensor still shows whether it warms
+    heatPeak: dem.mode !== 'heat' ? null : tempC !== null && (!prev.heatPeak || tempC > prev.heatPeak.c) ? { c: tempC, at: now } : (prev.heatPeak ?? null),
     preheat: tr.preheat,
     window: wol.memory,
     tooColdSince: comfort.tooColdSince,
@@ -679,15 +680,10 @@ export const finishRoom: FinishRoomFn = (cfg, evIn, verdict, plant, inputs, ledg
     plant,
   });
   const blocked = i.windowPause || i.airing !== null || i.off !== null || i.overheat;
-  // the source runs for the room and the room does not warm: a head closed itself (or was turned down)
-  const stalled =
-    p.demand.mode === 'heat' &&
-    verdict.served &&
-    ev.memory.demandMode === 'heat' &&
-    ev.memory.demandSince !== null &&
-    now - ev.memory.demandSince >= STALL_MS &&
-    p.trendCPerH !== null &&
-    p.trendCPerH < STALL_RISE_C_PER_H;
+  // the source runs for the room and the room has not warmed for a while: a head closed itself, was turned
+  // down by hand, or the radiator does not take the water
+  const peak = ev.memory.heatPeak ?? null;
+  const stalled = p.demand.mode === 'heat' && verdict.served && peak !== null && now - peak.at >= STALL_MS;
 
   const trvStates: TrvState[] = [];
   const zoneIds: string[] = [];
@@ -782,6 +778,7 @@ export const finishRoom: FinishRoomFn = (cfg, evIn, verdict, plant, inputs, ledg
     entities: inputs.entities,
     haConnected: inputs.haConnected && !inputs.blind,
     toutC: i.toutC,
+    notWarming: stalled && peak ? peak : null,
     now,
   });
   const why = roomWhy({
@@ -806,7 +803,6 @@ export const finishRoom: FinishRoomFn = (cfg, evIn, verdict, plant, inputs, ledg
     verdict,
     plant,
     trvs: trvStates,
-    stalledSince: stalled ? ev.memory.demandSince : null,
     dewBlocked,
   });
 

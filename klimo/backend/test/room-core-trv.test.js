@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { trvSetpoint, trvActuation, trvOpenSetpoint } = require('../dist/engine/core/trv');
+const { trvSetpoint, trvActuation } = require('../dist/engine/core/trv');
 const h = require('./room-core-harness');
 
 const NOW = h.WED_1910;
@@ -10,15 +10,15 @@ function base(extra = {}) {
   return { room: h.makeRoom(), safety: h.d.defaultSafety(), heatC: 20, frostFloorC: 7, ...extra };
 }
 
-test('aligned setpoints: open → ceil(T + a), satisfied → floor(max(T − b, frost)), blocked → frost, frost → release + a', () => {
+test('aligned setpoints: open → the top of the range, satisfied → floor(max(T − b, frost)), blocked → frost, frost → release + a', () => {
   const x = base();
-  assert.equal(trvSetpoint('open', x, caps), 20.5);
+  // a head throttles on its own reading and curve: opened fully it stays open until Klimo closes it
+  assert.equal(trvSetpoint('open', x, caps), 30);
   assert.equal(trvSetpoint('satisfied', x, caps), 19.5);
   assert.equal(trvSetpoint('blocked', x, caps), 7);
   assert.equal(trvSetpoint('frost', x, caps), 8.5);
   // step rounding follows the head's grid and range
-  assert.equal(trvSetpoint('open', base({ heatC: 21.4 }), caps), 22);
-  assert.equal(trvSetpoint('open', base({ heatC: 21.4 }), { ...caps, setpointStep: 0.1 }), 21.6);
+  assert.equal(trvSetpoint('open', base({ heatC: 21.4 }), { ...caps, setpointRange: [5, 35] }), 35);
   assert.equal(trvSetpoint('satisfied', base({ heatC: 21.4 }), caps), 21);
   assert.equal(trvSetpoint('satisfied', base({ heatC: 7.1 }), caps), 7);
   assert.equal(trvSetpoint('open', base({ heatC: 30 }), caps), 30);
@@ -37,12 +37,13 @@ function heatRoom(t, opts = {}) {
   return { cfg, inputs: h.makeInputs(NOW, entities), memory: h.emptyMemory(cfg, NOW) };
 }
 
-test('external strategy, latch ON: setpoint 2° above what the head reads, external temperature and sensor select', () => {
+test('external strategy, latch ON: the head opened fully, external temperature and sensor select', () => {
   const { cfg, inputs, memory } = heatRoom(19.8);
   const { fin, state } = h.tick(cfg, inputs, memory);
   const climate = fin.desired.find((x) => x.key === 'climate.trv1');
-  // the head reads 21.0: T + above (20.5) would let it throttle shut while the room still asks
-  assert.deepEqual(climate.value, { kind: 'climate', hvacMode: 'heat', temperature: 23, targetLow: null, targetHigh: null, fanMode: null });
+  // T + above (20.5) let a head that throttles on its own curve shut while the room still asked
+  assert.deepEqual(climate.value, { kind: 'climate', hvacMode: 'heat', temperature: 30, targetLow: null, targetHigh: null, fanMode: null });
+  assert.equal(climate.refreshEverySec, null);
   assert.equal(climate.reqId, 'req-7');
   assert.equal(climate.userSetpointAttr, 'temperature');
   assert.deepEqual(climate.confirm, { kind: 'climate', tolerance: 0.05 });
@@ -61,7 +62,7 @@ test('the head stays open at t = 20.0 with the latch ON, and closes to 19.5 once
   memory.rooms.r_living.demandMode = 'heat';
   memory.rooms.r_living.demandSince = NOW - 20 * h.MIN;
   const a = h.tick(cfg, inputs, memory);
-  assert.equal(h.climateOf(a.fin, 'climate.trv1').temperature, 23.5);
+  assert.equal(h.climateOf(a.fin, 'climate.trv1').temperature, 30);
   const warm = heatRoom(20.2);
   warm.memory.rooms.r_living.heat = { on: true, since: NOW - 20 * h.MIN };
   warm.memory.rooms.r_living.demandMode = 'heat';
@@ -69,7 +70,7 @@ test('the head stays open at t = 20.0 with the latch ON, and closes to 19.5 once
   const b = h.tick(warm.cfg, warm.inputs, warm.memory);
   assert.equal(b.state.demand.latched.heat, false);
   // the request is still held for the minimum time: the heads stay open meanwhile
-  assert.equal(h.climateOf(b.fin, 'climate.trv1').temperature, 23.5);
+  assert.equal(h.climateOf(b.fin, 'climate.trv1').temperature, 30);
   const later = h.tick(warm.cfg, { ...warm.inputs, now: NOW + 6 * h.MIN, entities: { ...warm.inputs.entities, ...h.temps(NOW + 6 * h.MIN, [20.2, 20.2, 20.2]) } }, b.memory);
   assert.equal(later.state.demand.mode, 'none');
   assert.equal(h.climateOf(later.fin, 'climate.trv1').temperature, 19.5);
@@ -114,7 +115,7 @@ test('calibration strategy: t − local + current calibration, clamped to the ra
   assert.deepEqual(cal.value, { kind: 'number', value: -1.7 });
   assert.equal(cal.deadband, 0.3);
   assert.equal(cal.minIntervalSec, 600);
-  assert.equal(h.climateOf(fin, 'climate.trv1').temperature, 23);
+  assert.equal(h.climateOf(fin, 'climate.trv1').temperature, 30);
   assert.equal(fin.desired.find((x) => x.key === 'select.d_trv1_sensor'), undefined);
 });
 
@@ -182,8 +183,8 @@ test('TRV fallback: heads on their own sensors, setpoints shifted by the learned
   assert.equal(state.demand.mode, 'heat');
   assert.ok(state.issues.some((i) => i.code === 'fallback_sensors'));
   assert.equal(fin.desired.find((x) => x.key === 'select.d_trv1_sensor').value.option, 'internal');
-  // 20.5 + 2.8 → 23.5 on the 0.5 grid, raised to 2° above the head's 22.3 → 24.5
-  assert.equal(h.climateOf(fin, 'climate.trv1').temperature, 24.5);
+  // open: fully, whatever the head's own sensor reads
+  assert.equal(h.climateOf(fin, 'climate.trv1').temperature, 30);
 });
 
 test('ledger states feed TRV sync, room sync and issues', () => {
@@ -211,33 +212,37 @@ test('graceful stop hands the heads back to their own sensor at the heat target'
   assert.equal(trvHandbackDesired(device, cfg.rooms[0], null, 7)[0].value.temperature, 7);
 });
 
-test('an open head stays 2° above its own reading; what was sent stays until the reading comes within 1°', () => {
-  assert.equal(trvOpenSetpoint(20.5, 21.0, null, caps), 23);
-  assert.equal(trvOpenSetpoint(20.5, null, null, caps), 20.5);
-  // the reading climbs: no new write while 23 is still 1° clear of it
-  assert.equal(trvOpenSetpoint(20.5, 21.8, 23, caps), 23);
-  assert.equal(trvOpenSetpoint(20.5, 22.2, 23, caps), 24.5);
-  // a satisfied setpoint sent before is no floor for the open one
-  assert.equal(trvOpenSetpoint(20.5, 18.0, 19.5, caps), 20.5);
-  // a head by a hot radiator ends at the top of its range
-  assert.equal(trvOpenSetpoint(20.5, 29.2, null, caps), 30);
-});
-
-test('a room asking for heat 40 min, served, without warming: its heads open fully and it says why', () => {
-  const run = (riseCPerH) => {
-    const { cfg, inputs, memory } = heatRoom(19.0);
-    memory.rooms.r_living.heat = { on: true, since: NOW - 45 * h.MIN };
+test('a room asking for heat, served, no warmer than its peak for 45 min: «not warming», and the heads get their setpoint again every 15 min', () => {
+  const run = (peakAgoMin) => {
+    const { cfg, inputs, memory } = heatRoom(19.6);
+    memory.rooms.r_living.heat = { on: true, since: NOW - 90 * h.MIN };
     memory.rooms.r_living.demandMode = 'heat';
-    memory.rooms.r_living.demandSince = NOW - 45 * h.MIN;
-    inputs.roomTempHistory = { r_living: Array.from({ length: 7 }, (_, k) => [NOW - (30 - 5 * k) * h.MIN, 19.0 - (riseCPerH * (30 - 5 * k)) / 60]) };
+    memory.rooms.r_living.demandSince = NOW - 90 * h.MIN;
+    // warmed from 19.0 to 19.9 short of the target 20, then fell back: the head shut, the boiler ran on
+    memory.rooms.r_living.heatPeak = { c: 19.9, at: NOW - peakAgoMin * h.MIN };
     return h.tick(cfg, inputs, memory);
   };
-  const stuck = run(0);
-  assert.equal(h.climateOf(stuck.fin, 'climate.trv1').temperature, 30);
-  assert.equal(h.climateOf(stuck.fin, 'climate.trv2').temperature, 30);
-  assert.deepEqual(stuck.state.why.find((r) => r.code === 'why.trvs_pushed').params, { since: NOW - 45 * h.MIN });
-  // warming as it should: the heads stay on their reading
-  const warming = run(0.6);
-  assert.equal(h.climateOf(warming.fin, 'climate.trv1').temperature, 22.5);
-  assert.equal(warming.state.why.find((r) => r.code === 'why.trvs_pushed'), undefined);
+  const stuck = run(50);
+  assert.deepEqual(stuck.state.issues.find((i) => i.code === 'not_warming').params, { t: 19.9, since: NOW - 50 * h.MIN });
+  const climate = stuck.fin.desired.find((x) => x.key === 'climate.trv1');
+  assert.equal(climate.value.temperature, 30);
+  assert.equal(climate.refreshEverySec, 900);
+  // the peak is kept while the room is cooler than it
+  assert.deepEqual(stuck.memory.rooms.r_living.heatPeak, { c: 19.9, at: NOW - 50 * h.MIN });
+  // a new peak 20 min ago: still warming
+  const warming = run(20);
+  assert.equal(warming.state.issues.find((i) => i.code === 'not_warming'), undefined);
+  assert.equal(warming.fin.desired.find((x) => x.key === 'climate.trv1').refreshEverySec, null);
+});
+
+test('the heat peak follows the room while it asks and is dropped when it stops asking', () => {
+  const { cfg, inputs, memory } = heatRoom(19.8);
+  memory.rooms.r_living.heatPeak = { c: 19.5, at: NOW - 30 * h.MIN };
+  const asking = h.tick(cfg, inputs, memory);
+  assert.equal(asking.state.demand.mode, 'heat');
+  assert.deepEqual(asking.memory.rooms.r_living.heatPeak, { c: 19.8, at: NOW });
+  const warm = heatRoom(20.6);
+  const done = h.tick(warm.cfg, warm.inputs, warm.memory);
+  assert.equal(done.state.demand.mode, 'none');
+  assert.equal(done.memory.rooms.r_living.heatPeak, null);
 });

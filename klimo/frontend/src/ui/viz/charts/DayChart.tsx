@@ -1,4 +1,4 @@
-import { useMemo, useRef, type CSSProperties } from 'react';
+import { useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react';
 import type { Band } from '@api/model';
 import { useUiText } from '../../UiTextContext';
 import { toneVar } from '../../tokens/vars';
@@ -64,11 +64,24 @@ export interface DayChartProps {
   axis?: string[];
   /** Said over the plot while the readings are missing («loading», «no history yet»). */
   emptyText?: string;
+  /** Clock time of a moment («14:35»): with it, a pointer over the plot shows a crosshair with the time and the reading. */
+  formatTime?: (t: number) => string;
 }
 
 const DEFAULT_TOL = { heat: { below: 0.2, above: 0.2 }, cool: { below: 0.3, above: 0.3 } };
 /** The humidity scale spans at least this many points, so a few % of drift stays a gentle slope. */
 const HUMIDITY_MIN_SPAN = 20;
+
+/** A reading older than this before the pointer's moment is a gap, not the value then. */
+const READING_MAX_AGE_MS = 2 * 3600_000;
+
+/** The last known value at or before `t` (readings hold until the next one), null across a gap. */
+function valueAt(points: readonly { t: number; v: number | null }[], t: number): number | null {
+  let best: { t: number; v: number | null } | null = null;
+  for (const p of points) if (p.t <= t && (!best || p.t > best.t)) best = p;
+  if (!best || best.v == null || !Number.isFinite(best.v) || t - best.t > READING_MAX_AGE_MS) return null;
+  return best.v;
+}
 
 /** Polylines of the known samples between `from` and `until`, broken at gaps, and the last one drawn. */
 function track(points: readonly { t: number; v: number | null }[], X: (t: number) => number, Y: (v: number) => number, from: number, until: number) {
@@ -105,8 +118,11 @@ export function DayChart({
   unitText,
   axis = HOUR_AXIS_3H,
   emptyText,
+  formatTime,
 }: DayChartProps) {
   const ut = useUiText();
+  // the moment under the pointer (a finger on a phone): the crosshair, null when away
+  const [hoverT, setHoverT] = useState<number | null>(null);
   const end = dayEnd ?? dayStart + DAY_MS;
   const plot = useRef<HTMLDivElement>(null);
   const { width: plotW, height: plotH } = useSize(plot);
@@ -205,6 +221,8 @@ export function DayChart({
     const nowIn = now >= dayStart && now <= end;
     const active = spans.find((sp) => sp.from <= now && (sp.to == null || sp.to >= now - 60_000));
     return {
+      X,
+      Y,
       grid: grid.map((v) => ({ v, y: Y(v) })),
       gridPath: grid.map((v) => `M${x0.toFixed(1)} ${Y(v).toFixed(1)}H${X1}`).join(''),
       bandPast,
@@ -223,6 +241,30 @@ export function DayChart({
 
   const dotColor = g.dotTone ? toneVar(g.dotTone, 'line') : 'var(--ui-text-1)';
   const nowPct = g.nowX != null ? (g.nowX / W) * 100 : null;
+
+  const lastT = Math.min(end, now);
+  const onPointer = (e: PointerEvent<HTMLDivElement>) => {
+    const el = plot.current;
+    if (!formatTime || !el) return;
+    const r = el.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width) * W;
+    const t = dayStart + ((x - x0) / (X1 - x0)) * (end - dayStart);
+    setHoverT(t < dayStart || t > lastT ? null : t);
+  };
+  const cross = useMemo(() => {
+    if (hoverT === null || !formatTime) return null;
+    const c = valueAt(
+      series.map((p) => ({ t: p.t, v: p.c })),
+      hoverT,
+    );
+    const rh = humidity ? valueAt(humidity.map((p) => ({ t: p.t, v: p.pct })), hoverT) : null;
+    const seg = targets.find((s) => s.from <= hoverT && hoverT < s.to);
+    const target = seg ? (seg.heat ?? seg.cool) : null;
+    const span = spans.find((sp) => sp.from <= hoverT && hoverT <= (sp.to ?? now));
+    const x = g.X(hoverT);
+    return { t: hoverT, c, rh, target, span, x, y: c != null ? g.Y(c) : null };
+  }, [hoverT, formatTime, series, humidity, targets, spans, now, g]);
+  const deg = (v: number) => `${v.toFixed(1)}${unitText}`;
 
   return (
     <figure className={s.dayFigure}>
@@ -261,7 +303,7 @@ export function DayChart({
           ) : null}
         </span>
       </figcaption>
-      <div ref={plot} className={s.dayPlot}>
+      <div ref={plot} className={s.dayPlot} data-cross={formatTime ? '' : undefined} onPointerMove={onPointer} onPointerDown={onPointer} onPointerLeave={() => setHoverT(null)}>
         <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={ariaLabel} focusable="false">
           <path d={g.gridPath} className={s.dayGrid} vectorEffect="non-scaling-stroke" />
           {g.heat ? <path d={g.heat} className={s.daySpan} style={{ '--c': toneVar('heat', 'line') } as CSSProperties} /> : null}
@@ -276,6 +318,13 @@ export function DayChart({
           ))}
           {g.nowX != null ? (
             <path d={`M${g.nowX.toFixed(1)} ${yTop.toFixed(1)}V${Y_BOTTOM}`} className={s.dayNow} vectorEffect="non-scaling-stroke" />
+          ) : null}
+          {cross ? (
+            <path
+              d={`M${cross.x.toFixed(1)} ${yTop.toFixed(1)}V${Y_BOTTOM}${cross.y != null ? `M${x0.toFixed(1)} ${cross.y.toFixed(1)}H${X1}` : ''}`}
+              className={s.dayCross}
+              vectorEffect="non-scaling-stroke"
+            />
           ) : null}
         </svg>
         {g.dot ? (
@@ -305,10 +354,31 @@ export function DayChart({
             {emptyText}
           </span>
         ) : null}
-        {nowPct != null ? (
+        {nowPct != null && !cross ? (
           <span className={s.dayNowLabel} data-edge={nowPct > 94 ? 'end' : nowPct < 8 ? 'start' : undefined} style={{ left: pct(nowPct) }} aria-hidden="true">
             {ut('now')}
           </span>
+        ) : null}
+        {cross && formatTime ? (
+          <>
+            {cross.y != null ? (
+              <>
+                <span className={s.dayCrossDot} style={{ left: pct((cross.x / W) * 100), top: pct((cross.y / H) * 100) }} aria-hidden="true" />
+                <span className={s.dayCrossY} style={{ top: pct((cross.y / H) * 100) }} aria-hidden="true">
+                  {deg(cross.c as number)}
+                </span>
+              </>
+            ) : null}
+            <span className={s.dayCrossX} data-edge={cross.x / W > 0.92 ? 'end' : undefined} style={{ left: pct((cross.x / W) * 100) }} aria-hidden="true">
+              {formatTime(cross.t)}
+            </span>
+            <span className={s.dayCrossTip} data-side={cross.x / W > 0.6 ? 'left' : 'right'} style={{ left: pct((cross.x / W) * 100) }} aria-hidden="true">
+              <b>{cross.c != null ? deg(cross.c) : '—'}</b>
+              {cross.target != null ? <span>{ut('target {t}', { t: deg(cross.target) })}</span> : null}
+              {cross.rh != null ? <span>{`${Math.round(cross.rh)}%`}</span> : null}
+              {cross.span ? <span style={{ color: toneVar(cross.span.tone, 'fg') }}>{cross.span.tone === 'heat' ? legend.heat : legend.cool}</span> : null}
+            </span>
+          </>
         ) : null}
       </div>
       {/* the hour labels span the same width as the plot above them */}

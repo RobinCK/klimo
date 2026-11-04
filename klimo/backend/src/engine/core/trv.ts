@@ -21,12 +21,12 @@ import { clamp, roundStep } from './util';
 
 /* =====================================================================================================
  * Radiator heads. Setpoints are aligned with Klimo's latch, never set to the bare target: an open valve
- * gets at least T + above and stays clear above what the head reads itself, a satisfied one
- * max(T − below, frost floor) (the head only opens itself where Klimo would), a blocked one the frost
- * floor. A head regulates on its own reading — its sensor by the hot radiator, or a curve that throttles
- * half a degree short of the setpoint — so T + above alone let it close while the room still asked and
- * the source ran on; held above that reading it stays open until Klimo closes it. So a source never runs
- * against valves the heads have already closed, and a paused room cannot re-open its own valve.
+ * gets the top of its range, a satisfied one max(T − below, frost floor) (the head only opens itself
+ * where Klimo would), a blocked one the frost floor. A head regulates on its own reading and curve — its
+ * sensor by the hot radiator, a throttle that starts degrees short of its setpoint — and closed with the
+ * room still asking while the source ran on, whatever setpoint near the target it had; opened fully it
+ * stays open until Klimo closes it at T + above (two writes a cycle). So a source never runs against
+ * valves the heads have already closed, and a paused room cannot re-open its own valve.
  * ===================================================================================================== */
 
 /** Where the head stands this tick. */
@@ -40,10 +40,8 @@ const CALIBRATION_DEADBAND_C = 0.3;
 const CALIBRATION_EVERY_SEC = 600;
 const CONFIG_EVERY_SEC = 600;
 const TRV_SPACING_SEC = 5;
-/** An open head's setpoint stays this far above what it reads… */
-const OPEN_ABOVE_READING_C = 2;
-/** …and is raised again only once the reading has come this close to it (each raise is a battery write). */
-const OPEN_REARM_C = 1;
+/** A room that has stopped warming has its heads' setpoint sent again this often (a head that dropped it). */
+const STALLED_RESEND_SEC = 15 * 60;
 
 /* ── shared actuator plumbing (also used for zone valves and the dehumidifier) ───────────────────────── */
 
@@ -156,7 +154,7 @@ export interface TrvRoomInput {
   exercise: boolean;
   /** Learned head-minus-room offset (fallback mode). */
   offsetOf: (deviceId: Id) => number | null;
-  /** The room has asked for heat a long while, a source feeding it, without warming: open the heads fully. */
+  /** The room asks for heat, a source feeding it, and has not warmed for a while: send the setpoint again now and then. */
   stalled: boolean;
   /** PI integrator per head ('valve' strategy) and the minutes since the last tick. */
   valveIntegral: Record<Id, number>;
@@ -179,20 +177,9 @@ export function trvSetpoint(status: TrvStatus, x: Pick<TrvRoomInput, 'room' | 's
   let sp: number;
   if (status === 'frost') sp = roundStep(F + Math.max(0, x.safety.frostReleaseC - x.safety.frostC) + tol.above, step, 'ceil');
   else if (status === 'blocked' || x.heatC === null) sp = roundStep(F, step, 'ceil');
-  else if (status === 'open') sp = roundStep(x.heatC + tol.above, step, 'ceil');
+  else if (status === 'open') sp = caps.setpointRange[1];
   else sp = roundStep(Math.max(x.heatC - tol.below, F), step, 'floor');
   return clamp(sp, caps.setpointRange[0], caps.setpointRange[1]);
-}
-
-/**
- * Setpoint of an open head: the aligned one, raised to `OPEN_ABOVE_READING_C` above the head's own reading;
- * what was sent before stays while it is still `OPEN_REARM_C` clear of that reading.
- */
-export function trvOpenSetpoint(aligned: number, reading: number | null, sent: number | null, caps: TrvCapabilities): number {
-  if (reading === null) return aligned;
-  const [lo, hi] = caps.setpointRange;
-  if (sent !== null && sent >= aligned && sent - reading >= OPEN_REARM_C) return clamp(sent, lo, hi);
-  return clamp(Math.max(aligned, roundStep(reading + OPEN_ABOVE_READING_C, caps.setpointStep > 0 ? caps.setpointStep : 0.5, 'ceil')), lo, hi);
 }
 
 export function trvStatusOf(open: boolean, x: Pick<TrvRoomInput, 'frost' | 'blocked' | 'heatAllowed' | 'heatC'>): TrvStatus {
@@ -237,11 +224,10 @@ export function trvActuation(
     setpoint = trvSetpoint(status, x, caps);
     // on its own sensor the head reads the learned offset higher than the room
     const o = x.fallbackTrv ? x.offsetOf(device.id) : null;
-    if (o !== null && (status === 'open' || status === 'satisfied')) {
+    if (o !== null && status === 'satisfied') {
       const step = caps.setpointStep || 0.5;
-      setpoint = clamp(roundStep(setpoint + o, step, status === 'open' ? 'ceil' : 'floor'), caps.setpointRange[0], caps.setpointRange[1]);
+      setpoint = clamp(roundStep(setpoint + o, step, 'floor'), caps.setpointRange[0], caps.setpointRange[1]);
     }
-    if (status === 'open') setpoint = x.stalled ? caps.setpointRange[1] : trvOpenSetpoint(setpoint, local, commandedNumber(ledger[device.entityId]), caps);
   }
 
   const hvacMode = x.heatAllowed || x.frost || x.exercise ? 'heat' : 'off';
@@ -253,6 +239,7 @@ export function trvActuation(
       confirm: { kind: 'climate', tolerance: 0.05 },
       minIntervalSec: TRV_SPACING_SEC,
       deadband: 0.1,
+      refreshEverySec: x.stalled && status === 'open' ? STALLED_RESEND_SEC : null,
       userSetpointAttr: 'temperature',
       reqId: x.reqId,
     }),

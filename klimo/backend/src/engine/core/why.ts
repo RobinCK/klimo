@@ -1,7 +1,6 @@
 import type {
   CircuitState,
   EngineConfig,
-  EpochMs,
   Mode,
   Override,
   PlantState,
@@ -48,8 +47,6 @@ export interface WhyInput {
   verdict: RoomServiceVerdict;
   plant: PlantState;
   trvs: TrvState[];
-  /** The room has asked for heat since then without warming: its heads are opened fully. */
-  stalledSince: EpochMs | null;
   /** The room's cooling is blocked by the circuit's dew-point guard (from the plant). */
   dewBlocked: { dewC: number | null; maxSupplyC: number; hold: CircuitState['dewHold'] } | null;
 }
@@ -141,8 +138,7 @@ function details(x: WhyInput, main: Reason): Reason[] {
   }
   if (x.trvs.length) {
     const open = x.trvs.filter((t) => t.activity === 'heating' || t.activity === 'frost').length;
-    if (x.stalledSince !== null) out.push({ code: 'why.trvs_pushed', params: { since: x.stalledSince } });
-    else if (s.demand.mode === 'heat' || open) out.push({ code: 'why.trvs_open', params: { n: open, total: x.trvs.length } });
+    if (s.demand.mode === 'heat' || open) out.push({ code: 'why.trvs_open', params: { n: open, total: x.trvs.length } });
     else if (s.state === 'window' || s.state === 'off') out.push({ code: 'why.trvs_closed', params: { n: x.trvs.length } });
   }
   for (const { source, role } of acSourcesOf(x)) {

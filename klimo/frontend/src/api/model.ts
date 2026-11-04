@@ -232,7 +232,7 @@ export type IssueCode =
   | 'no_data' | 'sensor_offline' | 'source_fault' | 'trv_failed' | 'entity_missing' | 'too_cold' | 'too_hot'
   | 'trv_retry' | 'overheat' | 'source_wait' | 'fallback_sensors' | 'actuator_conflict' | 'condensation'
   | 'humidity_high' | 'floor_humid' | 'humidity_unknown' | 'battery_low' | 'window_long' | 'signal_weak'
-  | 'humid_dry_hint' | 'airing_hint';
+  | 'humid_dry_hint' | 'airing_hint' | 'not_warming';
 
 /* ───────────────────────────────────── 2 Reason and journal codes ─────────────────────────────── */
 
@@ -247,7 +247,7 @@ export type ReasonCode =
   | 'why.window.lower' | 'why.window.notify' | 'why.window.delay' | 'why.window.resuming' | 'why.window.ignored'
   | 'why.window.virtual' | 'why.airing' | 'why.off.room' | 'why.off.profile' | 'why.off.house_mode'
   | 'why.off.frost_only' | 'why.frost' | 'why.overheat' | 'why.monitor.control_disabled' | 'why.monitor.no_emitter'
-  | 'why.monitor.dew_blocked' | 'why.season_blocks' | 'why.min_request' | 'why.served' | 'why.trvs_open' | 'why.trvs_pushed' | 'why.rooms_asking'
+  | 'why.monitor.dew_blocked' | 'why.season_blocks' | 'why.min_request' | 'why.served' | 'why.trvs_open' | 'why.rooms_asking'
   | 'why.trvs_closed' | 'why.ac_running' | 'why.ac_assist' | 'why.ac_dry' | 'why.trigger_heat' | 'why.preheat'
   | 'why.rule_offset' | 'why.weather_comp' | 'why.floor_limit' | 'why.eta.reach' | 'why.eta.cooling_down'
   | 'why.eta.warming_up' | 'why.cold_guard' | 'why.monitor.too_humid' | 'why.monitor.humidity_unknown'
@@ -1409,6 +1409,8 @@ export interface RoomMemory {
     notifiedAt: EpochMs | null;
   };
   lagDeficitSince: EpochMs | null; // HP lag: deficit > lag.deficitC since (paused in defrost)
+  /** While the room asks for heat: the warmest it has been since it began asking, and when (null otherwise). */
+  heatPeak?: { c: Celsius; at: EpochMs } | null;
   tooColdSince: EpochMs | null; // room_too_cold timer
   tooHotSince: EpochMs | null;
   noDataSince: EpochMs | null;
@@ -4778,6 +4780,7 @@ export const ISSUE_STYLE: Readonly<Record<IssueCode, { rank: number; tone: 'warn
   signal_weak: { rank: 250, tone: 'warn', icon: 'signal' },
   humid_dry_hint: { rank: 260, tone: 'warn', icon: 'droplet' },
   airing_hint: { rank: 265, tone: 'warn', icon: 'airing' },
+  not_warming: { rank: 155, tone: 'warn', icon: 'radiator' },
 };
 
 /** Which override group a kind belongs to (one active override per subject+group). */

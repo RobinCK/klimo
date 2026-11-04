@@ -199,18 +199,18 @@ control method is chosen per room:
 
 | Method | How it works |
 |---|---|
-| **Room temperature → into the valve** (recommended) | The valve gets the room temperature as its external sensor; Klimo sets the setpoint in step with its own band. The smoothest. |
+| **Room temperature → into the valve** (recommended) | The valve gets the room temperature as its external sensor; while the room asks for heat its setpoint is the top of its range, once warm a little below the target. |
 | **Dynamic offset** | The valve's calibration offset is adjusted so it "sees" the room temperature. For valves without an external input. |
 | **On / off** | Setpoint 30° when the room heats, 5° when it does not. Works with any valve; the swings are larger. |
 | **Valve opening, %** | Klimo regulates the opening itself (PI control). The most precise; more commands drain the battery faster. |
 
-- **While the room asks for heat the valve is held open**: its setpoint stays at least 2° above what the
-  valve reads itself (raised again only when the reading comes within 1°, to spare the battery), so a
-  valve that throttles near its setpoint or reads its own sensor by the hot radiator does not close
-  before Klimo does. Once the room is warm Klimo lowers it below the target and the valve closes.
-- **A room that does not warm**: asking for heat for 40 min, a source running for it, while its
-  temperature rises less than 0.2° an hour — Klimo opens its valves fully and says so in the room's
-  explanation («asking for heat since … without warming»).
+- **While the room asks for heat the valve is opened fully** (the top of its range, as turning it to the
+  maximum by hand), and once the room is warm its setpoint drops below the target and it closes: two
+  writes a cycle. A valve regulates on its own sensor by the radiator and its own curve, which throttles
+  degrees short of a setpoint near the target — so the room stopped short while the boiler ran on.
+- **A room that does not warm**: asking for heat, a source running for it, and no warmer than its best
+  for 45 min — the room shows *Not warming* (since when and at what temperature) and Klimo sends its
+  valves their setpoint again every 15 min, in case one dropped it. Check the valve and the radiator.
 - With the room temperature sent into the valve, Klimo also switches the valve to its external sensor
   (on an Aqara E1 the switch is called simply *sensor*). Without that switch the valve keeps
   regulating on its own sensor beside the hot radiator and closes before the room is warm.

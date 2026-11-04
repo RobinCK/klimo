@@ -898,3 +898,79 @@
   right: 0;
   transform: none;
 }
+
+/* crosshair: the moment under the pointer, its time on the axis and its reading on the scale */
+.dayPlot[data-cross] {
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+
+.dayCross {
+  fill: none;
+  stroke: color-mix(in srgb, var(--ui-text-1) 45%, transparent);
+  stroke-width: 1;
+}
+
+.dayCrossDot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: var(--ui-text-1);
+  box-shadow: 0 0 0 3px var(--well);
+  pointer-events: none;
+}
+
+.dayCrossY,
+.dayCrossX {
+  position: absolute;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: var(--ui-text-1);
+  color: var(--well);
+  font-size: var(--ui-fs-micro);
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.dayCrossY {
+  left: 2px;
+  transform: translateY(-50%);
+}
+
+.dayCrossX {
+  bottom: 2px;
+  transform: translateX(-50%);
+}
+
+.dayCrossX[data-edge='end'] {
+  transform: translateX(-100%);
+}
+
+.dayCrossTip {
+  position: absolute;
+  top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-1);
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-caption);
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(10px);
+}
+
+.dayCrossTip[data-side='left'] {
+  transform: translateX(calc(-100% - 10px));
+}
+
+.dayCrossTip b {
+  color: var(--ui-text-1);
+  font-weight: 600;
+}

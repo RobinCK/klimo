@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.22
+
+- **A radiator valve is opened fully while its room asks for heat.** The room started at 19.7°, warmed to
+  21° and fell back while asking for 22° until the valve was turned to the maximum by hand: a valve such as
+  the Aqara E1 throttles on its own sensor and curve degrees short of a setpoint near the target (22.5°,
+  or 24° since 0.2.19). Now an open valve gets the top of its range, as by hand, and once the room is warm
+  a setpoint below the target — two writes a cycle.
+- **«Not warming»**: a room asking for heat, a source running for it, that has not been warmer than its
+  best for 45 min shows it (since when, at what temperature) and its valves get their setpoint again
+  every 15 min. Measured on the best temperature, not on the half-hour trend a sensor by the door that
+  reports seldom never gave.
+- **Crosshair on the room's day chart**: under the pointer (or a finger) a vertical and a horizontal line,
+  the time on the axis, the temperature on the scale, and the target, humidity and heating then.
+
 ## 0.2.21
 
 - **A valve's card says what it was told and what it holds.** Room settings → *Radiator valves* shows,

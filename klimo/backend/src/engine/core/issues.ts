@@ -53,6 +53,8 @@ export interface IssueInput {
   /** Only a connected, non-blind snapshot can tell that an entity is gone. */
   haConnected: boolean;
   toutC: number | null;
+  /** The room asks for heat, a source feeding it, and has not been warmer than this since then. */
+  notWarming: { c: number; at: EpochMs } | null;
   now: EpochMs;
 }
 
@@ -87,6 +89,7 @@ export function roomIssues(x: IssueInput): RoomIssue[] {
 
   if (x.comfort.tooCold.active) add('too_cold', { deltaC: x.comfort.tooCold.deltaC, minutes: x.comfort.tooCold.minutes }, x.comfort.tooColdSince);
   if (x.comfort.tooHot.active) add('too_hot', { deltaC: x.comfort.tooHot.deltaC, minutes: x.comfort.tooHot.minutes }, x.comfort.tooHotSince);
+  if (x.notWarming) add('not_warming', { t: x.notWarming.c, since: x.notWarming.at }, x.notWarming.at);
 
   const retrying = x.trvs.find((t) => t.sync.status === 'retrying');
   if (retrying) add('trv_retry', { attempt: retrying.sync.attempt, of: retrying.sync.maxAttempts, deviceId: retrying.deviceId, entityId: retrying.entityId });

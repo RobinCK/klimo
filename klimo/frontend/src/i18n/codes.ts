@@ -186,7 +186,6 @@ const REASONS: Record<ReasonCode, (p: P, c: Ctx) => string> = {
       ? t('{source} is working since {since}.', { source: source(p, c), since: clock(p, 'since', c) })
       : t('{source} is working.', { source: source(p, c) }),
   'why.trvs_open': (p) => t('Radiator valves open: {n} of {total}.', { n: num(p, 'n') ?? 0, total: num(p, 'total') ?? 0 }),
-  'why.trvs_pushed': (p, c) => t('Asking for heat since {since} without warming: the radiator valves are opened fully.', { since: clock(p, 'since', c) }),
   'why.rooms_asking': (p) => t('Rooms asking for heat: {n} of {total}.', { n: num(p, 'n') ?? 0, total: num(p, 'total') ?? 0 }),
   'why.trvs_closed': (p) => t('Radiator valves closed ({n}).', { n: num(p, 'n') ?? 0 }),
   'why.ac_running': (p, c) => t('{source} is running: {mode}.', { source: source(p, c), mode: sourceMode(p) }),
@@ -849,6 +848,7 @@ const ISSUES: Record<IssueCode, (p: P, c: Ctx) => string> = {
   signal_weak: (p) => t('Weak signal (LQI {lqi})', { lqi: num(p, 'lqi') ?? '—' }),
   humid_dry_hint: (p) => t('Humidity {rh} — drying would help', { rh: pct(p, 'rh') }),
   airing_hint: (p) => t('Humidity {rh} — time to air the room', { rh: pct(p, 'rh') }),
+  not_warming: (p, c) => t('Not warming: no warmer than {t} since {since} — check the radiator valve', { t: temp(p, 't'), since: clock(p, 'since', c) }),
 };
 
 /** A room device by its emitter device id, else by its entity. */

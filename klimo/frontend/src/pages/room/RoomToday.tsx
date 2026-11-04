@@ -3,7 +3,7 @@ import type { EpochMs, LocalDate, ProfileDto, RoomDayDto, RoomDetailDto, RoomSta
 import { api } from '@api/endpoints';
 import { liveStore, useLive, useLiveEvent, useResource, useRetryUntilComplete, type ResourceState } from '@data';
 import { AutoGrid, DayChart, ProfileStrip, Skeleton, Stack, StatTile, type ProfileStripSegment } from '@ui';
-import { displayUnits, fmtDur, fmtRate, startOfLocalDay, t, zonedParts } from '@i18n';
+import { displayUnits, fmtDur, fmtRate, fmtTime, startOfLocalDay, t, zonedParts } from '@i18n';
 import { appendLive, dayShown, liveDay, type LivePoint } from './dayLive';
 import { atText } from './texts';
 
@@ -175,6 +175,7 @@ export function RoomToday({
           ariaLabel={aria}
           unitText={displayUnits() === 'F' ? '°F' : '°'}
           emptyText={emptyText}
+          formatTime={fmtTime}
         />
       ) : (
         <Skeleton height={compact ? 180 : 240} radius={12} />

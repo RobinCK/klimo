@@ -1274,6 +1274,7 @@ export function defaultRoomMemory(roomId: Id, now: EpochMs): RoomMemory {
       notifiedAt: null,
     },
     lagDeficitSince: null,
+    heatPeak: null,
     tooColdSince: null,
     tooHotSince: null,
     noDataSince: null,

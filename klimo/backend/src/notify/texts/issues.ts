@@ -43,4 +43,5 @@ export const ISSUES: Record<IssueCode, Row> = {
   signal_weak: ['Weak signal (LQI {lqi})', 'Слабкий сигнал (LQI {lqi})'],
   humid_dry_hint: ['Humidity {rh} — drying would help', 'Вологість {rh} — варто осушити'],
   airing_hint: ['Humidity {rh} — time to air the room', 'Вологість {rh} — варто провітрити'],
+  not_warming: ['Not warming: no warmer than {t} since {since} — check the radiator valve', 'Не гріється: з {since} не тепліше {t} — перевірте головку'],
 };
