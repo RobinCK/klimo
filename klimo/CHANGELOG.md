@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.24
+
+- **Day by the hour: who asked for heat and what ran.** The overview's day timeline now has one row for
+  when any room asked for heat (or cooling) and, under it, a row for each room that asked, with how long
+  and a link to the room; the rooms that never asked are named below. Point at the bars (or touch them)
+  for a line through every row at that moment and the list of what ran then; the arrows step through the
+  days before. On a phone the **Today** row opens it as a page of its own, label above bar, with the
+  moment picked kept in sight above the rows.
+- **The house card shows the day**: a tap on the **Source** or **Pumps** tile opens the same day by the
+  hour, read from Home Assistant's history — when each source and pump ran and which rooms asked for
+  heat, with the days before.
+- **The weekly schedule is edited by hand on the strips**: drag the line between two blocks to move it,
+  drag along a day to draw a new block; the time shows while dragging, the days that repeat the edited
+  one move along, and every drag can be undone. On a phone the line between two blocks has a grip to drag,
+  and a block's sheet can split it.
+
 ## 0.2.23
 
 - **A room's device opens Home Assistant's own dialog.** In the room's settings, under *Room and devices*,

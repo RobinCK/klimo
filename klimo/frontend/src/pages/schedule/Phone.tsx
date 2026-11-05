@@ -21,6 +21,7 @@ import {
   SegmentedControl,
   Skeleton,
   Stack,
+  Text,
   TimeStepper,
   ToggleChip,
   AutoGrid,
@@ -107,6 +108,7 @@ export function PhoneDay({ c, editor, edit, today, nowMinute, onScope, onDay }: 
           onDay(d as Dow);
         }}
       />
+      {schedule && c.canEdit ? <Text variant="caption">{t('Drag a grip between two blocks to move the time; tap a block to change it.')}</Text> : null}
       {schedule ? (
         <DayTimelineVertical
           ariaLabel={t('{day}, schedule of {scope}', { day: weekdayLong(day), scope })}
@@ -116,6 +118,8 @@ export function PhoneDay({ c, editor, edit, today, nowMinute, onScope, onDay }: 
             edit.select(day, i);
             setSheet(true);
           }}
+          onBoundary={c.canEdit ? (i, minute) => edit.moveBoundary(day, i, minute) : undefined}
+          formatMinute={minuteToHhmm}
           blocks={plan.map((b, i) => {
             const p = profiles.find((x) => x.id === b.profileId);
             const name = p?.name ?? b.profileId;
@@ -146,6 +150,9 @@ export function PhoneDay({ c, editor, edit, today, nowMinute, onScope, onDay }: 
           <Row gap="sm">
             <Button variant="danger" size="xl" onClick={() => (edit.remove(), setSheet(false))} disabled={!c.canEdit || !edit.canRemove}>
               {t('Delete')}
+            </Button>
+            <Button variant="secondary" size="xl" onClick={edit.split} disabled={!c.canEdit || !edit.canSplit}>
+              {t('Split')}
             </Button>
             <Stack grow align="stretch">
               <Button variant="primary" size="xl" fullWidth onClick={() => setSheet(false)}>

@@ -66,7 +66,7 @@ function fromUtc(ms: number): LocalDate {
 }
 
 /** Calendar arithmetic on plain dates (no time zone involved). */
-function addDays(d: LocalDate, n: number): LocalDate {
+export function addDays(d: LocalDate, n: number): LocalDate {
   const p = parts(d);
   return fromUtc(Date.UTC(p.y, p.m - 1, p.d + n));
 }

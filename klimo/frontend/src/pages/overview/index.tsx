@@ -7,9 +7,9 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { HouseState, PlantState, SourceDto } from '@api/model';
 import { api } from '@api/endpoints';
 import { liveStore, useCodeContext, useHouse, useIncidents, useLayout, useLiveEvent, useMe, useNow, usePlant, useResource, useRetryUntilComplete, useRoomSummaries, useRoomsLoaded } from '@data';
-import { AutoGrid, Button, Page, ProfileTile, RowList, Row, Section, Skeleton, SourceRow, Stack, StatusBanner } from '@ui';
+import { AutoGrid, Button, MobileTopBar, Page, ProfileTile, RowList, Row, Section, Skeleton, SourceRow, Stack, StatusBanner } from '@ui';
 import { LogoMark, Wordmark } from '@brand';
-import { HouseSeasonPill, InboxBell, paths } from '@app';
+import { HouseSeasonPill, InboxBell, navigate, paths, useRoute } from '@app';
 import { errorText, fmtAmount, fmtDur, fmtTemp, sourceStateLabel, t } from '@i18n';
 import { AttentionLine, AttentionSection } from './Attention';
 import { dateLine, headline, isRunning, profileOrigin, SOURCE_ICON, subline } from './house';
@@ -85,11 +85,18 @@ function useOverviewData() {
 
 type Data = ReturnType<typeof useOverviewData>;
 
-function Desktop({ d, sw, house }: { d: Data; sw: ProfileSwitch; house: HouseState }) {
+function Desktop({ d, sw, house, focusDay }: { d: Data; sw: ProfileSwitch; house: HouseState; focusDay: boolean }) {
   const cooling = house.season.season === 'cooling';
   const canEdit = d.me?.canEditConfig ?? false;
   const onboarding = d.overview.data?.onboarding ?? null;
   const hc = useHouseControl(house, d.rooms, d.ctx);
+  // «Відкрити в Klimo» from a dashboard card's day: the day by the hour is at the foot of the overview
+  const dayReady = d.today.data != null;
+  useEffect(() => {
+    if (!focusDay || !dayReady) return;
+    const timer = window.setTimeout(() => document.getElementById('today')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+    return () => window.clearTimeout(timer);
+  }, [focusDay, dayReady]);
   return (
     <Page eyebrow={dateLine(d.now)} title={headline(house)} subtitle={subline(house, d.plant, d.ctx)}>
       {onboarding ? <Onboarding onboarding={onboarding} canEdit={canEdit} /> : null}
@@ -115,6 +122,7 @@ function Desktop({ d, sw, house }: { d: Data; sw: ProfileSwitch; house: HouseSta
         profiles={sw.profiles}
         sources={d.sources.data}
         circuits={d.circuits.data}
+        rooms={d.rooms}
         leadId={house.leadSourceId ?? d.plant?.lead.heat ?? d.plant?.lead.cool ?? null}
         ctx={d.ctx}
       />
@@ -122,7 +130,29 @@ function Desktop({ d, sw, house }: { d: Data; sw: ProfileSwitch; house: HouseSta
   );
 }
 
-/** Phone «Сьогодні»: one row with the lead source's day, leading to the system page. */
+/** Phone «День по годинах» on a page of its own: the row «Сьогодні» leads here (a wide screen has it on the overview). */
+function DayPage({ d, sw, house }: { d: Data; sw: ProfileSwitch; house: HouseState }) {
+  return (
+    <Stack gap="md">
+      <MobileTopBar title={t('Day by the hour')} subtitle={{ text: t('Who asked for heat and what ran') }} onBack={() => navigate(paths.overview())} />
+      <TodaySection
+        today={d.today.data ?? null}
+        house={house}
+        plan={d.plan.data ?? null}
+        plant={d.plant}
+        profiles={sw.profiles}
+        sources={d.sources.data}
+        circuits={d.circuits.data}
+        rooms={d.rooms}
+        leadId={house.leadSourceId ?? d.plant?.lead.heat ?? d.plant?.lead.cool ?? null}
+        ctx={d.ctx}
+        phone
+      />
+    </Stack>
+  );
+}
+
+/** Phone «Сьогодні»: one row with the lead source's day, leading to the day by the hour. */
 function TodayRow({ d, house, sources }: { d: Data; house: HouseState; sources: readonly SourceDto[] | undefined }) {
   const plant: PlantState | null = d.plant;
   const today = d.today.data;
@@ -148,7 +178,7 @@ function TodayRow({ d, house, sources }: { d: Data; house: HouseState; sources: 
         meta={`${t('Today')} · ${meta}`}
         chip={{ tone: lead.fault ? 'err' : lead.tone, label: sourceStateLabel(lead.state) }}
         on={isRunning(lead)}
-        to={paths.system()}
+        to={paths.day()}
       />
     </RowList>
   );
@@ -221,6 +251,7 @@ function Loading({ phone }: { phone: boolean }) {
 export default function OverviewPage(): JSX.Element {
   const d = useOverviewData();
   const phone = useLayout() === 'phone';
+  const route = useRoute();
   const sw = useProfileSwitch(d.ctx);
   const house = d.house;
   if (!house) {
@@ -239,5 +270,6 @@ export default function OverviewPage(): JSX.Element {
       </Stack>
     );
   }
-  return phone ? <Phone d={d} sw={sw} house={house} /> : <Desktop d={d} sw={sw} house={house} />;
+  if (route.name === 'day' && phone) return <DayPage d={d} sw={sw} house={house} />;
+  return phone ? <Phone d={d} sw={sw} house={house} /> : <Desktop d={d} sw={sw} house={house} focusDay={route.name === 'day'} />;
 }

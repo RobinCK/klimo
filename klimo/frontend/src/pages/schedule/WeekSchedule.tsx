@@ -19,6 +19,7 @@ import {
   Section,
   SegmentedControl,
   Stack,
+  Text,
   TimeStepper,
   ToggleChip,
   WeekTimeline,
@@ -59,6 +60,7 @@ export function WeekSchedule({ c, editor, edit, today, nowMinute, onScope }: Pro
     schedule?.scope === 'room'
       ? t('The schedule of {room} replaces the house schedule for this room only.', { room: scopeName(schedule, c.rooms, c.ctx) })
       : t('Applies to every room without its own schedule. Click a block to edit it.');
+  const how = c.canEdit ? t('Drag the line between two blocks to move it, or drag along a day to add a block.') : null;
 
   return (
     <Section
@@ -79,6 +81,7 @@ export function WeekSchedule({ c, editor, edit, today, nowMinute, onScope }: Pro
             <LegendSwatch key={p.id} color={p.color} label={p.name} />
           ))}
         </Row>
+        {how ? <Text variant="caption">{how}</Text> : null}
         {schedule ? (
           <ScrollX minWidth={760} ariaLabel={t('Weekly schedule')}>
             <WeekTimeline
@@ -86,6 +89,10 @@ export function WeekSchedule({ c, editor, edit, today, nowMinute, onScope }: Pro
               now={nowMinute}
               axis={['00', '03', '06', '09', '12', '15', '18', '21', '24']}
               onSelect={(d, i) => edit.select(d as Dow, i)}
+              onBoundary={c.canEdit ? (d, i, minute) => edit.moveBoundary(d as Dow, i, minute) : undefined}
+              onDraw={c.canEdit ? (d, start, end) => edit.draw(d as Dow, start, end) : undefined}
+              linked={(d) => edit.followers(d as Dow)}
+              formatMinute={minuteToHhmm}
               days={DOWS.map((d) => ({
                 label: weekdayShort(d),
                 today: d === today,

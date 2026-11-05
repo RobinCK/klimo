@@ -1,6 +1,10 @@
-import type { CSSProperties } from 'react';
+import { useRef, useState, type CSSProperties, type PointerEvent } from 'react';
 import type { Tone } from '../../types';
 import { toneVar } from '../../tokens/vars';
+import { Icon } from '../../basic/Icon';
+import { useUiNav } from '../../UiNavContext';
+import { useUiText } from '../../UiTextContext';
+import { useRouteClick } from '../../shell/Link';
 import { hhmm, pct, spanFill } from '../internal/util';
 import { HOUR_AXIS_3H } from './DayChart';
 import s from './charts.module.css';
@@ -26,6 +30,17 @@ export interface TimelineTrack {
   key: string;
   label: string;
   spans: readonly TimelineSpan[];
+  /** A short figure beside the label («1 год 20 хв»). */
+  sub?: string;
+  /** The label leads there (a room's page). */
+  to?: string;
+  /** A summary row drawn a little heavier («the rooms asked for heat»). */
+  strong?: boolean;
+  /** One of the rows under a summary row, set in. */
+  indent?: boolean;
+  /** The label opens and closes the rows under it (with `open` for their state). */
+  onToggle?: () => void;
+  open?: boolean;
 }
 
 export interface Timeline24hProps {
@@ -39,6 +54,13 @@ export interface Timeline24hProps {
   axis?: string[];
   labelWidth?: number;
   ariaLabel?: string;
+  /** stacked: each label above its bar across the full width (a phone, no sideways scrolling). */
+  layout?: 'side' | 'stacked';
+  /**
+   * Clock time of a moment («14:35»): with it, a pointer (a finger) over the bars shows a line through every
+   * row at that moment, marks the rows that ran then and lists them under the axis.
+   */
+  formatTime?: (t: number) => string;
 }
 
 interface Placed {
@@ -89,24 +111,118 @@ function place(span: TimelineSpan, i: number, dayStart: number, dayEnd: number, 
   return out;
 }
 
-/** Several 24-hour tracks (profile, sources, pumps) on one hour axis with a now line. */
-export function Timeline24h({ tracks, dayStart, dayEnd, now, minWidth = 640, axis = HOUR_AXIS_3H, labelWidth = 124, ariaLabel }: Timeline24hProps) {
+/** The span of a track that holds `t`, if any (an open span runs up to now). */
+function spanAt(track: TimelineTrack, t: number, now: number): TimelineSpan | null {
+  return track.spans.find((sp) => sp.start <= t && t < (sp.end ?? now)) ?? null;
+}
+
+/** A row's label: a link when it leads somewhere, a switch when it opens the rows under it, with its figure beside it. */
+function TrackLabel({ track, on }: { track: TimelineTrack; on: boolean }) {
+  const nav = useUiNav();
+  const onClick = useRouteClick(track.to ?? '');
+  const name = track.onToggle ? (
+    <button type="button" className={s.trackToggle} aria-expanded={track.open ?? false} onClick={track.onToggle}>
+      <Icon name="chevronDown" size={14} />
+      <span className={s.trackName}>{track.label}</span>
+    </button>
+  ) : track.to ? (
+    <a className={s.trackLink} href={nav.href(track.to)} onClick={onClick}>
+      {track.label}
+    </a>
+  ) : (
+    <span className={s.trackName}>{track.label}</span>
+  );
+  return (
+    <span className={s.trackLabel} title={track.label} data-on={on ? '' : undefined}>
+      {name}
+      {track.sub ? <span className={s.trackSub}>{track.sub}</span> : null}
+    </span>
+  );
+}
+
+/** Several 24-hour tracks (profile, sources, pumps, rooms) on one hour axis with a now line. */
+export function Timeline24h({
+  tracks,
+  dayStart,
+  dayEnd,
+  now,
+  minWidth = 640,
+  axis = HOUR_AXIS_3H,
+  labelWidth = 124,
+  ariaLabel,
+  layout = 'side',
+  formatTime,
+}: Timeline24hProps) {
+  const ut = useUiText();
   const end = dayEnd ?? dayStart + DAY_MS;
   const nowIn = now >= dayStart && now <= end;
   const nowLeft = ((now - dayStart) / (end - dayStart)) * 100;
-  const style = { '--min-width': `${minWidth}px`, '--label-w': `${labelWidth}px` } as CSSProperties;
+  const stacked = layout === 'stacked';
+  const style = { '--min-width': stacked ? '0px' : `${minWidth}px`, '--label-w': `${labelWidth}px` } as CSSProperties;
+  // the moment under the pointer; the bars of every row share one time scale, read from the first bar
+  const list = useRef<HTMLUListElement>(null);
+  const [hoverT, setHoverT] = useState<number | null>(null);
+  const lastT = Math.min(end, now);
+  const onPointer = (e: PointerEvent<HTMLUListElement>) => {
+    const bar = list.current?.querySelector<HTMLElement>('[data-bar]');
+    if (!formatTime || !bar) return;
+    // a tap on a row's link or switch is not a look at the bars
+    if (e.target instanceof Element && e.target.closest('a, button')) return;
+    const r = bar.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width;
+    const t = dayStart + x * (end - dayStart);
+    setHoverT(x < 0 || x > 1 || t > lastT ? null : t);
+  };
+  const crossLeft = hoverT != null ? ((hoverT - dayStart) / (end - dayStart)) * 100 : null;
+  const active = hoverT != null ? tracks.map((tr) => ({ tr, sp: spanAt(tr, hoverT, now) })).filter((x) => x.sp) : [];
+  // what ran at the moment under the pointer: the time, then every row that held it
+  const readout = formatTime ? (
+    <div className={s.trackReadout} aria-live="polite">
+      {hoverT != null ? (
+        <>
+          <span className={s.readoutTime}>{formatTime(hoverT)}</span>
+          {active.length ? (
+            active.map(({ tr, sp }) => {
+              const fill = sp?.color ?? (sp?.tone ? spanFill(sp.tone).fill : 'var(--ui-text-2)');
+              return (
+                <span key={tr.key} className={s.readoutItem}>
+                  <span className={s.readoutDot} style={{ background: fill }} aria-hidden="true" />
+                  {sp?.label ? `${tr.label}: ${sp.label}` : tr.label}
+                </span>
+              );
+            })
+          ) : (
+            <span className={s.readoutItem}>{ut('nothing ran')}</span>
+          )}
+        </>
+      ) : (
+        <span className={s.readoutHint}>{ut('Point at the bars to see what ran at that moment')}</span>
+      )}
+    </div>
+  ) : null;
   return (
-    <div className={s.timeline} style={style} role="group" aria-label={ariaLabel}>
-      <ul className={s.tracks}>
+    <div className={s.timeline} data-layout={layout} style={style} role="group" aria-label={ariaLabel}>
+      {/* a phone's rows run past the screen: the moment it picked stays in sight above them */}
+      {stacked ? readout : null}
+      <ul
+        ref={list}
+        className={s.tracks}
+        data-cross={formatTime ? '' : undefined}
+        onPointerMove={onPointer}
+        onPointerDown={onPointer}
+        // a lifted finger leaves too: the moment it picked stays on screen to be read
+        onPointerLeave={(e) => {
+          if (e.pointerType === 'mouse') setHoverT(null);
+        }}
+      >
         {tracks.map((track) => {
           const placed = track.spans.flatMap((sp, i) => place(sp, i, dayStart, end, now));
           const said = placed.filter((p) => p.describe).map((p) => p.describe);
+          const on = hoverT != null && spanAt(track, hoverT, now) != null;
           return (
-            <li key={track.key} className={s.trackRow}>
-              <span className={s.trackLabel} title={track.label}>
-                {track.label}
-              </span>
-              <span className={s.track} role="img" aria-label={said.length ? `${track.label}: ${said.join(', ')}` : track.label}>
+            <li key={track.key} className={s.trackRow} data-strong={track.strong ? '' : undefined} data-indent={track.indent ? '' : undefined}>
+              <TrackLabel track={track} on={on} />
+              <span data-bar="" className={s.track} role="img" aria-label={said.length ? `${track.label}: ${said.join(', ')}` : track.label}>
                 {placed.map((p) => (
                   <span
                     key={p.key}
@@ -118,6 +234,7 @@ export function Timeline24h({ tracks, dayStart, dayEnd, now, minWidth = 640, axi
                   </span>
                 ))}
                 {nowIn ? <span className={s.trackNow} style={{ left: pct(nowLeft) }} /> : null}
+                {crossLeft != null ? <span className={s.trackCross} style={{ left: pct(crossLeft) }} aria-hidden="true" /> : null}
               </span>
             </li>
           );
@@ -128,6 +245,7 @@ export function Timeline24h({ tracks, dayStart, dayEnd, now, minWidth = 640, axi
           <span key={`${a}-${i}`}>{a}</span>
         ))}
       </div>
+      {stacked ? null : readout}
     </div>
   );
 }

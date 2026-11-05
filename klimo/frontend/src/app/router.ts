@@ -9,6 +9,7 @@ import { DEEPLINK_KEY, getPref, readRaw, setPref, writeRaw } from './prefs';
 
 export type RouteName =
   | 'overview'
+  | 'day'
   | 'rooms'
   | 'wizard'
   | 'room'
@@ -42,6 +43,7 @@ export interface Route {
 
 const PATTERNS: [RouteName, RegExp, string[]][] = [
   ['overview', /^\/$/, []],
+  ['day', /^\/day$/, []],
   ['rooms', /^\/rooms$/, []],
   ['wizard', /^\/rooms\/new$/, []],
   ['roomSettings', /^\/rooms\/([^/]+)\/settings$/, ['id']],
@@ -67,6 +69,8 @@ const PATTERNS: [RouteName, RegExp, string[]][] = [
 /** Path builders, so links are typed in one place. */
 export const paths = {
   overview: () => '/',
+  /** The house's day by the hour (a phone's own page). */
+  day: () => '/day',
   rooms: () => '/rooms',
   wizard: () => '/rooms/new',
   room: (id: string) => `/rooms/${encodeURIComponent(id)}`,

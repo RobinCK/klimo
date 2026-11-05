@@ -63,7 +63,7 @@
  * `klimo-room-sheet` and `klimo-open`).
  */
 
-const VERSION = '0.2.23';
+const VERSION = '0.2.24';
 
 /* ─────────────────────────────── 1 Tokens ──────────────────────────────────────────────────────
  * The same values as the panel's design tokens. `npm run tokens:card` in klimo/frontend copies
@@ -454,6 +454,24 @@ const STRINGS = {
     s_stale: 'давно не звітує',
     s_unavailable: 'недоступний',
     showHistory: 'Історія: {name}',
+    dayTitle: 'День по годинах',
+    dayToday: 'Сьогодні',
+    dayYesterday: 'Учора',
+    dayPrev: 'Попередній день',
+    dayNext: 'Наступний день',
+    daySources: 'Джерела',
+    dayPumps: 'Насоси',
+    dayRooms: 'Кімнати',
+    roomsHeat: 'Кімнати просили тепла',
+    roomsCool: 'Кімнати просили холоду',
+    roomsQuiet: 'Не просили: {rooms}',
+    pumpOf: 'Насос · {n}',
+    dayHint: 'Торкніться смуг, щоб побачити, що працювало в ту мить',
+    dayNothing: 'нічого не працювало',
+    dayLoading: 'Читаю історію Home Assistant…',
+    dayFailed: 'Не вдалося прочитати історію Home Assistant: {e}',
+    dayEmpty: 'Home Assistant не має історії за цей день',
+    dayOpen: 'Показати день по годинах: {name}',
 
     min: '{n} хв',
     hm: '{h} год {m} хв',
@@ -692,6 +710,24 @@ const STRINGS = {
     s_stale: 'silent for a while',
     s_unavailable: 'unavailable',
     showHistory: 'History: {name}',
+    dayTitle: 'Day by the hour',
+    dayToday: 'Today',
+    dayYesterday: 'Yesterday',
+    dayPrev: 'Previous day',
+    dayNext: 'Next day',
+    daySources: 'Sources',
+    dayPumps: 'Pumps',
+    dayRooms: 'Rooms',
+    roomsHeat: 'Rooms asked for heat',
+    roomsCool: 'Rooms asked for cooling',
+    roomsQuiet: 'Did not ask: {rooms}',
+    pumpOf: 'Pump · {n}',
+    dayHint: 'Touch the bars to see what ran at that moment',
+    dayNothing: 'nothing ran',
+    dayLoading: 'Reading Home Assistant’s history…',
+    dayFailed: 'Could not read Home Assistant’s history: {e}',
+    dayEmpty: 'Home Assistant has no history for this day',
+    dayOpen: 'Show the day by the hour: {name}',
     on_demand: 'yes',
     off_demand: 'no',
     unavailable: 'unavailable',
@@ -3730,6 +3766,9 @@ const HOUSE_CSS = `
 .tile .tl { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--k-t3); min-width: 0; }
 .tile .tv { font-size: 16px; font-weight: 600; }
 .tile .ts { font-size: 12px; color: var(--k-t3); }
+button.tile { border: 0; text-align: left; cursor: pointer; }
+button.tile .tgo { margin-left: auto; color: var(--k-t3); }
+@media (hover: hover) { button.tile:hover { background: var(--k-s3); } }
 .dotc { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .pbox { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--k-bd); }
 .prow { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -3834,11 +3873,14 @@ class KlimoHouseCard extends KlimoBase {
         let sub = fill(t.sub, t.at, ctx.lang, ctx.tz);
         if (!sub && t.key === 'source') sub = fill(house.sub, house.at, ctx.lang, ctx.tz);
         const wide = t.wide || (odd && i === 0);
-        return (
-          `<div class="tile${wide ? ' wide' : ''}">` +
-          `<span class="tl"><span class="dotc" style="background:${toneDot(t.tone)}"></span><span class="ell">${esc(t.label)}</span></span>` +
-          `<span class="tv ell">${esc(fill(t.value, t.at, ctx.lang, ctx.tz))}</span>${sub ? `<span class="ts ell">${esc(sub)}</span>` : ''}</div>`
-        );
+        // the source and the pumps open the day: when they ran and which rooms asked for heat
+        const day = t.key === 'source' || t.key === 'pumps';
+        const inner =
+          `<span class="tl"><span class="dotc" style="background:${toneDot(t.tone)}"></span><span class="ell">${esc(t.label)}</span>${day ? ic('chevronRight', 14, 'tgo') : ''}</span>` +
+          `<span class="tv ell">${esc(fill(t.value, t.at, ctx.lang, ctx.tz))}</span>${sub ? `<span class="ts ell">${esc(sub)}</span>` : ''}`;
+        return day
+          ? `<button type="button" class="tile${wide ? ' wide' : ''}" data-act="day" aria-label="${esc(tr(ctx.lang, 'dayOpen', { name: t.label }))}">${inner}</button>`
+          : `<div class="tile${wide ? ' wide' : ''}">${inner}</div>`;
       })
       .join('');
     return `<div class="tiles">${html}</div>`;
@@ -3889,6 +3931,7 @@ class KlimoHouseCard extends KlimoBase {
     const ctx = this._ctx();
     const h = ctx.hubAttrs;
     if (act === 'attention') openKlimo(h, '#/');
+    else if (act === 'day') this._openDay(ctx);
     else if (act === 'change') {
       if (this._config.profile_change === 'navigate') openKlimo(h, '#/schedule');
       else this._openSheet(ctx);
@@ -3911,6 +3954,15 @@ class KlimoHouseCard extends KlimoBase {
     sheet.setConfig({ theme: this._config.theme, language: this._config.language, hub_entity: this._config.hub_entity, durations: this._config.profile_durations });
     sheet.opener = this;
     sheet.onApply = (r) => this._watchApply(r);
+    sheet.hass = ctx.hass;
+    document.body.appendChild(sheet);
+  }
+
+  /** The day by the hour, read from Home Assistant's history of Klimo's entities. */
+  _openDay(ctx) {
+    const sheet = document.createElement('klimo-day-sheet');
+    sheet.setConfig({ theme: this._config.theme, language: this._config.language, hub_entity: this._config.hub_entity });
+    sheet.opener = this;
     sheet.hass = ctx.hass;
     document.body.appendChild(sheet);
   }
@@ -4572,6 +4624,377 @@ class KlimoProfileSheet extends KlimoSheet {
   }
 }
 
+/* ─────────────────────────────── 12a Day sheet ─────────────────────────────────────────────── */
+
+const DAY_MS = 24 * 3600 * 1000;
+const DAY_BACK_MAX = 60;
+const DAY_AXIS = ['00', '03', '06', '09', '12', '15', '18', '21', '24'];
+
+/** The object id Klimo gives its MQTT entities: `binary_sensor.klimo_source_<id>`. */
+const objectIdOf = (id) => String(id).toLowerCase().replace(/[^a-z0-9_]/g, '_');
+
+/** Milliseconds since local midnight in the house's time zone. */
+function msOfDay(ts, tz) {
+  const p = formatter('en', tz, { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(ts);
+  const get = (type) => Number((p.find((x) => x.type === type) || {}).value || 0);
+  return ((get('hour') * 60 + get('minute')) * 60 + get('second')) * 1000 + (((ts % 1000) + 1000) % 1000);
+}
+
+/** Local midnight of the day that holds `ts`; a day with a clock change is 23 or 25 hours long. */
+function dayStartIn(ts, tz) {
+  let start = ts - msOfDay(ts, tz);
+  const drift = msOfDay(start, tz);
+  if (drift) start += drift > DAY_MS / 2 ? DAY_MS - drift : -drift;
+  return start;
+}
+
+/** When a row of Home Assistant's history took its state: the compressed `lc` / `lu` (seconds) or the full form. */
+function histAt(r) {
+  if (isNum(r.lc)) return r.lc * 1000;
+  if (isNum(r.lu)) return r.lu * 1000;
+  const ms = Date.parse(r.last_changed || r.last_updated || '');
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** Overlapping stretches joined into one: two rooms asking at once count once. */
+function joinStretches(list) {
+  const out = [];
+  for (const [a, b] of [...list].sort((x, y) => x[0] - y[0])) {
+    const last = out[out.length - 1];
+    if (last && a <= last[1]) last[1] = Math.max(last[1], b);
+    else out.push([a, b]);
+  }
+  return out;
+}
+
+/** The stretches an on/off entity was on between `from` and `end`; today the live state carries on to now. */
+function onStretches(rows, live, from, end) {
+  const pts = [];
+  for (const r of rows || []) {
+    const at = histAt(r);
+    if (at !== null) pts.push({ on: (r.s !== undefined ? r.s : r.state) === 'on', at });
+  }
+  pts.sort((a, b) => a.at - b.at);
+  if (live) {
+    const at = Date.parse(live.last_changed || '');
+    const last = pts[pts.length - 1];
+    if (Number.isFinite(at) && at < end && (!last || at > last.at)) pts.push({ on: live.state === 'on', at });
+  }
+  const out = [];
+  for (let i = 0; i < pts.length; i++) {
+    if (!pts[i].on) continue;
+    const a = Math.max(from, pts[i].at);
+    const b = Math.min(end, i + 1 < pts.length ? pts[i + 1].at : end);
+    if (b > a) out.push([a, b]);
+  }
+  return joinStretches(out);
+}
+
+const stretchMin = (list) => list.reduce((sum, [a, b]) => sum + (b - a), 0) / 60000;
+
+const DAY_SHEET_CSS = `${SHEET_CSS}
+.sheet { gap: 12px; }
+.dnav { display: flex; align-items: center; gap: 6px; }
+.dnav .lbl { flex: 1; min-width: 0; text-align: center; font-weight: 600; }
+.dnav .ib { flex: none; width: 40px; height: 40px; padding: 0; border-radius: 12px; border: 1px solid var(--k-bd); background: transparent;
+  display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.dnav .ib[disabled] { opacity: .35; cursor: default; }
+.dnav .tod { flex: none; height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--k-bd2); background: transparent;
+  font-size: 13px; font-weight: 500; cursor: pointer; }
+.dbody { display: flex; flex-direction: column; gap: 10px; }
+.dhead { position: sticky; top: -18px; z-index: 2; display: flex; flex-direction: column; gap: 6px; margin: 0 -18px; padding: 8px 18px;
+  background: var(--k-s1); border-bottom: 1px solid var(--k-div); }
+.ro { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; min-height: 20px; font-size: 12px; color: var(--k-t2); }
+.ro .rt { color: var(--k-t1); font-weight: 600; }
+.ro .ri { display: inline-flex; align-items: center; gap: 5px; }
+.ro .rd { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.ro .rh { color: var(--k-t3); }
+.axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--k-t3); }
+.dl { display: flex; flex-direction: column; gap: 10px; touch-action: pan-y; cursor: crosshair; }
+.dsec { font-size: 12px; font-weight: 600; color: var(--k-t3); margin-top: 4px; }
+.drow { display: flex; flex-direction: column; gap: 4px; }
+.drow .dh { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--k-t2); }
+.drow .dn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drow .dm { flex: none; font-size: 12px; color: var(--k-t3); }
+.drow[data-strong] .dn, .drow[data-on] .dn { color: var(--k-t1); font-weight: 600; }
+.bar { position: relative; height: 14px; border-radius: 5px; background: var(--k-s2); overflow: hidden; }
+.drow[data-strong] .bar { height: 20px; }
+.bar .sg { position: absolute; top: 0; bottom: 0; }
+.bar .nw { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--k-t1); }
+.bar .cx { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--k-t1); opacity: .75; pointer-events: none; }
+.quiet { font-size: 12px; color: var(--k-t3); }
+.dmsg { font-size: 13px; color: var(--k-t2); padding: 4px 0; }
+.nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 44px; padding: 0 12px;
+  border-radius: 12px; border: 1px solid var(--k-bd2); background: transparent; font-weight: 600; text-align: left; cursor: pointer; }
+@media (hover: hover) { .nav:hover, .dnav .ib:not([disabled]):hover, .dnav .tod:hover { background: var(--k-s2); } }
+`;
+
+/**
+ * «День по годинах» from the house card: when each source and pump ran and when the rooms asked for
+ * heat (all of them, then each one), read from Home Assistant's history of Klimo's own entities.
+ * A finger (a pointer) on the bars says what ran at that moment; the arrows step through the days before.
+ */
+class KlimoDaySheet extends KlimoSheet {
+  static get css() {
+    return DAY_SHEET_CSS;
+  }
+
+  constructor() {
+    super();
+    this._back = 0;
+    this._hist = null;
+    this._at = null;
+    this._model = null;
+  }
+
+  _normalize(config) {
+    return commonOptions(config);
+  }
+
+  /** Klimo's on/off entities of the day: the sources, the pumps and every room's demand, in the house's order. */
+  _plan(ctx) {
+    const h = ctx.hubAttrs || {};
+    const has = (id) => !!ctx.hass.states[id];
+    const cooling = !!(h.season && h.season.cur === 'cooling');
+    const sources = (h.sources || [])
+      .map((x) => ({ key: `s:${x.id}`, e: `binary_sensor.klimo_source_${objectIdOf(x.id)}`, name: x.n, tone: cooling ? 'cool' : 'heat' }))
+      .filter((x) => has(x.e));
+    const pumps = (h.circuits || [])
+      .map((x) => ({ key: `p:${x.id}`, e: `binary_sensor.klimo_pump_${objectIdOf(x.id)}`, name: x.n, say: tr(ctx.lang, 'pumpOf', { n: x.n }), tone: 'hold' }))
+      .filter((x) => has(x.e));
+    const rooms = [...(h.rooms || [])]
+      .sort((a, b) => (a.ord || 0) - (b.ord || 0))
+      .map((r) => {
+        const heat = `binary_sensor.klimo_${objectIdOf(r.s)}_heat_demand`;
+        const cool = `binary_sensor.klimo_${objectIdOf(r.s)}_cool_demand`;
+        return { key: `r:${r.id}`, name: r.n, heat: has(heat) ? heat : null, cool: has(cool) ? cool : null };
+      })
+      .filter((r) => r.heat || r.cool);
+    const ids = [...sources.map((x) => x.e), ...pumps.map((x) => x.e), ...rooms.flatMap((r) => [r.heat, r.cool].filter(Boolean))];
+    return { sources, pumps, rooms, ids };
+  }
+
+  _deps(ctx) {
+    this._p = this._plan(ctx);
+    // today's bars run on with the live states
+    return [ctx.hub && ctx.hub.st, this._back, ...(this._back ? [] : this._p.ids.map((id) => ctx.hass.states[id]))];
+  }
+
+  _range(ctx) {
+    let start = dayStartIn(Date.now(), ctx.tz);
+    for (let i = 0; i < this._back; i++) start = dayStartIn(start - 1, ctx.tz);
+    return { start, end: dayStartIn(start + DAY_MS + 3600 * 1000, ctx.tz) };
+  }
+
+  /** Home Assistant's history of the day, asked once per day and set of entities. */
+  _load(ctx, start, end) {
+    const ids = this._p.ids;
+    const key = `${start}|${ids.join(',')}`;
+    if (this._hist && this._hist.key === key) return this._hist;
+    const hist = { key, rows: null, error: null };
+    this._hist = hist;
+    if (!ids.length) {
+      hist.rows = {};
+      return hist;
+    }
+    if (typeof ctx.hass.callWS !== 'function') {
+      hist.error = 'callWS';
+      return hist;
+    }
+    const until = Math.min(end, Date.now());
+    ctx.hass
+      .callWS({
+        type: 'history/history_during_period',
+        start_time: new Date(start).toISOString(),
+        end_time: new Date(until).toISOString(),
+        entity_ids: ids,
+        minimal_response: true,
+        no_attributes: true,
+        significant_changes_only: false,
+      })
+      .then((res) => {
+        hist.rows = res && typeof res === 'object' ? res : {};
+      })
+      .catch((e) => {
+        hist.error = (e && (e.message || e.code)) || String(e);
+      })
+      .finally(() => {
+        if (this._hist === hist && this.isConnected) this._update(true);
+      });
+    return hist;
+  }
+
+  _dayLabel(ctx, start) {
+    if (this._back === 0) return tr(ctx.lang, 'dayToday');
+    if (this._back === 1) return tr(ctx.lang, 'dayYesterday');
+    return formatter(ctx.lang, ctx.tz, { weekday: 'short', day: 'numeric', month: 'short' }).format(start + 12 * 3600 * 1000);
+  }
+
+  _render(ctx) {
+    this._c = ctx;
+    const lang = ctx.lang;
+    if (!this._parts) {
+      this._card.innerHTML = '<div class="dp-head"></div><div class="dnav"></div><div class="dbody"></div><div class="dp-foot"></div>';
+      this._parts = {
+        head: this._card.querySelector('.dp-head'),
+        nav: this._card.querySelector('.dnav'),
+        body: this._card.querySelector('.dbody'),
+        foot: this._card.querySelector('.dp-foot'),
+      };
+      this._card.setAttribute('aria-labelledby', 'ttl');
+      const body = this._parts.body;
+      const point = (e) => this._point(e);
+      body.addEventListener('pointerdown', point);
+      body.addEventListener('pointermove', point);
+      // a lifted finger leaves too: the moment it picked stays on screen to be read
+      body.addEventListener('pointerleave', (e) => {
+        if (e.pointerType === 'mouse') this._setAt(null);
+      });
+    }
+    const sk = this._parts;
+    setHtml(sk.head, this._head(tr(lang, 'dayTitle')));
+    if (!ctx.hubAttrs) {
+      setHtml(sk.nav, '');
+      setHtml(sk.body, this._missingHub(ctx));
+      setHtml(sk.foot, '');
+      this._model = null;
+      return;
+    }
+    const { start, end } = this._range(ctx);
+    const now = Date.now();
+    const stop = Math.min(end, now);
+    setHtml(
+      sk.nav,
+      `<button type="button" class="ib" data-act="prev" aria-label="${esc(tr(lang, 'dayPrev'))}"${this._back >= DAY_BACK_MAX ? ' disabled' : ''}>${ic('chevronLeft', 18)}</button>` +
+        `<span class="lbl ell" aria-live="polite">${esc(this._dayLabel(ctx, start))}</span>` +
+        `<button type="button" class="ib" data-act="next" aria-label="${esc(tr(lang, 'dayNext'))}"${this._back === 0 ? ' disabled' : ''}>${ic('chevronRight', 18)}</button>` +
+        (this._back ? `<button type="button" class="tod" data-act="today">${esc(tr(lang, 'dayToday'))}</button>` : ''),
+    );
+    setHtml(sk.foot, `<button type="button" class="nav" data-act="open"><span class="ell">${esc(tr(lang, 'openKlimo'))}</span>${ic('external', 18)}</button>`);
+    const hist = this._load(ctx, start, end);
+    if (hist.error || !hist.rows) {
+      this._model = null;
+      setHtml(sk.body, `<div class="dmsg">${esc(hist.error ? tr(lang, 'dayFailed', { e: hist.error }) : tr(lang, 'dayLoading'))}</div>`);
+      return;
+    }
+    const p = this._p;
+    const live = this._back === 0 ? ctx.hass.states : null;
+    const on = (e) => onStretches(hist.rows[e], live ? live[e] : null, start, stop);
+    const plain = (x) => {
+      const list = on(x.e);
+      return { key: x.key, name: x.name, say: x.say || x.name, segs: list.map(([a, b]) => ({ a, b, tone: x.tone })), min: stretchMin(list) };
+    };
+    const sources = p.sources.map(plain);
+    const pumps = p.pumps.map(plain);
+    const rooms = p.rooms.map((r) => {
+      const heat = r.heat ? on(r.heat) : [];
+      const cool = r.cool ? on(r.cool) : [];
+      const segs = [...heat.map(([a, b]) => ({ a, b, tone: 'heat' })), ...cool.map(([a, b]) => ({ a, b, tone: 'cool' }))];
+      return { key: r.key, name: r.name, say: r.name, heat, cool, segs, min: stretchMin(joinStretches([...heat, ...cool])) };
+    });
+    const asked = rooms.filter((r) => r.segs.length);
+    const unions = [];
+    const heatAll = joinStretches(asked.flatMap((r) => r.heat));
+    const coolAll = joinStretches(asked.flatMap((r) => r.cool));
+    const cooling = !!(ctx.hubAttrs.season && ctx.hubAttrs.season.cur === 'cooling');
+    if (heatAll.length || (!coolAll.length && !cooling)) unions.push({ key: 'u:heat', name: tr(lang, 'roomsHeat'), segs: heatAll.map(([a, b]) => ({ a, b, tone: 'heat' })), min: stretchMin(heatAll), strong: true });
+    if (coolAll.length || (!heatAll.length && cooling)) unions.push({ key: 'u:cool', name: tr(lang, 'roomsCool'), segs: coolAll.map(([a, b]) => ({ a, b, tone: 'cool' })), min: stretchMin(coolAll), strong: true });
+    for (const u of unions) u.say = u.name;
+    const all = [...sources, ...pumps, ...unions, ...asked];
+    this._model = { start, end, stop, lang, tz: ctx.tz, byKey: new Map(all.map((r) => [r.key, r])) };
+    const span = end - start;
+    const pct = (t) => `${(((t - start) / span) * 100).toFixed(3)}%`;
+    const nowIn = this._back === 0 && now >= start && now <= end;
+    const rowHtml = (r) => {
+      const segs = r.segs
+        .map((g) => `<span class="sg" style="left:${pct(g.a)};width:${(((g.b - g.a) / span) * 100).toFixed(3)}%;background:var(--k-${g.tone}-line)"></span>`)
+        .join('');
+      return (
+        `<div class="drow" data-k="${esc(r.key)}"${r.strong ? ' data-strong=""' : ''}>` +
+        `<span class="dh"><span class="dn">${esc(r.name)}</span><span class="dm">${r.segs.length ? esc(fmtDuration(r.min, lang)) : '—'}</span></span>` +
+        `<span class="bar">${segs}${nowIn ? `<span class="nw" style="left:${pct(now)}"></span>` : ''}<span class="cx" hidden></span></span></div>`
+      );
+    };
+    const section = (key, list) => (list.length ? `<div class="dsec">${esc(tr(lang, key))}</div>${list.map(rowHtml).join('')}` : '');
+    const known = Object.keys(hist.rows).length > 0;
+    const quiet = rooms.filter((r) => !r.segs.length).map((r) => r.name);
+    setHtml(
+      sk.body,
+      `<div class="dhead"><div class="ro" aria-live="polite"></div><div class="axis" aria-hidden="true">${DAY_AXIS.map((a) => `<span>${a}</span>`).join('')}</div></div>` +
+        (known || this._back === 0
+          ? `<div class="dl">${section('daySources', sources)}${section('dayPumps', pumps)}${section('dayRooms', [...unions, ...asked])}</div>` +
+            (quiet.length && asked.length ? `<div class="quiet">${esc(tr(lang, 'roomsQuiet', { rooms: quiet.join(', ') }))}</div>` : '')
+          : `<div class="dmsg">${esc(tr(lang, 'dayEmpty'))}</div>`),
+    );
+    this._paintCross();
+  }
+
+  /** The moment under a pointer or a finger, read off the first bar (all the bars share one scale). */
+  _point(e) {
+    const m = this._model;
+    const target = e.target;
+    if (!m || !target || !target.closest || !target.closest('.dl') || target.closest('button, a')) return;
+    const bar = this._parts.body.querySelector('.dl .bar');
+    if (!bar) return;
+    const r = bar.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width;
+    const t = m.start + x * (m.end - m.start);
+    this._setAt(x < 0 || x > 1 || t > m.stop ? null : t);
+  }
+
+  _setAt(t) {
+    if (t === this._at) return;
+    this._at = t;
+    this._paintCross();
+  }
+
+  /** The line through every bar at that moment, the rows that ran then in bold and listed above the bars. */
+  _paintCross() {
+    const m = this._model;
+    const body = this._parts && this._parts.body;
+    if (!m || !body) return;
+    const at = this._at !== null && this._at >= m.start && this._at <= m.stop ? this._at : null;
+    const left = at === null ? null : `${(((at - m.start) / (m.end - m.start)) * 100).toFixed(3)}%`;
+    for (const cx of body.querySelectorAll('.cx')) {
+      cx.hidden = left === null;
+      if (left !== null) cx.style.left = left;
+    }
+    const active = [];
+    for (const el of body.querySelectorAll('.drow')) {
+      const row = m.byKey.get(el.dataset.k);
+      const seg = at === null || !row ? null : row.segs.find((g) => g.a <= at && at < g.b);
+      el.toggleAttribute('data-on', !!seg);
+      if (seg) active.push({ row, seg });
+    }
+    const ro = body.querySelector('.ro');
+    if (!ro) return;
+    if (at === null) {
+      setHtml(ro, `<span class="rh">${esc(tr(m.lang, 'dayHint'))}</span>`);
+      return;
+    }
+    const time = formatter(m.lang, m.tz, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(at);
+    const items = active.length
+      ? active.map(({ row, seg }) => `<span class="ri"><span class="rd" style="background:var(--k-${seg.tone}-line)"></span>${esc(row.say || row.name)}</span>`).join('')
+      : `<span class="ri">${esc(tr(m.lang, 'dayNothing'))}</span>`;
+    setHtml(ro, `<span class="rt">${esc(time)}</span>${items}`);
+  }
+
+  _act(act) {
+    if (act === 'prev' || act === 'next' || act === 'today') {
+      this._back = act === 'today' ? 0 : Math.max(0, Math.min(DAY_BACK_MAX, this._back + (act === 'prev' ? 1 : -1)));
+      this._at = null;
+      this._update(true);
+      return;
+    }
+    if (act === 'open') {
+      openKlimo(this._c && this._c.hubAttrs, '#/day');
+      this.close();
+      return;
+    }
+    super._act(act);
+  }
+}
+
 /* ─────────────────────────────── 13 Editors ────────────────────────────────────────────────── */
 
 const EDITOR_CSS = `
@@ -4801,6 +5224,7 @@ if (!customElements.get('klimo-house-card')) customElements.define('klimo-house-
 if (!customElements.get('klimo-system-card')) customElements.define('klimo-system-card', KlimoSystemCard);
 if (!customElements.get('klimo-room-sheet')) customElements.define('klimo-room-sheet', KlimoRoomSheet);
 if (!customElements.get('klimo-profile-sheet')) customElements.define('klimo-profile-sheet', KlimoProfileSheet);
+if (!customElements.get('klimo-day-sheet')) customElements.define('klimo-day-sheet', KlimoDaySheet);
 if (!customElements.get('klimo-room-card-editor')) customElements.define('klimo-room-card-editor', KlimoRoomCardEditor);
 if (!customElements.get('klimo-rooms-card-editor')) customElements.define('klimo-rooms-card-editor', KlimoRoomsCardEditor);
 if (!customElements.get('klimo-thermostat-card-editor')) customElements.define('klimo-thermostat-card-editor', KlimoThermostatCardEditor);

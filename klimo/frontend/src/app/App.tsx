@@ -31,6 +31,7 @@ type PageKey = keyof typeof Pages;
 function pageFor(name: RouteName, phone: boolean): PageKey {
   switch (name) {
     case 'overview':
+    case 'day':
     case 'notFound':
       return 'overview';
     case 'rooms':

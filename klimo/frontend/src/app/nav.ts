@@ -7,6 +7,7 @@ export type AreaKey = 'overview' | 'rooms' | 'schedule' | 'system' | 'notificati
 
 const AREA: Record<RouteName, AreaKey> = {
   overview: 'overview',
+  day: 'overview',
   rooms: 'rooms',
   wizard: 'rooms',
   room: 'rooms',

@@ -270,6 +270,11 @@ control method is chosen per room:
   (Guests 60 min before "Guests" on the family calendar).
 - **Vacation**: until a date, returning to normal 3 hours early so the house is warm on arrival.
 - **Exceptions** in the schedule cover holidays and days off.
+- **Editing the week**: drag the line between two blocks to move it (30-minute steps, the time shows while
+  dragging), or drag along a day to draw a new block over that stretch — it takes another profile than the
+  one under it and opens in the block panel to pick the right one. The days that repeat the edited one
+  (**Repeat on**, the days with the same plan by default) move along, and every drag can be undone. On a
+  phone each line between two blocks has a grip to drag up or down, and a block's sheet can **Split** it.
 
 ## Manual control
 
@@ -674,6 +679,16 @@ broker while Klimo restarts. Without MQTT, or when Zigbee2MQTT does not send the
 shows a quiet «—»: unknown, not weak — red is only for a known weak link. A device that is back shows as
 back within seconds and its incident closes at once; going offline still waits for the limits above.
 
+## Day by the hour
+
+The overview's **Day by the hour** puts the day on one 24-hour axis: the profile, every source, the pumps
+with their run-on, one row for when any room asked for heat (or cooling) and, under it, a row for each
+room that asked — with how long, leading to the room; the rooms that never asked are named below. Point
+at the bars (or touch them) for a line through every row at that moment and the list of what ran then;
+the arrows step through the days before. The row of all the rooms opens and closes the rooms under it. On
+a phone the **Today** row of the overview opens it as a page of its own, each label above its bar, with
+the moment picked kept in sight above the rows.
+
 ## Decision journal
 
 Every decision is journaled with its reason: sources started, stopped, failed over and recovered, pumps
@@ -710,6 +725,12 @@ room's details: under **Room** Klimo's own values (temperature, humidity, dew po
 demand), under **Sensors** every sensor of the room with its reading, when it last reported and whether
 Klimo counts it (not counted, off from the others, silent for a while, unavailable). Any of these rows
 opens Home Assistant's own dialog of that entity, with its history chart.
+
+The house card's **Source** and **Pumps** tiles open the day by the hour, read from Home Assistant's
+history of Klimo's own entities (`binary_sensor.klimo_source_*`, `binary_sensor.klimo_pump_*` and every
+room's heat and cool demand): when each source and pump ran, when any room asked and each room that did,
+with how long. A finger (or the pointer) on the bars tells what ran at that moment; the arrows step
+through the days the recorder keeps, and **Open in Klimo** leads to the same day in the panel.
 
 ## Native entities
 

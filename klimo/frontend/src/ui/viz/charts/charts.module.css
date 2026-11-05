@@ -299,11 +299,86 @@
 .trackLabel {
   flex: none;
   width: var(--label-w, 124px);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.trackName,
+.trackLink {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--ui-text-2);
-  font-size: var(--ui-fs-body-sm);
+}
+
+.trackLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.trackToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin: 0 0 0 -2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.trackToggle svg {
+  flex: none;
+  transition: transform 0.15s ease;
+}
+
+.trackToggle[aria-expanded='false'] svg {
+  transform: rotate(-90deg);
+}
+
+.trackToggle:focus-visible {
+  outline: 2px solid var(--ui-text-1);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (hover: hover) {
+  .trackLink:hover {
+    color: var(--ui-text-1);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+
+.trackSub {
+  flex: none;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+/* the row that ran at the moment under the pointer */
+.trackLabel[data-on] .trackName,
+.trackLabel[data-on] .trackLink {
+  color: var(--ui-text-1);
+  font-weight: 600;
+}
+
+.trackRow[data-strong] .trackName {
+  color: var(--ui-text-1);
+  font-weight: 600;
+}
+
+.trackRow[data-indent] .trackLabel {
+  padding-left: 12px;
 }
 
 .track {
@@ -342,6 +417,94 @@
   width: 2px;
   margin-left: -1px;
   background: var(--ui-text-1);
+}
+
+/* the moment under the pointer, through every row */
+.tracks[data-cross] {
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+
+.trackCross {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--ui-text-1) 70%, transparent);
+  pointer-events: none;
+}
+
+.trackReadout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  min-height: 22px;
+  padding-left: calc(var(--label-w, 124px) + 12px);
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-caption);
+}
+
+.readoutTime {
+  color: var(--ui-text-1);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.readoutItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.readoutDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.readoutHint {
+  color: var(--ui-text-3);
+}
+
+/* a phone: each label above its bar, the bars across the full width */
+.timeline[data-layout='stacked'] .trackRow {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.timeline[data-layout='stacked'] .trackLabel {
+  width: auto;
+}
+
+.timeline[data-layout='stacked'] .trackRow[data-indent] .trackLabel {
+  padding-left: 0;
+}
+
+.timeline[data-layout='stacked'] .track {
+  flex: none;
+  height: 16px;
+  border-radius: 5px;
+}
+
+.timeline[data-layout='stacked'] .trackRow[data-strong] .track {
+  height: 22px;
+}
+
+.timeline[data-layout='stacked'] .trackAxis,
+.timeline[data-layout='stacked'] .trackReadout {
+  padding-left: 0;
+}
+
+.timeline[data-layout='stacked'] .trackReadout {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding-block: 8px;
+  background: var(--ui-bg-page);
+  border-bottom: 1px solid var(--ui-border);
 }
 
 .trackAxis {
@@ -519,6 +682,107 @@
   pointer-events: none;
 }
 
+/* a day's track with what sits over it: the boundaries to drag and the time while dragging */
+.weekLane {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+/* a finger drawing along a day keeps the page from scrolling sideways; up and down still scroll */
+.weekTrack[data-edit] {
+  touch-action: pan-y;
+}
+
+.weekHandle {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  z-index: 2;
+  width: 16px;
+  margin-left: -8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.weekHandle::after {
+  content: '';
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 50%;
+  width: 4px;
+  margin-left: -2px;
+  border-radius: 2px;
+  background: var(--ui-text-1);
+  box-shadow: 0 0 0 1px var(--ui-bg-page);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+@media (hover: hover) {
+  .weekLane:hover .weekHandle::after {
+    opacity: 0.45;
+  }
+
+  .weekLane .weekHandle:hover::after {
+    opacity: 1;
+  }
+}
+
+@media (hover: none) {
+  .weekHandle::after {
+    opacity: 0.35;
+  }
+}
+
+.weekHandle[data-active]::after {
+  opacity: 1;
+}
+
+.week[data-gesture] {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.week[data-gesture='edge'],
+.week[data-gesture='edge'] .weekBlock {
+  cursor: col-resize;
+}
+
+.weekDay[data-linked] {
+  color: var(--ui-text-1);
+}
+
+/* the block being drawn */
+.weekDraw {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border: 2px dashed var(--ui-text-1);
+  border-radius: var(--ui-radius-md);
+  background: color-mix(in srgb, var(--ui-text-1) 18%, transparent);
+  pointer-events: none;
+}
+
+/* the time of the dragged boundary (the range of the drawn block), on the track itself */
+.weekBubble {
+  position: absolute;
+  top: 50%;
+  z-index: 3;
+  transform: translate(-50%, -50%);
+  padding: 2px 8px;
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-text-1);
+  color: var(--ui-bg-page);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.3);
+  font-size: var(--ui-fs-caption);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .weekAxis {
   display: flex;
   justify-content: space-between;
@@ -646,6 +910,59 @@
   font-size: var(--ui-fs-micro);
   font-weight: 700;
   pointer-events: none;
+}
+
+/* a boundary between two blocks, to drag up or down with a finger */
+.dayVGrip {
+  position: absolute;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 28px;
+  margin-top: -14px;
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.dayVGrip::after {
+  content: '';
+  width: 28px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ui-text-1);
+  box-shadow: 0 0 0 2px var(--ui-bg-page);
+  opacity: 0.75;
+}
+
+.dayVGrip[data-active]::after {
+  opacity: 1;
+}
+
+.dayVGrip[data-aside] {
+  right: 60px;
+}
+
+.dayVBubble {
+  position: absolute;
+  right: 64px;
+  z-index: 3;
+  transform: translateY(-50%);
+  padding: 2px 8px;
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-text-1);
+  color: var(--ui-bg-page);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.3);
+  font-size: var(--ui-fs-caption);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.dayVBubble[data-aside] {
+  right: 116px;
 }
 
 /* ---------------- BivalenceChart ---------------- */

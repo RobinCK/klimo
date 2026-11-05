@@ -136,6 +136,15 @@ async function phone(browser, base) {
   check((await page.evaluate(() => window.__moreInfo)) === 'sensor.dytiacha_th_temperature', 'a sensor row opens its history in Home Assistant');
   check((await page.locator('klimo-room-sheet').count()) === 0, 'the sheet steps aside for it');
 
+  // the pumps tile opens the day as well; on a phone a finger picks the moment
+  await house.locator('button.tile[data-act="day"]').first().click();
+  const day = page.locator('klimo-day-sheet');
+  check(await waitText(day.locator('.drow[data-strong] .dn'), 'Кімнати просили холоду'), 'in summer the day sheet shows the rooms that asked for cooling');
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: join(outDir, 'klimo-card-day-sheet-phone.png') });
+  await day.locator('.x').click();
+  await day.waitFor({ state: 'detached', timeout: 2000 }).catch(() => {});
+
   // the house profile, with consequences and undo
   await house.locator('[data-act="change"]').click();
   const ps = page.locator('klimo-profile-sheet');
@@ -298,6 +307,27 @@ async function tablet(browser, base) {
   await sheet.locator('.x').click();
   await sheet.waitFor({ state: 'detached', timeout: 2000 }).catch(() => {});
   check((await page.locator('klimo-room-sheet').count()) === 0, 'close button closes the sheet');
+
+  // the source tile opens the day: when the sources and pumps ran and which rooms asked for heat
+  const house = page.locator('klimo-house-card');
+  await house.locator('button.tile[data-act="day"]').first().click();
+  const day = page.locator('klimo-day-sheet');
+  check(await waitText(day.locator('.sh-title'), 'День по годинах'), 'the source tile opens the day sheet');
+  check(await waitText(day.locator('.drow .dn'), 'Тепловий насос'), 'the day sheet has a row for each source');
+  check(await waitText(day.locator('.drow .dn'), 'Тепла підлога'), 'and for each pump');
+  check(await waitText(day.locator('.drow[data-strong] .dn'), 'Кімнати просили тепла'), 'and one row for all the rooms that asked for heat');
+  const dayBar = day.locator('.dl .bar').first();
+  const box = await dayBar.boundingBox();
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height / 2);
+  check(await waitText(day.locator('.ro .rt'), ':'), 'pointing at the bars tells the time and what ran');
+  check((await day.locator('.cx:not([hidden])').count()) > 3, 'a line runs through every bar at that moment');
+  await page.screenshot({ path: join(outDir, 'klimo-card-day-sheet-tablet.png') });
+  await day.locator('[data-act="prev"]').click();
+  check(await waitText(day.locator('.lbl'), 'Учора'), 'the arrow steps to the day before');
+  check(await waitText(day.locator('.drow .dn'), 'Тепловий насос'), 'the day before is read from the history too');
+  await page.keyboard.press('Escape');
+  await day.waitFor({ state: 'detached', timeout: 2000 }).catch(() => {});
+  check((await page.locator('klimo-day-sheet').count()) === 0, 'Escape closes the day sheet');
 
   // Klimo goes away: last data stays, greyed, with the banner
   await page.evaluate(() => window.KlimoHarness.tablet.setOnline(false));

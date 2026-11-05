@@ -475,8 +475,37 @@
         { device_class: world.cooling ? 'cold' : 'heat', friendly_name: `${r.n} запит` },
       );
     }
+    // the sources and the circuits' pumps, as Klimo publishes them (binary_sensor.klimo_source_<id>, binary_sensor.klimo_pump_<circuit>)
+    const oid = (id) => String(id).toLowerCase().replace(/[^a-z0-9_]/g, '_');
+    for (const x of world.hub.sources) {
+      out[`binary_sensor.klimo_source_${oid(x.id)}`] = entity(`binary_sensor.klimo_source_${oid(x.id)}`, x.on ? 'on' : 'off', { device_class: 'running', friendly_name: x.n });
+    }
+    for (const c of world.hub.circuits) {
+      out[`binary_sensor.klimo_pump_${oid(c.id)}`] = entity(`binary_sensor.klimo_pump_${oid(c.id)}`, c.on ? 'on' : 'off', { device_class: 'running', friendly_name: `Насос · ${c.n}` });
+    }
     out['sensor.outdoor_temperature'] = entity('sensor.outdoor_temperature', world.hub.season.out, { unit_of_measurement: '°C', friendly_name: 'Надворі' });
     return out;
+  }
+
+  /**
+   * Home Assistant's history of an on/off entity (the compressed form of history/history_during_period):
+   * a few runs a day, the same each time the same day is asked.
+   */
+  function fakeHistory(id, from, to) {
+    let seed = 7;
+    for (const ch of `${id}|${new Date(from).toISOString().slice(0, 10)}`) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
+    const rnd = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296;
+    const room = id.endsWith('_demand');
+    const rows = [{ s: 'off', lu: from / 1000 }];
+    let t = from + (20 + rnd() * 60) * MIN;
+    while (t < to) {
+      const len = (room ? 15 + rnd() * 50 : 25 + rnd() * 70) * MIN;
+      rows.push({ s: 'on', lu: t / 1000 });
+      if (t + len >= to) break;
+      rows.push({ s: 'off', lu: (t + len) / 1000 });
+      t += len + (room ? 40 + rnd() * 140 : 30 + rnd() * 90) * MIN;
+    }
+    return rows;
   }
 
   /* ── what Klimo does with a command ───────────────────────────────────────────────────── */
@@ -553,8 +582,21 @@
         config: { time_zone: TZ, unit_system: { temperature: '°C' } },
         services,
         callService,
+        callWS,
       };
       return hass;
+    }
+
+    /** The websocket commands the cards send: the history of Klimo's on/off entities for the day sheet. */
+    function callWS(msg) {
+      if (msg && msg.type === 'history/history_during_period') {
+        const from = Date.parse(msg.start_time);
+        const to = Date.parse(msg.end_time);
+        const out = {};
+        for (const id of msg.entity_ids || []) out[id] = fakeHistory(id, from, to);
+        return new Promise((resolve) => setTimeout(() => resolve(out), 150));
+      }
+      return Promise.reject({ code: 'unknown_command', message: 'Unknown command.' });
     }
 
     /** New state objects only for entities whose content changed, like HA does. */

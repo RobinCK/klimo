@@ -107,6 +107,24 @@ export function remove(plan: DayPlan, i: number): DayPlan {
   return mergeEqual(next);
 }
 
+/** A new block over [start, end) of the day: the blocks it covers shrink or go, equal neighbours merge. */
+export function insert(plan: DayPlan, start: number, end: number, profileId: Id): DayPlan {
+  const a = Math.max(0, snap(Math.min(start, end)));
+  const b = Math.min(DAY, snap(Math.max(start, end)));
+  if (b - a < STEP) return plan;
+  const out: DayPlan = [];
+  for (const x of plan) {
+    if (x.end <= a || x.start >= b) {
+      out.push({ ...x });
+      continue;
+    }
+    if (x.start < a) out.push({ start: x.start, end: a, profileId: x.profileId });
+    if (x.end > b) out.push({ start: b, end: x.end, profileId: x.profileId });
+  }
+  out.push({ start: a, end: b, profileId });
+  return mergeEqual(out.sort((p, q) => p.start - q.start));
+}
+
 /** A day with one block of the given profile (a new room schedule, a reset day). */
 export function wholeDay(profileId: Id): DayPlan {
   return [{ start: 0, end: DAY, profileId }];

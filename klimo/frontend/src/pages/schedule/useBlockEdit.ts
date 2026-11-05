@@ -5,8 +5,8 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import type { DayPlan, Dow, Id, ProfileDto, ScheduleBlock } from '@api/model';
-import { t } from '@i18n';
-import { canSplit, endRange, identicalDays, indexAt, remove as removeBlock, setEnd, setProfile, setStart, split as splitBlock, startRange } from './blocks';
+import { minuteToHhmm, t } from '@i18n';
+import { canSplit, endRange, identicalDays, indexAt, insert, remove as removeBlock, setEnd, setProfile, setStart, split as splitBlock, startRange } from './blocks';
 import { range } from './texts';
 import type { ScheduleEditor } from './useScheduleEditor';
 
@@ -29,6 +29,12 @@ export interface BlockEdit {
   split: () => void;
   canRemove: boolean;
   remove: () => void;
+  /** The days that change along with `dow` when it is edited: its «repeat on» days. */
+  followers: (dow: Dow) => Dow[];
+  /** The boundary after block `i` of `dow` dragged to `minute` (the days it repeats on move along). */
+  moveBoundary: (dow: Dow, i: number, minute: number) => void;
+  /** A block drawn over [start, end) of `dow`, in another profile than the one under it, then selected. */
+  draw: (dow: Dow, start: number, end: number) => void;
 }
 
 const mid = (b: ScheduleBlock | undefined) => (b ? (b.start + b.end) / 2 : 0);
@@ -58,6 +64,7 @@ export function useBlockEdit(editor: ScheduleEditor, profiles: readonly ProfileD
     setSel({ dow: sel.dow, anchor: mid(next[nextIndex]) });
   };
   const profileName = (id: Id) => profiles.find((p) => p.id === id)?.name ?? id;
+  const followers = (dow: Dow): Dow[] => (dow === sel.dow ? also : days ? identicalDays(days, dow).filter((d) => d !== dow) : []);
 
   return {
     dow: sel.dow,
@@ -95,6 +102,28 @@ export function useBlockEdit(editor: ScheduleEditor, profiles: readonly ProfileD
       if (index < 0 || plan.length <= 1) return;
       const next = removeBlock(plan, index);
       apply(next, Math.max(0, Math.min(next.length - 1, index - 1)), t('Block deleted'));
+    },
+    followers,
+    moveBoundary: (dow, i, minute) => {
+      const dayPlan = days?.[dow];
+      if (!dayPlan?.[i + 1]) return;
+      const next = setEnd(dayPlan, i, minute);
+      if (next === dayPlan) return;
+      // the block that was being edited stays selected; otherwise the one whose end moved
+      const keep = sel.dow === dow && index === i + 1 ? i + 1 : i;
+      editor.edit(dow, next, { also: followers(dow), undo: t('Boundary moved to {time}', { time: minuteToHhmm(next[i].end) }) });
+      setSel({ dow, anchor: mid(next[keep]) });
+    },
+    draw: (dow, start, end) => {
+      const dayPlan = days?.[dow];
+      if (!dayPlan || !profiles.length) return;
+      // the profile under the middle of the stretch stays as it is around it: the new block takes another one
+      const under = dayPlan[indexAt(dayPlan, (start + end) / 2)]?.profileId;
+      const profileId = (profiles.find((p) => p.id !== under) ?? profiles[0]).id;
+      const next = insert(dayPlan, start, end, profileId);
+      if (next === dayPlan) return;
+      editor.edit(dow, next, { also: followers(dow), undo: t('Block added: {range} · {profile}', { range: range(start, end), profile: profileName(profileId) }) });
+      setSel({ dow, anchor: (start + end) / 2 });
     },
   };
 }
