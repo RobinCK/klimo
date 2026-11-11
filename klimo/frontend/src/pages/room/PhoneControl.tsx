@@ -239,7 +239,7 @@ export function PhoneControl({ p, ed, profiles, now }: { p: SectionProps; ed: Ta
       {ed.phase === 'view' ? <QuickActions room={room} state={state} /> : null}
       <ExplainCallout title={whyTitle(state)} text={[why.text, why.eta].filter(Boolean).join(' ') || t('Nothing to explain right now.')} />
       {/* the day's chart is not needed all the time: it opens from the chart icon at the top */}
-      <BottomSheet open={chartOpen} onClose={() => setChartOpen(false)} title={t('Today')} subtitle={room.config.name}>
+      <BottomSheet open={chartOpen} onClose={() => setChartOpen(false)} title={t('Temperature')} subtitle={room.config.name}>
         {chartOpen ? <RoomToday room={room} state={state} profiles={profiles} now={now} compact /> : null}
       </BottomSheet>
       <RowList ariaLabel={t('Room settings')}>

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.25
+
+- **The room's chart pages back through the days.** Arrows above the room's day chart open yesterday and
+  the days before, as long as Home Assistant's recorder keeps them: the temperature, the target band,
+  when the room heated, the minimum, maximum and heating time of that day, with the crosshair. **Today**
+  returns to the live day; past the oldest kept day the back arrow stops. On a phone the same arrows
+  are in the chart's sheet.
+
 ## 0.2.24
 
 - **Day by the hour: who asked for heat and what ran.** The overview's day timeline now has one row for

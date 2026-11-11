@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { EpochMs, LocalDate, ProfileDto, RoomDayDto, RoomDetailDto, RoomState } from '@api/model';
 import { api } from '@api/endpoints';
 import { liveStore, useLive, useLiveEvent, useResource, useRetryUntilComplete, type ResourceState } from '@data';
-import { AutoGrid, DayChart, ProfileStrip, Skeleton, Stack, StatTile, type ProfileStripSegment } from '@ui';
-import { displayUnits, fmtDur, fmtRate, fmtTime, startOfLocalDay, t, zonedParts } from '@i18n';
+import { AutoGrid, DayChart, PeriodNav, ProfileStrip, Skeleton, Stack, StatTile, type ProfileStripSegment } from '@ui';
+import { addDays, displayUnits, fmtDur, fmtRate, fmtTime, nextPeriod, periodLabel, startOfLocalDay, t, zonedParts } from '@i18n';
 import { appendLive, dayShown, liveDay, type LivePoint } from './dayLive';
 import { atText } from './texts';
 
@@ -18,6 +18,15 @@ function shown(c: number | null): number | null {
   return displayUnits() === 'F' ? (c * 9) / 5 + 32 : c;
 }
 const scale = (d: number) => (displayUnits() === 'F' ? (d * 9) / 5 : d);
+
+/** Local midnight of a calendar day in the house's time zone. */
+function midnightOf(date: LocalDate): EpochMs {
+  const [y, m, d] = date.split('-').map(Number);
+  let guess = Date.UTC(y, m - 1, d, 12);
+  // noon UTC is another calendar day far east or west: step half a day towards it
+  for (let i = 0; i < 2 && zonedParts(guess).date !== date; i++) guess += zonedParts(guess).date > date ? -12 * 3600_000 : 12 * 3600_000;
+  return startOfLocalDay(guess);
+}
 
 /** Today's profile blocks for this room, with the manual change on top (hatched). */
 export function stripSegments(room: RoomDetailDto, profiles: readonly ProfileDto[] | undefined, now: EpochMs): ProfileStripSegment[] {
@@ -96,7 +105,10 @@ function useLiveReadings(state: RoomState): readonly LivePoint[] {
   return kept.roomId === state.roomId ? kept.points : [];
 }
 
-/** «Сьогодні»: the profile strip, the temperature against the target band, and four numbers. */
+/**
+ * «Сьогодні»: the profile strip, the temperature against the target band, and four numbers.
+ * The arrows step back through the days the recorder still keeps.
+ */
 export function RoomToday({
   room,
   state,
@@ -115,37 +127,75 @@ export function RoomToday({
   const { reload } = day;
   const today = zonedParts(now).date;
   useDayRefresh(day, today);
+  // a day before today, read once (it no longer changes); another room starts on today again
+  const [picked, setPicked] = useState<{ roomId: string; date: LocalDate } | null>(null);
+  const past = picked && picked.roomId === id && picked.date < today ? picked.date : null;
+  const pastRes = useResource(past ? `room-day:${id}:${past}` : null, () => api.rooms.day(id, past ?? undefined));
+  const pastDay = past && pastRes.data && pastRes.data.roomId === id && pastRes.data.date === past ? pastRes.data : undefined;
   // a heating span of this room started or ended
   useLiveEvent('span', (s) => {
     if (s.subject === 'room' && s.subjectId === id) void reload();
   });
   const live = useLiveReadings(state);
 
-  const dayStart = startOfLocalDay(now);
+  const dayStart = past ? midnightOf(past) : startOfLocalDay(now);
   const dayEnd = startOfLocalDay(dayStart + 1.5 * DAY_MS);
   const lastComplete = useRef<RoomDayDto | undefined>(undefined);
   if (day.data && day.data.complete !== false) lastComplete.current = day.data;
   // a day read before midnight is not drawn on today's axis
-  const fetched = dayShown(day.data, lastComplete.current, id, today);
-  const merged = useMemo(() => (fetched ? liveDay(fetched, live, state.tempC, now, dayEnd) : null), [fetched, live, state.tempC, now, dayEnd]);
+  const fetchedToday = dayShown(day.data, lastComplete.current, id, today);
+  const fetched = past ? pastDay : fetchedToday;
+  const merged = useMemo(
+    () => (fetched ? (past ? { series: fetched.series, stats: fetched.stats } : liveDay(fetched, live, state.tempC, now, dayEnd)) : null),
+    [fetched, past, live, state.tempC, now, dayEnd],
+  );
   // until the recorder answers, the minutes Klimo kept itself are no day's minimum or maximum
   const loading = !fetched || fetched.complete === false;
   const d = fetched && merged ? { ...fetched, ...merged, stats: loading ? { ...merged.stats, min: null, max: null } : merged.stats } : undefined;
   const hasLine = !!d && d.series.some(([, c]) => c != null);
-  const emptyText = loading ? t('Loading the temperature history…') : hasLine ? undefined : t('No temperature history for today yet');
+  const emptyText = loading
+    ? t('Loading the temperature history…')
+    : hasLine
+      ? undefined
+      : past
+        ? t('No temperature history for this day')
+        : t('No temperature history for today yet');
+  const dayName = periodLabel({ range: 'day', date: past ?? today, from: dayStart, to: dayEnd, now });
+  // a past day the recorder kept nothing of: the days before it are gone too
+  const nav = (
+    <PeriodNav
+      label={dayName}
+      onPrev={() => setPicked({ roomId: id, date: addDays(past ?? today, -1) })}
+      prevDisabled={!!past && !!pastDay && pastDay.complete !== false && !hasLine}
+      onNext={() => past && setPicked(nextPeriod('day', past) >= today ? null : { roomId: id, date: nextPeriod('day', past) })}
+      nextDisabled={!past}
+      onCurrent={past ? () => setPicked(null) : undefined}
+      currentLabel={t('Today')}
+    />
+  );
   const tol = room.config.tolerance;
   const cooled = (d?.stats.cooledMin ?? 0) > (d?.stats.heatedMin ?? 0);
   const roomName = room.config.name;
   const aria = d
-    ? t('Temperature in {room} today: from {min} to {max}; {mode} for {dur}.', {
-        room: roomName,
-        min: atText(d.stats.min),
-        max: atText(d.stats.max),
-        mode: cooled ? t('cooled') : t('heated'),
-        dur: fmtDur(cooled ? d.stats.cooledMin : d.stats.heatedMin),
-      })
+    ? past
+      ? t('Temperature in {room}, {day}: from {min} to {max}; {mode} for {dur}.', {
+          room: roomName,
+          day: dayName,
+          min: atText(d.stats.min),
+          max: atText(d.stats.max),
+          mode: cooled ? t('cooled') : t('heated'),
+          dur: fmtDur(cooled ? d.stats.cooledMin : d.stats.heatedMin),
+        })
+      : t('Temperature in {room} today: from {min} to {max}; {mode} for {dur}.', {
+          room: roomName,
+          min: atText(d.stats.min),
+          max: atText(d.stats.max),
+          mode: cooled ? t('cooled') : t('heated'),
+          dur: fmtDur(cooled ? d.stats.cooledMin : d.stats.heatedMin),
+        })
     : t('Temperature in {room} today', { room: roomName });
-  const segments = stripSegments(room, profiles, now);
+  // the profile strip is today's plan: a past day has none
+  const segments = past ? [] : stripSegments(room, profiles, now);
   // only the bands of the modes the room works in now: a summer cooling target is noise in January
   const coolShown = state.activeModes.cool;
   const heatShown = state.activeModes.heat || !coolShown;
@@ -154,9 +204,9 @@ export function RoomToday({
       {segments.length ? (
         <ProfileStrip segments={segments} now={zonedParts(now).minuteOfDay} height={compact ? 22 : 26} ariaLabel={t('Profiles today')} />
       ) : null}
-      {d || day.data ? (
+      {d || day.data || past ? (
         <DayChart
-          title={compact ? undefined : t('Today')}
+          heading={nav}
           series={(d?.series ?? []).map(([ts, c]) => ({ t: ts, c: shown(c) }))}
           targets={(d?.targetSegments ?? []).map((s) => ({
             from: s.from,
@@ -182,7 +232,11 @@ export function RoomToday({
       )}
       {d ? (
         <AutoGrid min={150} gap="sm">
-          <StatTile variant="well" title={cooled ? t('Cooled today') : t('Heated today')} value={fmtDur(cooled ? d.stats.cooledMin : d.stats.heatedMin)} />
+          <StatTile
+            variant="well"
+            title={past ? (cooled ? t('Cooled that day') : t('Heated that day')) : cooled ? t('Cooled today') : t('Heated today')}
+            value={fmtDur(cooled ? d.stats.cooledMin : d.stats.heatedMin)}
+          />
           <StatTile variant="well" title={t('Minimum')} value={atText(d.stats.min)} />
           <StatTile variant="well" title={t('Maximum')} value={atText(d.stats.max)} />
           <StatTile

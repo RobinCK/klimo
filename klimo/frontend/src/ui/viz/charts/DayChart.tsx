@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react';
+import { useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
 import type { Band } from '@api/model';
 import { useUiText } from '../../UiTextContext';
 import { toneVar } from '../../tokens/vars';
@@ -57,6 +57,8 @@ export interface DayChartProps {
   tol?: { heat: Band; cool: Band };
   legend: { temperature: string; target: string; future: string; heat?: string; cool?: string; humidity?: string };
   title?: string;
+  /** In place of the title: what picks the charted day («‹ Сьогодні ›»). */
+  heading?: ReactNode;
   /** One-sentence summary: «Графік температури у Вітальні за сьогодні: нічна ціль 18°, вдень 20°, тричі гріла». */
   ariaLabel: string;
   /** Suffix of the y labels («°», «°F»); values are drawn as given. */
@@ -114,6 +116,7 @@ export function DayChart({
   tol = DEFAULT_TOL,
   legend,
   title,
+  heading,
   ariaLabel,
   unitText,
   axis = HOUR_AXIS_3H,
@@ -269,7 +272,7 @@ export function DayChart({
   return (
     <figure className={s.dayFigure}>
       <figcaption className={s.dayCaption}>
-        {title ? <span className={s.dayTitle}>{title}</span> : <span />}
+        {heading ?? (title ? <span className={s.dayTitle}>{title}</span> : <span />)}
         <span className={s.legend}>
           <span className={s.legendItem}>
             <span className={s.swLine} />
@@ -279,10 +282,12 @@ export function DayChart({
             <span className={s.swBand} />
             {legend.target}
           </span>
-          <span className={s.legendItem}>
-            <span className={s.swFuture} />
-            {legend.future}
-          </span>
+          {targets.some((x) => x.future) ? (
+            <span className={s.legendItem}>
+              <span className={s.swFuture} />
+              {legend.future}
+            </span>
+          ) : null}
           {legend.heat ? (
             <span className={s.legendItem}>
               <span className={s.swSpan} style={{ '--c': toneVar('heat', 'line') } as CSSProperties} />

@@ -160,6 +160,10 @@ of its state.
   line without a reload; the lowest and highest values of the day come from the exact readings. While
   the recorder cannot be read yet (right after a start) the chart says it is loading and asks again.
   On a phone the chart opens from the chart icon at the top of the room page, next to its settings.
+- The arrows above the chart step back through the days the recorder still keeps (Home Assistant
+  keeps 10 days by default): the temperature, the target band, when the room heated and the day's
+  minimum, maximum and heating time. **Today** brings the current day back; past the oldest kept day the
+  back arrow stops.
 
 ### Tolerance and requests
 
