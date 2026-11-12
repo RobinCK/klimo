@@ -3,10 +3,10 @@
  * the «now» line with «today like a weekend», the editor of one change, the chart itself and the
  * house's plan under a room schedule for comparison.
  */
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { Dow, Id, Schedule } from '@api/model';
 import { api } from '@api/endpoints';
-import { useMutation, useResource } from '@data';
+import { useResource } from '@data';
 import { usePref } from '@app';
 import {
   Button,
@@ -52,23 +52,28 @@ export function TargetModeSwitch({ value, onChange, full }: { value: TargetMode;
   );
 }
 
-/** What the schedule gives right now, what comes next, and «today like a weekend». */
-export function ScheduleNow({ c, schedule, today, nowMinute, mode }: { c: ScheduleContext; schedule: Schedule; today: Dow; nowMinute: number; mode: TargetMode }) {
+/** What the schedule gives right now and what comes next (today's exception included), with `action` beside it. */
+export function ScheduleNow({
+  c,
+  schedule,
+  today,
+  nowMinute,
+  mode,
+  action,
+}: {
+  c: ScheduleContext;
+  schedule: Schedule;
+  today: Dow;
+  nowMinute: number;
+  mode: TargetMode;
+  action?: ReactNode;
+}) {
   const exceptions = useResource(`schedule-exceptions:${schedule.id}`, () => api.schedules.exceptions(schedule.id), { reloadOn: ['schedule'] });
   const date = localDate(c.now);
   const exception = exceptions.data?.find((e) => e.date === date) ?? null;
   const profiles = c.profiles.data ?? [];
   const byId = (id: string) => profiles.find((p) => p.id === id) ?? null;
   const points = pointsOf(todayPlan(schedule.days, today, exception));
-  const weekend: Dow = 5;
-  const asWeekend = useMutation(() => api.schedules.setException(schedule.id, date, { plan: { likeDow: weekend }, note: null }), {
-    onSuccess: () => void exceptions.reload(),
-    okToast: t('Today runs like {day}', { day: weekdayLong(weekend).toLowerCase() }),
-  });
-  const back = useMutation(() => api.schedules.removeException(schedule.id, date), {
-    onSuccess: () => void exceptions.reload(),
-    okToast: t('Today follows the week again'),
-  });
   if (!points.length) return null;
   const i = pointAt(points, nowMinute);
   const cur = points[i];
@@ -81,16 +86,6 @@ export function ScheduleNow({ c, schedule, today, nowMinute, mode }: { c: Schedu
       ? t('Today runs like {day}.', { day: weekdayLong(exception.plan.likeDow).toLowerCase() })
       : t('Today has its own plan.')
     : undefined;
-  const canWeekend = !exception && today < 5;
-  const action = !c.canEdit ? undefined : exception ? (
-    <Button variant="ghost" size="sm" icon="undo" loading={back.pending} onClick={() => void back.run()}>
-      {t('Back to the week')}
-    </Button>
-  ) : canWeekend ? (
-    <Button variant="secondary" size="sm" icon="calendar" loading={asWeekend.pending} onClick={() => void asWeekend.run()}>
-      {t('Today like a weekend')}
-    </Button>
-  ) : undefined;
   return (
     <ScheduleNowBar
       label={t('By the schedule now · {time}', { time: minuteToHhmm(nowMinute) })}

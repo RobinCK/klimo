@@ -77,25 +77,31 @@ export function DaySchedule({ c, editor, edit, today, nowMinute, onScope, onDay 
       title={t('Weekly schedule')}
       subtitle={hint}
       action={
-        <Row gap="sm" wrap>
-          {c.canEdit && schedule ? (
-            <Button variant="secondary" size="sm" icon="sparkle" onClick={() => setSetup(true)}>
-              {t('Quick setup')}
-            </Button>
-          ) : null}
-          <Select<string>
-            size="sm"
-            ariaLabel={t('Whose schedule')}
-            value={schedule?.id ?? ''}
-            options={scopeOptions}
-            onChange={(v) => (v === ADD ? setAdding(true) : onScope(v))}
-          />
-        </Row>
+        <Select<string>
+          size="sm"
+          ariaLabel={t('Whose schedule')}
+          value={schedule?.id ?? ''}
+          options={scopeOptions}
+          onChange={(v) => (v === ADD ? setAdding(true) : onScope(v))}
+        />
       }
     >
       {schedule ? (
         <Stack gap="lg">
-          <ScheduleNow c={c} schedule={schedule} today={today} nowMinute={nowMinute} mode={mode} />
+          <ScheduleNow
+            c={c}
+            schedule={schedule}
+            today={today}
+            nowMinute={nowMinute}
+            mode={mode}
+            action={
+              c.canEdit ? (
+                <Button variant="secondary" size="sm" icon="sparkle" onClick={() => setSetup(true)}>
+                  {t('Quick setup')}
+                </Button>
+              ) : undefined
+            }
+          />
           <Split
             asideFirst
             asideBasis={300}

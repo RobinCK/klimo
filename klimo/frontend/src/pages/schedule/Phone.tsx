@@ -1,7 +1,8 @@
 /**
  * The schedule on a phone: the day types as tabs, the shown type's chart and its changes; a tap
  * on a change opens a sheet to move it by 15 minutes, change its profile or delete it. «Розклад |
- * Профілі» leads to the profile list, a profile's editor and the priority order as their own screens.
+ * Профілі | Пріоритети» switch between the day, the profile list (a profile opens as its own
+ * screen) and the priority order.
  */
 import { useState } from 'react';
 import type { Dow, Id, Schedule } from '@api/model';
@@ -38,19 +39,20 @@ import type { DayEdit } from './useDayEdit';
 import type { ScheduleEditor } from './useScheduleEditor';
 import { dayView, typeTitle } from './view';
 
-type Tab = 'schedule' | 'profiles';
+type Tab = 'schedule' | 'profiles' | 'priority';
 
 function TabSwitch({ value }: { value: Tab }) {
   return (
     <SegmentedControl<Tab>
       full
-      ariaLabel={t('Schedule or profiles')}
+      ariaLabel={t('Schedule sections')}
       value={value}
       options={[
         { value: 'schedule', label: t('Schedule') },
         { value: 'profiles', label: t('Profiles') },
+        { value: 'priority', label: t('Priority') },
       ]}
-      onChange={(v) => navigate(v === 'schedule' ? paths.schedule() : paths.scheduleProfiles(), { replace: true })}
+      onChange={(v) => navigate(v === 'schedule' ? paths.schedule() : v === 'profiles' ? paths.scheduleProfiles() : paths.schedulePriority(), { replace: true })}
     />
   );
 }
@@ -96,7 +98,22 @@ export function PhoneDay({ c, editor, edit, today, nowMinute, onScope, onDay }: 
         }
       />
       <TabSwitch value="schedule" />
-      {schedule ? <ScheduleNow c={c} schedule={schedule} today={today} nowMinute={nowMinute} mode={mode} /> : null}
+      {schedule ? (
+        <ScheduleNow
+          c={c}
+          schedule={schedule}
+          today={today}
+          nowMinute={nowMinute}
+          mode={mode}
+          action={
+            c.canEdit ? (
+              <Button variant="secondary" size="sm" icon="sparkle" onClick={() => setSetup(true)}>
+                {t('Quick setup')}
+              </Button>
+            ) : undefined
+          }
+        />
+      ) : null}
       <Row gap="sm" wrap role="group" ariaLabel={t('Day types')}>
         {edit.types.map((x) => {
           const tt = typeTitle(x.days);
@@ -153,11 +170,6 @@ export function PhoneDay({ c, editor, edit, today, nowMinute, onScope, onDay }: 
             </Section>
           ) : null}
           <Exceptions c={c} schedule={schedule} />
-          {c.canEdit ? (
-            <Button variant="secondary" fullWidth icon="sparkle" onClick={() => setSetup(true)}>
-              {t('Quick setup')}
-            </Button>
-          ) : null}
         </>
       ) : (
         <Skeleton height={420} radius={12} />
@@ -249,9 +261,6 @@ export function PhoneProfiles({ c }: { c: ScheduleContext }) {
       <MobileTopBar title={t('Profiles')} subtitle={{ text: t('Targets of the rooms in every mode') }} />
       <TabSwitch value="profiles" />
       <ProfileItems c={c} selectedId={null} onSelect={(id) => navigate(paths.scheduleProfile(id))} />
-      <Button variant="secondary" fullWidth iconRight="chevronRight" to={paths.schedulePriority()}>
-        {t('Who wins when rules disagree')}
-      </Button>
     </Stack>
   );
 }
@@ -279,7 +288,8 @@ export function PhoneProfile({ c, id, schedules }: { c: ScheduleContext; id: Id;
 export function PhonePriority({ c }: { c: ScheduleContext }) {
   return (
     <Stack gap="md">
-      <MobileTopBar title={t('Priority')} subtitle={{ text: t('Who wins when rules disagree') }} onBack={() => navigate(paths.scheduleProfiles())} />
+      <MobileTopBar title={t('Priority')} subtitle={{ text: t('Who wins when rules disagree') }} />
+      <TabSwitch value="priority" />
       <Section subtitle={t('Frost protection and windows always come first — they cannot be moved down.')}>
         <PriorityList c={c} plain />
       </Section>

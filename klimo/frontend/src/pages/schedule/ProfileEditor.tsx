@@ -1,13 +1,15 @@
 /**
- * One profile: name, colour and icon, the default heat and cool targets, what every room does
- * in it (inherit / own targets / off) and the rules that switch it on by itself. Every field
- * saves on its own; deleting asks which profile takes over its places in schedules and rules.
+ * One profile: its name, the default heat and cool targets, and the rules that switch it on by
+ * itself; what every room does in it (inherit / own targets / off) and its colour and icon fold
+ * away until opened; duplicate and delete close it. Every field saves on its own; deleting asks
+ * which profile takes over its places in schedules and rules.
  */
 import { useState } from 'react';
 import type { ActivationRule, Id, ProfileDto, ProfilePatch, RoomProfileMode, RoomSummary, Schedule } from '@api/model';
 import { api } from '@api/endpoints';
 import { useAutosave, useLayout, useMutation } from '@data';
 import {
+  Accordion,
   Button,
   CheckboxRow,
   ColorSwatchPicker,
@@ -75,15 +77,18 @@ export function ProfileEditor({ c, profile, schedules, onSelect }: Props) {
     okToast: t('Profile deleted'),
   });
 
+  const [lookOpen, setLookOpen] = useState(false);
+  const [roomsOpen, setRoomsOpen] = useState(false);
   const editable = c.canEdit;
   const kind = profileKindLabel(profile.kind);
+  const own = profile.roomTargets.length;
   const others = (c.profiles.data ?? []).filter((p) => p.id !== profile.id);
   const usages = profile.usages.map((u) => u.label).filter(Boolean);
 
   return (
     <Section ariaLabel={t('Profile «{name}»', { name: profile.name })}>
       <Stack gap="xl">
-        <Row gap="md" align="end" wrap>
+        <Row gap="md" align="end">
           <ProfileIconTile icon={profile.icon} color={profile.color} ink={profile.ink} name={profile.name} size={48} />
           <Stack grow align="stretch">
             <TextField
@@ -96,41 +101,6 @@ export function ProfileEditor({ c, profile, schedules, onSelect }: Props) {
               error={name.value.trim() ? undefined : t('Give the profile a name')}
             />
           </Stack>
-          <Row gap="sm">
-            <Button variant="secondary" onClick={() => void duplicate.run()} loading={duplicate.pending} disabled={!editable}>
-              {t('Duplicate')}
-            </Button>
-            <Button variant="danger" onClick={() => setDeleting(true)} disabled={!editable || profile.kind === 'system'}>
-              {t('Delete')}
-            </Button>
-          </Row>
-        </Row>
-
-        <Row gap="2xl" wrap align="start">
-          <Section variant="plain" level={3} subtitle={t('Colour')}>
-            <ColorSwatchPicker
-              ariaLabel={t('Colour')}
-              value={profile.color}
-              palette={PROFILE_PALETTE.map((p, i) => ({ ...p, label: t('Colour {n}', { n: i + 1 }) }))}
-              onChange={(color, ink) => {
-                if (!editable) return;
-                put({ ...profile, color, ink });
-                void look.run({ color, ink });
-              }}
-            />
-          </Section>
-          <Section variant="plain" level={3} subtitle={t('Icon')}>
-            <IconPicker
-              ariaLabel={t('Icon')}
-              value={profile.icon}
-              icons={PROFILE_ICONS()}
-              onChange={(icon) => {
-                if (!editable) return;
-                put({ ...profile, icon });
-                void look.run({ icon });
-              }}
-            />
-          </Section>
         </Row>
 
         <AutoGrid min={260} gap="md">
@@ -173,9 +143,60 @@ export function ProfileEditor({ c, profile, schedules, onSelect }: Props) {
           onChange={(v) => frostOnly.set(v)}
         />
 
-        <RoomsTable c={c} profile={profile} editable={editable} />
+        <Accordion
+          id="profile-rooms"
+          icon="grid"
+          title={t('Rooms in this profile')}
+          summary={own ? t('{count} with their own setting', { count: own }) : t('all take the profile target')}
+          open={roomsOpen}
+          onToggle={() => setRoomsOpen((v) => !v)}
+        >
+          <RoomsTable c={c} profile={profile} editable={editable} />
+        </Accordion>
 
         <ActivationRules c={c} profile={profile} schedules={schedules} editable={editable} />
+
+        <Accordion id="profile-look" icon="pencil" title={t('Colour and icon')} open={lookOpen} onToggle={() => setLookOpen((v) => !v)}>
+          <Row gap="2xl" wrap align="start">
+            <Section variant="plain" level={3} subtitle={t('Colour')}>
+              <ColorSwatchPicker
+                ariaLabel={t('Colour')}
+                value={profile.color}
+                palette={PROFILE_PALETTE.map((p, i) => ({ ...p, label: t('Colour {n}', { n: i + 1 }) }))}
+                onChange={(color, ink) => {
+                  if (!editable) return;
+                  put({ ...profile, color, ink });
+                  void look.run({ color, ink });
+                }}
+              />
+            </Section>
+            <Section variant="plain" level={3} subtitle={t('Icon')}>
+              <IconPicker
+                ariaLabel={t('Icon')}
+                value={profile.icon}
+                icons={PROFILE_ICONS()}
+                onChange={(icon) => {
+                  if (!editable) return;
+                  put({ ...profile, icon });
+                  void look.run({ icon });
+                }}
+              />
+            </Section>
+          </Row>
+        </Accordion>
+
+        {editable ? (
+          <Row gap="sm" wrap justify="end">
+            <Button variant="secondary" icon="copy" onClick={() => void duplicate.run()} loading={duplicate.pending}>
+              {t('Duplicate')}
+            </Button>
+            {profile.kind !== 'system' ? (
+              <Button variant="danger" icon="trash" onClick={() => setDeleting(true)}>
+                {t('Delete')}
+              </Button>
+            ) : null}
+          </Row>
+        ) : null}
       </Stack>
 
       <ConfirmDialog
@@ -286,15 +307,9 @@ function RoomsTable({ c, profile, editable }: { c: ScheduleContext; profile: Pro
     return { key: room.id, name: room.name, modeControl, heat: heatCell, cool: coolCell };
   });
 
-  const own = profile.roomTargets.length;
   const rows: DataRow[] = items.map((it) => ({ key: it.key, cells: { room: it.name, mode: it.modeControl(false), heat: it.heat, cool: it.cool } }));
   return (
-    <Section
-      variant="plain"
-      level={3}
-      title={t('Rooms in this profile')}
-      tag={own ? t('{count} with their own setting', { count: own }) : t('all take the profile target')}
-    >
+    <>
       {phone ? (
         // a phone has no room for four columns: one block per room, the mode across its width
         <Stack gap="sm">
@@ -325,7 +340,7 @@ function RoomsTable({ c, profile, editable }: { c: ScheduleContext; profile: Pro
           rows={rows}
         />
       )}
-    </Section>
+    </>
   );
 }
 

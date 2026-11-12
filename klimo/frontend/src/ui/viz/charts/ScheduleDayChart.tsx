@@ -178,18 +178,18 @@ export function ScheduleDayChart({
   const ticks: number[] = [];
   for (let v = Math.ceil(lo); v <= hi; v++) if (v % every === 0 && y(v) > 10 && y(v) < PLOT_H - 6) ticks.push(v);
 
-  // time labels closer than a label's width go to a second row
+  // each time label takes the lowest row where it clears the labels before it (three rows at most)
   const lanes: number[] = [];
-  let lastX = -Infinity;
-  let lastLane = 1;
+  const laneEnds: number[] = [];
   points.forEach((_, i) => {
     const x = (minuteOf(i) / DAY_MIN) * width;
-    const lane = width > 0 && x - lastX < CHIP_PX && lastLane === 0 ? 1 : 0;
+    let lane = laneEnds.findIndex((end) => x - end >= CHIP_PX);
+    if (lane < 0) lane = laneEnds.length < 3 ? laneEnds.length : laneEnds.indexOf(Math.min(...laneEnds));
+    if (width <= 0) lane = 0;
+    laneEnds[lane] = x;
     lanes.push(lane);
-    lastX = x;
-    lastLane = lane;
   });
-  const twoLanes = lanes.some((l) => l === 1);
+  const laneCount = Math.max(1, ...lanes.map((l) => l + 1));
 
   const swallow = () => {
     swallowClick.current = true;
@@ -300,7 +300,7 @@ export function ScheduleDayChart({
 
   return (
     <div className={s.sday} role="group" aria-label={ariaLabel} data-gesture={dragging} style={{ '--line': line, '--value': fg } as CSSProperties}>
-      <div className={s.sdayChips} data-lanes={twoLanes ? '2' : '1'}>
+      <div className={s.sdayChips} data-lanes={String(laneCount)}>
         {points.map((p, i) => (
           <button
             key={i}
@@ -308,7 +308,7 @@ export function ScheduleDayChart({
             className={s.sdayChip}
             style={{ left: pct((minuteOf(i) / DAY_MIN) * 100) }}
             data-end={width > 0 && width - (minuteOf(i) / DAY_MIN) * width < CHIP_PX / 2 ? '' : undefined}
-            data-lane={lanes[i] ? '1' : undefined}
+            data-lane={lanes[i] ? String(lanes[i]) : undefined}
             data-edit={onMove ? '' : undefined}
             data-active={shiftOf(i) ? '' : undefined}
             aria-pressed={p.selected ? true : false}

@@ -260,6 +260,11 @@ control method is chosen per room:
 
 ## Targets, profiles and schedules
 
+The Schedule page has three tabs, each with its own address and the same on a phone: **Schedule** (the
+week), **Profiles** (the list and the open profile) and **Priority** (who wins when rules disagree). A
+profile shows its name, its heating and cooling targets and when it switches on by itself; what each
+room does in it and its colour and icon fold away until opened, and **Duplicate** / **Delete** close it.
+
 - **Effective target** = the active profile's value for the room, after every layer and modifier, with
   where it comes from and until when. The room page shows it as "Target 20.0° · Home until 23:00".
 - **Who wins when rules disagree** (Schedule page): frost protection › open window (both locked) ›
@@ -286,8 +291,8 @@ control method is chosen per room:
   change**; **Add a change** splits the longest stretch of the day. A change's handle drags it up or down
   the list (or the arrow keys on it move it a place): its shadow stays in place, a line shows where it
   will go, and the stretches swap places, each keeping its length, the first one keeping its start time.
-  Dragging leaves the details closed (an open change stays open). Changing a profile, deleting and reordering can be undone for
-  8 seconds.
+  Dragging leaves the details closed (an open change stays open). Changing a profile, deleting and
+  reordering can be undone for 8 seconds.
 - **The day chart** draws the heating or the cooling target (the switch above it) over the profile
   stretches, and is edited in place: drag the line between two stretches (or the time above it) to move
   that change, grab a stretch in the middle to move it whole, or pick a profile under **Draw a stretch**
@@ -295,8 +300,8 @@ control method is chosen per room:
   arrow keys (Shift: one hour); a click on a stretch opens its change. On a phone a finger on the chart
   scrolls the page: the times above it drag, and with a profile picked a finger paints. Under a room
   schedule the whole house's plan on the same days is shown to compare.
-- **Now**: the line on top tells what the schedule gives now, until when and what comes next. **Today like
-  a weekend** adds an exception that runs today like a Saturday; **Back to the week** removes it.
+- **Now**: the line on top tells what the schedule gives now (today's exception included), until when and
+  what comes next; **Quick setup** sits beside it.
 - **Quick setup** writes the whole week from four times — waking up, leaving, coming back, going to bed —
   for the weekdays and the weekend, or with someone at home all day; it can be undone for 8 seconds.
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.33
+
+- **The Schedule page has tabs: Schedule, Profiles, Priority.** Each is its own address and the page
+  shows one at a time, on a wide screen as on a phone (where Priority was a button at the end of the
+  profiles).
+- **A profile is lighter to work with.** Its name, its heating and cooling targets and when it switches
+  on by itself come first; what each room does in it and its colour and icon fold away until opened,
+  with a summary («2 with their own setting»); **Duplicate** and **Delete** moved to its end.
+- **Quick setup took the place of «Today like a weekend»** in the «now» line, so the schedule's header
+  keeps only whose schedule it is, and the phone loses the button at the bottom. A day like a weekend is
+  still an exception in **Exceptions**.
+- **The times above the day chart** take up to three rows, so three changes close together no longer
+  overlap.
+
 ## 0.2.32
 
 - **The schedule no longer slides sideways on a phone.** A finger on the day chart scrolls the page — a

@@ -1,15 +1,15 @@
 /**
  * Schedule & profiles («Розклад»): when each profile is in force (the weekly schedule as day
  * types and their changes, rules that switch it on by themselves, dated exceptions), which
- * targets every profile gives the rooms, and who wins when rules disagree. Wide screens show it
- * all on one page; phones get the day view, with profiles and priority as their own screens.
+ * targets every profile gives the rooms, and who wins when rules disagree. Three tabs, each its
+ * own address — the schedule, the profiles, the priority — on wide screens and phones alike.
  */
 import { useEffect, useMemo } from 'react';
 import type { Dow, Id } from '@api/model';
 import { api } from '@api/endpoints';
 import { useLayout, useResource } from '@data';
 import { navigate, paths, usePref, useRoute } from '@app';
-import { Page, Section, Skeleton, Split, Stack, StatusBanner } from '@ui';
+import { Page, Section, Skeleton, Split, Stack, StatusBanner, SubNav } from '@ui';
 import { t, zonedParts } from '@i18n';
 import { useScheduleContext } from './data';
 import { DaySchedule } from './DaySchedule';
@@ -20,21 +20,38 @@ import { ProfileItems } from './Profiles';
 import { useDayEdit } from './useDayEdit';
 import { useScheduleEditor } from './useScheduleEditor';
 
+type Tab = 'schedule' | 'profiles' | 'priority';
+
+function ScheduleNav({ current }: { current: Tab }) {
+  return (
+    <SubNav
+      ariaLabel={t('Schedule sections')}
+      current={current}
+      items={[
+        { key: 'schedule', label: t('Schedule'), to: paths.schedule() },
+        { key: 'profiles', label: t('Profiles'), to: paths.scheduleProfiles() },
+        { key: 'priority', label: t('Priority'), to: paths.schedulePriority() },
+      ]}
+    />
+  );
+}
+
 export default function SchedulePage(): JSX.Element {
   const route = useRoute();
   const phone = useLayout() === 'phone';
   const c = useScheduleContext();
   const [selectedId, setSelectedId] = usePref<Id>('schedule.profile', 'home');
 
-  // the profile and priority addresses are separate screens on phones only
+  // the profile in the address is the open one; the profiles tab without one opens the last
+  const routeProfile = route.name === 'scheduleProfile' ? route.params.id : undefined;
   useEffect(() => {
-    if (phone) return;
-    if (route.name === 'scheduleProfile' && route.params.id) setSelectedId(route.params.id);
-    if (route.name === 'scheduleProfile' || route.name === 'scheduleProfiles' || route.name === 'schedulePriority') {
-      navigate(paths.schedule(), { replace: true, force: true });
-    }
-  }, [phone, route.name, route.params.id, setSelectedId]);
-
+    if (routeProfile) setSelectedId(routeProfile);
+  }, [routeProfile, setSelectedId]);
+  const tab: Tab = route.name === 'schedulePriority' ? 'priority' : route.name === 'scheduleProfiles' || route.name === 'scheduleProfile' ? 'profiles' : 'schedule';
+  const selectProfile = (id: Id) => {
+    setSelectedId(id);
+    navigate(paths.scheduleProfile(id), { replace: true });
+  };
   // whose schedule and which day come from the address, so they can be shared
   const now = zonedParts(c.now);
   const today = now.dow;
@@ -70,11 +87,12 @@ export default function SchedulePage(): JSX.Element {
     return <PhoneDay c={c} editor={editor} edit={edit} today={today} nowMinute={now.minuteOfDay} onScope={goScope} onDay={goDay} />;
   }
 
-  const selected = c.profileById(selectedId) ?? c.profiles.data?.[0] ?? null;
+  const selected = c.profileById(routeProfile ?? selectedId) ?? c.profiles.data?.[0] ?? null;
   return (
     <Page
       title={t('Schedule & profiles')}
       subtitle={t('A profile sets the rooms’ targets. The schedule, presence and the calendar decide when which profile is in force.')}
+      actions={<ScheduleNav current={tab} />}
     >
       {failed ? (
         <StatusBanner
@@ -87,26 +105,23 @@ export default function SchedulePage(): JSX.Element {
       {loading ? (
         <Stack gap="lg">
           <Skeleton height={520} radius={20} />
-          <Skeleton height={420} radius={20} />
         </Stack>
+      ) : tab === 'schedule' ? (
+        <DaySchedule c={c} editor={editor} edit={edit} today={today} nowMinute={now.minuteOfDay} onScope={goScope} onDay={goDay} />
+      ) : tab === 'profiles' ? (
+        <Split
+          asideFirst
+          asideBasis={320}
+          mainBasis={640}
+          aside={
+            <Section variant="plain" title={t('Profiles')}>
+              <ProfileItems c={c} selectedId={selected?.id ?? null} onSelect={selectProfile} />
+            </Section>
+          }
+          main={selected ? <ProfileEditor key={selected.id} c={c} profile={selected} schedules={editor.schedules} onSelect={selectProfile} /> : null}
+        />
       ) : (
-        <>
-          <DaySchedule c={c} editor={editor} edit={edit} today={today} nowMinute={now.minuteOfDay} onScope={goScope} onDay={goDay} />
-          <Split
-            asideFirst
-            asideBasis={320}
-            mainBasis={640}
-            aside={
-              <Stack gap="lg">
-                <Section variant="plain" title={t('Profiles')}>
-                  <ProfileItems c={c} selectedId={selected?.id ?? null} onSelect={setSelectedId} />
-                </Section>
-                <PriorityList c={c} />
-              </Stack>
-            }
-            main={selected ? <ProfileEditor key={selected.id} c={c} profile={selected} schedules={editor.schedules} onSelect={setSelectedId} /> : null}
-          />
-        </>
+        <PriorityList c={c} />
       )}
     </Page>
   );
