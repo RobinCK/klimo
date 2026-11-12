@@ -7,7 +7,22 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Dow, Id, ProfileDto } from '@api/model';
 import { minuteToHhmm, t, weekdayLong } from '@i18n';
-import { addPoint, dayTypes, movePoint, planOf, pointAt, pointRange, pointsOf, removePoint, setPointProfile, type DayType, type SwitchPoint } from './points';
+import {
+  addPoint,
+  dayTypes,
+  movePoint,
+  paintStretch,
+  planOf,
+  pointAt,
+  pointRange,
+  pointsOf,
+  removePoint,
+  setPointProfile,
+  shiftRange,
+  shiftStretch,
+  type DayType,
+  type SwitchPoint,
+} from './points';
 import { daysLabel } from './texts';
 import type { ScheduleEditor } from './useScheduleEditor';
 
@@ -22,6 +37,12 @@ export interface DayEdit {
   range: (index: number) => { min: number; max: number };
   move: (index: number, minute: number) => void;
   setProfile: (index: number, profileId: Id) => void;
+  /** How far the stretch of point `index` may move as a whole. */
+  shiftRange: (index: number) => { min: number; max: number };
+  /** The stretch of point `index` moved as a whole by `delta` minutes. */
+  shift: (index: number, delta: number) => void;
+  /** [start, end) painted in a profile. */
+  paint: (start: number, end: number, profileId: Id) => void;
   canRemove: boolean;
   remove: (index: number) => void;
   canAdd: boolean;
@@ -33,6 +54,9 @@ export interface DayEdit {
   /** Every day back in the type of its plan (after the whole week was replaced). */
   reset: () => void;
 }
+
+const samePoints = (a: readonly SwitchPoint[], b: readonly SwitchPoint[]) =>
+  a.length === b.length && a.every((p, i) => p.minute === b[i].minute && p.profileId === b[i].profileId);
 
 export function useDayEdit(editor: ScheduleEditor, profiles: readonly ProfileDto[], day: Dow, initialMinute: number | null = null): DayEdit {
   const days = editor.schedule?.days ?? null;
@@ -77,6 +101,19 @@ export function useDayEdit(editor: ScheduleEditor, profiles: readonly ProfileDto
         p.minute,
         t('{time} → «{profile}»', { time: minuteToHhmm(p.minute), profile: profileName(profileId) }),
       );
+    },
+    shiftRange: (i) => shiftRange(points, i),
+    shift: (i, delta) => {
+      const p = points[i];
+      if (!p) return;
+      const next = shiftStretch(points, i, delta);
+      if (next[i].minute === p.minute) return;
+      write(next, next[i].minute, t('«{profile}» moved to {time}', { profile: profileName(p.profileId), time: minuteToHhmm(next[i].minute) }));
+    },
+    paint: (start, end, profileId) => {
+      const next = paintStretch(points, start, end, profileId);
+      if (samePoints(next, points)) return;
+      write(next, start, t('{from}–{to} → «{profile}»', { from: minuteToHhmm(start), to: minuteToHhmm(end), profile: profileName(profileId) }));
     },
     canRemove: points.length > 1,
     remove: (i) => {

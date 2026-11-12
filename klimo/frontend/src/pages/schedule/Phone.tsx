@@ -26,7 +26,7 @@ import {
 import { minuteToHhmm, t, weekdayLong } from '@i18n';
 import { DOWS } from './blocks';
 import type { ScheduleContext } from './data';
-import { DayChart, HouseComparison, PointEditor, ScheduleNow, TargetModeSwitch, useTargetMode } from './DayParts';
+import { BrushPicker, DayChart, HouseComparison, PointEditor, ScheduleNow, TargetModeSwitch, useTargetMode } from './DayParts';
 import { Exceptions } from './Exceptions';
 import { PriorityList } from './Priority';
 import { ProfileEditor } from './ProfileEditor';
@@ -70,6 +70,7 @@ export function PhoneDay({ c, editor, edit, today, nowMinute, onScope, onDay }: 
   const [scopes, setScopes] = useState(false);
   const [adding, setAdding] = useState(false);
   const [setup, setSetup] = useState(false);
+  const [brush, setBrush] = useState<Id | null>(null);
   const [mode, setMode] = useTargetMode(c);
   const schedule = editor.schedule;
   const type = edit.type;
@@ -137,7 +138,8 @@ export function PhoneDay({ c, editor, edit, today, nowMinute, onScope, onDay }: 
             <Section variant="plain" level={3} title={title?.name ?? ''} />
             <TargetModeSwitch value={mode} onChange={setMode} />
           </Row>
-          <DayChart c={c} schedule={schedule} edit={edit} mode={mode} today={today} nowMinute={nowMinute} />
+          {c.canEdit ? <BrushPicker c={c} schedule={schedule} mode={mode} brush={brush} onBrush={setBrush} /> : null}
+          <DayChart c={c} schedule={schedule} edit={edit} mode={mode} today={today} nowMinute={nowMinute} brush={brush} />
           {schedule.scope === 'room' ? <HouseComparison house={editor.schedules.find((s) => s.scope === 'house') ?? null} type={type} c={c} /> : null}
           <Stack gap="sm">
             {view.rows.map((r, i) => (

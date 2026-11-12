@@ -10,8 +10,10 @@ const DAY_MIN = 1440;
 const PLOT_H = 168;
 const PLOT_TOP = 40;
 const PLOT_BOTTOM = 18;
-/** A pointer that travels this far drags a time label instead of clicking it. */
+/** A pointer that travels this far drags instead of clicking. */
 const DRAG_PX = 4;
+/** How close to the line between two stretches a pointer grabs that line. */
+const EDGE_PX = 8;
 /** Room a time label needs; closer labels go to a second row. */
 const CHIP_PX = 50;
 
@@ -48,10 +50,17 @@ export interface ScheduleDayChartProps {
   tone: 'heat' | 'cool';
   now?: { minute: number; label: string } | null;
   onSelect(index: number): void;
-  /** With it the time labels drag along the day, and arrows move a focused one by a step. */
+  /** With it the time labels and the lines between stretches drag along the day, and arrows move a focused label by a step. */
   onMove?(index: number, minute: number): void;
   /** Where point `index` may move. */
   range?(index: number): { min: number; max: number };
+  /** With it a stretch drags along the day as a whole: the stretch of point `index` moves by `delta` minutes. */
+  onShift?(index: number, delta: number): void;
+  /** How far the stretch of point `index` may move as a whole. */
+  shiftRange?(index: number): { min: number; max: number };
+  /** A profile to paint with: a drag over the chart then paints that stretch (`onPaint`) instead of moving things. */
+  brush?: { color: string } | null;
+  onPaint?(start: number, end: number): void;
   /** Grid of the moves in minutes. */
   step?: number;
   formatMinute?(minute: number): string;
@@ -61,12 +70,18 @@ export interface ScheduleDayChartProps {
   ariaLabel: string;
 }
 
-type Drag = { i: number; from: number; minute: number; min: number; max: number; x0: number; moved: boolean; rect: DOMRect };
+type Gesture =
+  | { kind: 'edge'; i: number; from: number; minute: number; min: number; max: number }
+  | { kind: 'shift'; i: number; moved: number[]; delta: number; min: number; max: number }
+  | { kind: 'paint'; anchor: number; a: number; b: number };
+
+type Live = { g: Gesture; x0: number; active: boolean; rect: DOMRect; pointerId: number; el: HTMLElement; click: number | null };
 
 /**
  * One day of a schedule: the target as a stepped line over the profile stretches, the profile
  * ribbon under it and the switch times above it. A time label is a button: a click selects the
- * point, a drag (or the arrow keys) moves it along the day.
+ * point, a drag (or the arrow keys) moves it. On the chart itself the line between two stretches
+ * drags, a stretch drags as a whole, and with a brush a drag paints a new stretch.
  */
 export function ScheduleDayChart({
   segments,
@@ -76,6 +91,10 @@ export function ScheduleDayChart({
   onSelect,
   onMove,
   range,
+  onShift,
+  shiftRange,
+  brush,
+  onPaint,
   step = 15,
   formatMinute = hhmm,
   formatValue = (v) => fmtAxisDeg(v),
@@ -85,23 +104,25 @@ export function ScheduleDayChart({
   const ut = useUiText();
   const plotRef = useRef<HTMLDivElement>(null);
   const { width } = useSize(plotRef);
-  const [drag, setDragState] = useState<Drag | null>(null);
-  const dragRef = useRef<Drag | null>(null);
+  const [gesture, setGestureState] = useState<Gesture | null>(null);
+  const live = useRef<Live | null>(null);
   const swallowClick = useRef(false);
-  const setDrag = (next: Drag | null) => {
-    dragRef.current = next;
-    setDragState(next);
+  const [hover, setHover] = useState<'edge' | 'stretch' | null>(null);
+  const show = (next: Gesture | null) => setGestureState(next);
+  const stop = () => {
+    live.current = null;
+    show(null);
   };
 
-  const dragging = drag?.moved ?? false;
+  const active = gesture != null;
   useEffect(() => {
-    if (!dragging) return;
+    if (!active) return;
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape') setDrag(null);
+      if (e.key === 'Escape') stop();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [dragging]);
+  }, [active]);
 
   const limits = (i: number) => {
     if (range) return range(i);
@@ -109,17 +130,43 @@ export function ScheduleDayChart({
     const max = i < points.length - 1 ? points[i + 1].minute - step : DAY_MIN - step;
     return { min, max };
   };
+  const snap = (m: number) => clamp(Math.round(m / step) * step, 0, DAY_MIN);
+  const minuteAt = (rect: DOMRect, x: number) => clamp(((x - rect.left) / rect.width) * DAY_MIN, 0, DAY_MIN);
+  const segmentAt = (m: number) => segments.find((seg) => seg.start <= m && m < seg.end) ?? segments[segments.length - 1];
+  /** The point whose line is under `x`, if one is within reach. */
+  const edgeAt = (rect: DOMRect, x: number): number | null => {
+    let best: number | null = null;
+    let dist = EDGE_PX + 1;
+    points.forEach((p, i) => {
+      const d = Math.abs(rect.left + (p.minute / DAY_MIN) * rect.width - x);
+      if (d < dist) {
+        dist = d;
+        best = i;
+      }
+    });
+    return best;
+  };
 
-  // while a label is dragged its point and the stretches on both sides of it follow
-  const minuteOf = (i: number) => (drag?.moved && drag.i === i ? drag.minute : points[i].minute);
-  const shown = segments.map((seg) => {
-    if (!drag?.moved) return seg;
-    return {
-      ...seg,
-      start: seg.start === drag.from && seg.start > 0 ? drag.minute : seg.start,
-      end: seg.end === drag.from ? drag.minute : seg.end,
-    };
+  // while something is dragged the points and the stretches follow it
+  const shiftOf = (i: number) => {
+    if (gesture?.kind === 'edge' && gesture.i === i) return gesture.minute - gesture.from;
+    if (gesture?.kind === 'shift' && gesture.moved.includes(i)) return gesture.delta;
+    return 0;
+  };
+  const minuteOf = (i: number) => points[i].minute + shiftOf(i);
+  const moves = new Map<number, number>();
+  points.forEach((p, i) => {
+    const d = shiftOf(i);
+    if (d) moves.set(p.minute, p.minute + d);
   });
+  const shown = moves.size
+    ? segments.map((seg) => ({
+        ...seg,
+        start: seg.start > 0 ? (moves.get(seg.start) ?? seg.start) : seg.start,
+        end: seg.end < DAY_MIN ? (moves.get(seg.end) ?? seg.end) : seg.end,
+      }))
+    : segments;
+  const paint = gesture?.kind === 'paint' && gesture.b > gesture.a ? gesture : null;
 
   const values = shown.map((seg) => seg.value).filter((v): v is number => v != null);
   const lo = values.length ? Math.floor(Math.min(...values)) - 1 : 15;
@@ -147,29 +194,89 @@ export function ScheduleDayChart({
     window.setTimeout(() => (swallowClick.current = false), 0);
   };
 
-  const onDown = (e: PointerEvent<HTMLButtonElement>, i: number) => {
+  const begin = (e: PointerEvent<HTMLElement>, g: Gesture, click: number | null) => {
     const rect = plotRef.current?.getBoundingClientRect();
-    if (!onMove || e.button !== 0 || !rect) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
+    if (!rect || e.button !== 0) return;
+    live.current = { g, x0: e.clientX, active: false, rect, pointerId: e.pointerId, el: e.currentTarget, click };
+  };
+
+  const onChipDown = (e: PointerEvent<HTMLButtonElement>, i: number) => {
+    if (!onMove) return;
     const r = limits(i);
-    setDrag({ i, from: points[i].minute, minute: points[i].minute, min: r.min, max: r.max, x0: e.clientX, moved: false, rect });
+    begin(e, { kind: 'edge', i, from: points[i].minute, minute: points[i].minute, min: r.min, max: r.max }, null);
   };
-  const onPointerMove = (e: PointerEvent<HTMLButtonElement>) => {
-    const d = dragRef.current;
-    if (!d) return;
-    if (!d.moved && Math.abs(e.clientX - d.x0) < DRAG_PX) return;
-    const raw = ((e.clientX - d.rect.left) / d.rect.width) * DAY_MIN;
-    const minute = clamp(Math.round(raw / step) * step, d.min, d.max);
-    if (!d.moved || minute !== d.minute) setDrag({ ...d, moved: true, minute });
+
+  const onSurfaceDown = (e: PointerEvent<HTMLDivElement>) => {
+    const rect = plotRef.current?.getBoundingClientRect();
+    if (!rect || e.button !== 0 || !segments.length) return;
+    const m = minuteAt(rect, e.clientX);
+    const under = segmentAt(m).point;
+    if (brush && onPaint) return begin(e, { kind: 'paint', anchor: m, a: 0, b: 0 }, under);
+    const edge = onMove ? edgeAt(rect, e.clientX) : null;
+    if (edge != null) {
+      const r = limits(edge);
+      return begin(e, { kind: 'edge', i: edge, from: points[edge].minute, minute: points[edge].minute, min: r.min, max: r.max }, under);
+    }
+    if (onShift && shiftRange) {
+      const r = shiftRange(under);
+      const next = (under + 1) % points.length;
+      return begin(e, { kind: 'shift', i: under, moved: [under, next], delta: 0, min: r.min, max: r.max }, under);
+    }
+    begin(e, { kind: 'paint', anchor: m, a: 0, b: 0 }, under);
   };
-  const onUp = () => {
-    const d = dragRef.current;
-    if (!d) return;
-    setDrag(null);
-    if (!d.moved) return;
+
+  const onPointerMove = (e: PointerEvent<HTMLElement>) => {
+    const l = live.current;
+    if (!l) {
+      // the cursor tells what a drag would do
+      const rect = plotRef.current?.getBoundingClientRect();
+      if (!rect || e.currentTarget.dataset.surface == null) return;
+      const next = brush && onPaint ? null : onMove && edgeAt(rect, e.clientX) != null ? 'edge' : onShift ? 'stretch' : null;
+      if (next !== hover) setHover(next);
+      return;
+    }
+    if (!l.active && Math.abs(e.clientX - l.x0) < DRAG_PX) return;
+    if (!l.active) {
+      l.active = true;
+      l.el.setPointerCapture(l.pointerId);
+    }
+    const m = minuteAt(l.rect, e.clientX);
+    const g = l.g;
+    if (g.kind === 'edge') {
+      const minute = clamp(snap(m), g.min, g.max);
+      l.g = { ...g, minute };
+    } else if (g.kind === 'shift') {
+      const raw = ((e.clientX - l.x0) / l.rect.width) * DAY_MIN;
+      l.g = { ...g, delta: clamp(Math.round(raw / step) * step, g.min, g.max) };
+    } else {
+      if (!brush || !onPaint) return;
+      let a = snap(Math.min(g.anchor, m));
+      let b = snap(Math.max(g.anchor, m));
+      if (b - a < step) {
+        if (m >= g.anchor) b = Math.min(DAY_MIN, a + step);
+        else a = Math.max(0, b - step);
+      }
+      l.g = { ...g, a, b };
+    }
+    show(l.g);
+  };
+
+  const onPointerUp = () => {
+    const l = live.current;
+    if (!l) return;
+    stop();
+    if (!l.active) {
+      // no drag: a click on the chart selects the stretch under it (a label selects through its click)
+      if (l.click != null) onSelect(l.click);
+      return;
+    }
     swallow();
-    if (d.minute !== d.from) onMove?.(d.i, d.minute);
+    const g = l.g;
+    if (g.kind === 'edge' && g.minute !== g.from) onMove?.(g.i, g.minute);
+    else if (g.kind === 'shift' && g.delta) onShift?.(g.i, g.delta);
+    else if (g.kind === 'paint' && g.b > g.a) onPaint?.(g.a, g.b);
   };
+
   const onKey = (e: KeyboardEvent<HTMLButtonElement>, i: number) => {
     if (!onMove) return;
     const by = e.shiftKey ? 60 : step;
@@ -184,9 +291,10 @@ export function ScheduleDayChart({
   const line = tone === 'heat' ? 'var(--ui-tone-heat-line)' : 'var(--ui-tone-cool-line)';
   const fg = tone === 'heat' ? 'var(--ui-tone-heat-fg)' : 'var(--ui-tone-cool-fg)';
   const nowMin = now ? clamp(now.minute, 0, DAY_MIN) : null;
+  const dragging = gesture?.kind ?? (brush && onPaint ? 'brush' : hover ?? undefined);
 
   return (
-    <div className={s.sday} role="group" aria-label={ariaLabel} data-dragging={dragging ? '' : undefined} style={{ '--line': line, '--value': fg } as CSSProperties}>
+    <div className={s.sday} role="group" aria-label={ariaLabel} data-gesture={dragging} style={{ '--line': line, '--value': fg } as CSSProperties}>
       <div className={s.sdayChips} data-lanes={twoLanes ? '2' : '1'}>
         {points.map((p, i) => (
           <button
@@ -196,14 +304,14 @@ export function ScheduleDayChart({
             style={{ left: pct((minuteOf(i) / DAY_MIN) * 100) }}
             data-lane={lanes[i] ? '1' : undefined}
             data-edit={onMove ? '' : undefined}
-            data-active={drag?.moved && drag.i === i ? '' : undefined}
+            data-active={shiftOf(i) ? '' : undefined}
             aria-pressed={p.selected ? true : false}
             aria-label={p.aria}
             title={onMove ? ut('Drag it, or move it with the arrow keys') : undefined}
-            onPointerDown={(e) => onDown(e, i)}
+            onPointerDown={(e) => onChipDown(e, i)}
             onPointerMove={onPointerMove}
-            onPointerUp={onUp}
-            onPointerCancel={() => setDrag(null)}
+            onPointerUp={onPointerUp}
+            onPointerCancel={stop}
             onKeyDown={(e) => onKey(e, i)}
             onClick={() => {
               if (swallowClick.current) return;
@@ -224,93 +332,115 @@ export function ScheduleDayChart({
           ))}
         </div>
         <div className={s.sdayLanes}>
-          <div ref={plotRef} className={s.sdayPlot} aria-hidden="true">
-            {ticks.map((v) => (
-              <span key={v} className={s.sdayGrid} style={{ top: `${y(v)}px` }} />
-            ))}
-            {shown.map((seg, i) => {
-              const a = clamp(seg.start, 0, DAY_MIN);
-              const b = clamp(seg.end, 0, DAY_MIN);
-              if (b <= a) return null;
-              return (
-                <span
-                  key={`t-${i}`}
-                  className={s.sdayTint}
-                  data-selected={seg.selected ? '' : undefined}
-                  style={{ left: pct((a / DAY_MIN) * 100), width: pct(((b - a) / DAY_MIN) * 100), '--fill': seg.color } as CSSProperties}
-                  onClick={() => onSelect(seg.point)}
-                />
-              );
-            })}
-            {points.map((p, i) => (
-              <span key={`g-${i}`} className={s.sdayGuide} data-selected={p.selected ? '' : undefined} style={{ left: pct((minuteOf(i) / DAY_MIN) * 100) }} />
-            ))}
-            {shown.map((seg, i) => {
-              const prev = shown[i - 1];
-              if (!prev || seg.value == null || prev.value == null || prev.value === seg.value) return null;
-              const y1 = y(prev.value);
-              const y2 = y(seg.value);
-              return (
-                <span
-                  key={`c-${i}`}
-                  className={s.sdayRise}
-                  style={{ left: pct((clamp(seg.start, 0, DAY_MIN) / DAY_MIN) * 100), top: `${Math.min(y1, y2) - 1.5}px`, height: `${Math.abs(y1 - y2) + 3}px` }}
-                />
-              );
-            })}
-            {shown.map((seg, i) => {
-              const a = clamp(seg.start, 0, DAY_MIN);
-              const b = clamp(seg.end, 0, DAY_MIN);
-              if (b <= a) return null;
-              const mid = pct(((a + b) / 2 / DAY_MIN) * 100);
-              const roomy = ((b - a) / DAY_MIN) * width >= 52;
-              if (seg.value == null) {
-                return roomy ? (
-                  <span key={`l-${i}`} className={s.sdayNone} style={{ left: mid }}>
-                    {seg.valueText}
-                  </span>
-                ) : null;
-              }
-              const top = y(seg.value);
-              return (
-                <span key={`l-${i}`}>
-                  <span className={s.sdayStep} style={{ left: pct((a / DAY_MIN) * 100), width: pct(((b - a) / DAY_MIN) * 100), top: `${top - 1.5}px` }} />
-                  {roomy ? (
-                    <span className={s.sdayValue} style={{ left: mid, top: `${top - 24}px` }}>
+          <div
+            className={s.sdaySurface}
+            data-surface=""
+            data-edit={onMove || onShift || onPaint ? '' : undefined}
+            aria-hidden="true"
+            onPointerDown={onSurfaceDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={stop}
+            onPointerLeave={() => !live.current && hover && setHover(null)}
+          >
+            <div ref={plotRef} className={s.sdayPlot}>
+              {ticks.map((v) => (
+                <span key={v} className={s.sdayGrid} style={{ top: `${y(v)}px` }} />
+              ))}
+              {shown.map((seg, i) => {
+                const a = clamp(seg.start, 0, DAY_MIN);
+                const b = clamp(seg.end, 0, DAY_MIN);
+                if (b <= a) return null;
+                return (
+                  <span
+                    key={`t-${i}`}
+                    className={s.sdayTint}
+                    data-selected={seg.selected ? '' : undefined}
+                    style={{ left: pct((a / DAY_MIN) * 100), width: pct(((b - a) / DAY_MIN) * 100), '--fill': seg.color } as CSSProperties}
+                  />
+                );
+              })}
+              {points.map((p, i) => (
+                <span key={`g-${i}`} className={s.sdayGuide} data-selected={p.selected ? '' : undefined} style={{ left: pct((minuteOf(i) / DAY_MIN) * 100) }} />
+              ))}
+              {shown.map((seg, i) => {
+                const prev = shown[i - 1];
+                if (!prev || seg.value == null || prev.value == null || prev.value === seg.value) return null;
+                const y1 = y(prev.value);
+                const y2 = y(seg.value);
+                return (
+                  <span
+                    key={`c-${i}`}
+                    className={s.sdayRise}
+                    style={{ left: pct((clamp(seg.start, 0, DAY_MIN) / DAY_MIN) * 100), top: `${Math.min(y1, y2) - 1.5}px`, height: `${Math.abs(y1 - y2) + 3}px` }}
+                  />
+                );
+              })}
+              {shown.map((seg, i) => {
+                const a = clamp(seg.start, 0, DAY_MIN);
+                const b = clamp(seg.end, 0, DAY_MIN);
+                if (b <= a) return null;
+                const mid = pct(((a + b) / 2 / DAY_MIN) * 100);
+                const roomy = ((b - a) / DAY_MIN) * width >= 52;
+                if (seg.value == null) {
+                  return roomy ? (
+                    <span key={`l-${i}`} className={s.sdayNone} style={{ left: mid }}>
                       {seg.valueText}
                     </span>
-                  ) : null}
-                </span>
-              );
-            })}
-            {nowMin != null && now ? (
+                  ) : null;
+                }
+                const top = y(seg.value);
+                return (
+                  <span key={`l-${i}`}>
+                    <span className={s.sdayStep} style={{ left: pct((a / DAY_MIN) * 100), width: pct(((b - a) / DAY_MIN) * 100), top: `${top - 1.5}px` }} />
+                    {roomy ? (
+                      <span className={s.sdayValue} style={{ left: mid, top: `${top - 24}px` }}>
+                        {seg.valueText}
+                      </span>
+                    ) : null}
+                  </span>
+                );
+              })}
+              {nowMin != null && now ? (
+                <>
+                  <span className={s.sdayNow} style={{ left: pct((nowMin / DAY_MIN) * 100) }} />
+                  <span className={s.sdayNowLabel} data-flip={nowMin > DAY_MIN * 0.85 ? '' : undefined} style={{ left: pct((nowMin / DAY_MIN) * 100) }}>
+                    {now.label}
+                  </span>
+                </>
+              ) : null}
+            </div>
+
+            <div className={s.sdayRibbon}>
+              {shown.map((seg, i) => {
+                const a = clamp(seg.start, 0, DAY_MIN);
+                const b = clamp(seg.end, 0, DAY_MIN);
+                if (b <= a) return null;
+                const fits = ((b - a) / DAY_MIN) * width >= seg.label.length * 7 + 16;
+                return (
+                  <span
+                    key={`r-${i}`}
+                    className={s.sdaySeg}
+                    data-selected={seg.selected ? '' : undefined}
+                    style={{ left: pct((a / DAY_MIN) * 100), width: pct(((b - a) / DAY_MIN) * 100), '--fill': seg.color, '--ink': seg.ink } as CSSProperties}
+                  >
+                    {fits ? seg.label : null}
+                  </span>
+                );
+              })}
+            </div>
+
+            {paint && brush ? (
               <>
-                <span className={s.sdayNow} style={{ left: pct((nowMin / DAY_MIN) * 100) }} />
-                <span className={s.sdayNowLabel} data-flip={nowMin > DAY_MIN * 0.85 ? '' : undefined} style={{ left: pct((nowMin / DAY_MIN) * 100) }}>
-                  {now.label}
+                <span
+                  className={s.sdayPaint}
+                  style={{ left: pct((paint.a / DAY_MIN) * 100), width: pct(((paint.b - paint.a) / DAY_MIN) * 100), '--fill': brush.color } as CSSProperties}
+                />
+                <span className={s.sdayBubble} style={{ left: pct(((paint.a + paint.b) / 2 / DAY_MIN) * 100) }}>
+                  {`${formatMinute(paint.a)}–${formatMinute(paint.b)}`}
                 </span>
               </>
             ) : null}
-          </div>
-
-          <div className={s.sdayRibbon} aria-hidden="true">
-            {shown.map((seg, i) => {
-              const a = clamp(seg.start, 0, DAY_MIN);
-              const b = clamp(seg.end, 0, DAY_MIN);
-              if (b <= a) return null;
-              const fits = ((b - a) / DAY_MIN) * width >= seg.label.length * 7 + 16;
-              return (
-                <span
-                  key={`r-${i}`}
-                  className={s.sdaySeg}
-                  data-selected={seg.selected ? '' : undefined}
-                  style={{ left: pct((a / DAY_MIN) * 100), width: pct(((b - a) / DAY_MIN) * 100), '--fill': seg.color, '--ink': seg.ink } as CSSProperties}
-                  onClick={() => onSelect(seg.point)}
-                >
-                  {fits ? seg.label : null}
-                </span>
-              );
-            })}
           </div>
 
           <div className={s.sdayAxis} aria-hidden="true">

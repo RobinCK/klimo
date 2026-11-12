@@ -126,7 +126,7 @@ export interface ProfileChoiceProps {
   disabled?: boolean;
 }
 
-/** Choosing a profile, each with its colour and the target it gives. */
+/** Choosing a profile, each with its colour and the target it gives (a tap on the chosen one reports it again). */
 export function ProfileChoice({ value, options, onChange, ariaLabel, tone, layout = 'chips', disabled }: ProfileChoiceProps) {
   return (
     <div className={s.choice} data-layout={layout} data-tone={tone} role="group" aria-label={ariaLabel}>
@@ -137,7 +137,7 @@ export function ProfileChoice({ value, options, onChange, ariaLabel, tone, layou
           className={s.choiceItem}
           aria-pressed={o.value === value}
           disabled={disabled}
-          onClick={() => o.value !== value && onChange(o.value)}
+          onClick={() => onChange(o.value)}
         >
           <span className={s.choiceSwatch} style={{ background: o.color }} aria-hidden="true" />
           <span className={s.choiceName}>{o.name}</span>

@@ -1303,10 +1303,31 @@
   min-width: 0;
 }
 
-.sday[data-dragging] {
+/* what a drag does shows in the cursor: a line moves, a stretch moves whole, a brush paints */
+.sday[data-gesture='edge'],
+.sday[data-gesture='shift'],
+.sday[data-gesture='paint'] {
   user-select: none;
   -webkit-user-select: none;
+}
+
+.sday[data-gesture='edge'],
+.sday[data-gesture='edge'] .sdaySurface {
   cursor: col-resize;
+}
+
+.sday[data-gesture='stretch'] .sdaySurface {
+  cursor: grab;
+}
+
+.sday[data-gesture='shift'],
+.sday[data-gesture='shift'] .sdaySurface {
+  cursor: grabbing;
+}
+
+.sday[data-gesture='brush'] .sdaySurface,
+.sday[data-gesture='paint'] .sdaySurface {
+  cursor: crosshair;
 }
 
 /* the switch times above the plot, one row (two when they crowd) */
@@ -1398,6 +1419,47 @@
   gap: 6px;
 }
 
+/* the plot and the ribbon take the drags; a finger still scrolls the page up and down */
+.sdaySurface {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sdaySurface[data-edit] {
+  cursor: pointer;
+  touch-action: pan-y;
+}
+
+/* the stretch being painted, and its times */
+.sdayPaint {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  border: 2px dashed var(--ui-text-1);
+  border-radius: var(--ui-radius-md);
+  background: color-mix(in srgb, var(--fill) 45%, transparent);
+  pointer-events: none;
+}
+
+.sdayBubble {
+  position: absolute;
+  top: 8px;
+  z-index: 3;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-text-1);
+  color: var(--ui-bg-page);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.3);
+  font-size: var(--ui-fs-caption);
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .sdayPlot {
   position: relative;
   height: 168px;
@@ -1419,7 +1481,6 @@
   top: 0;
   bottom: 0;
   background: color-mix(in srgb, var(--fill) 9%, transparent);
-  cursor: pointer;
 }
 
 .sdayTint[data-selected] {
@@ -1527,7 +1588,6 @@
   color: var(--ink);
   font-size: var(--ui-fs-caption);
   font-weight: 600;
-  cursor: pointer;
 }
 
 .sdaySeg[data-selected] {

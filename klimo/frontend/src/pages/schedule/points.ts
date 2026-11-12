@@ -124,3 +124,57 @@ export function dayTypes(days: readonly DayPlan[], detached: readonly Dow[]): Da
   }
   return types;
 }
+
+/** The two points that bound stretch `i`: its own and the next one (the first, for the last stretch). */
+function stretchEnds(points: readonly SwitchPoint[], i: number): [number, number] | null {
+  if (points.length < 2 || !points[i]) return null;
+  const j = (i + 1) % points.length;
+  // a day that starts with a change at 00:00 does not run on into the next morning
+  if (j === 0 && points[0].minute === 0) return null;
+  return [i, j];
+}
+
+/** How far stretch `i` may move as a whole, in minutes (both bounds 0 when it cannot). */
+export function shiftRange(points: readonly SwitchPoint[], i: number): { min: number; max: number } {
+  const ends = stretchEnds(points, i);
+  if (!ends) return { min: 0, max: 0 };
+  const n = points.length;
+  const moving = (k: number) => k === ends[0] || k === ends[1];
+  let min = -Infinity;
+  let max = Infinity;
+  // each moving point keeps a step from its neighbours that stay; the other moving point goes along
+  for (const k of ends) {
+    const lo = k > 0 ? (moving(k - 1) ? -Infinity : points[k - 1].minute + STEP) : 0;
+    const hi = k < n - 1 ? (moving(k + 1) ? Infinity : points[k + 1].minute - STEP) : DAY - STEP;
+    min = Math.max(min, lo - points[k].minute);
+    max = Math.min(max, hi - points[k].minute);
+  }
+  return { min: Math.min(0, min), max: Math.max(0, max) };
+}
+
+/** Stretch `i` moved as a whole by `delta` minutes: its start and its end move together. */
+export function shiftStretch(points: readonly SwitchPoint[], i: number, delta: number): SwitchPoint[] {
+  const ends = stretchEnds(points, i);
+  const r = shiftRange(points, i);
+  const d = Math.min(r.max, Math.max(r.min, Math.round(delta / STEP) * STEP));
+  if (!ends || !d) return points.map((p) => ({ ...p }));
+  return points.map((p, k) => (k === ends[0] || k === ends[1] ? { ...p, minute: p.minute + d } : { ...p }));
+}
+
+/** [start, end) of the day painted in a profile: the stretches under it shrink or go, equal neighbours merge. */
+export function paintStretch(points: readonly SwitchPoint[], start: number, end: number, profileId: Id): SwitchPoint[] {
+  const a = Math.max(0, Math.round(Math.min(start, end) / STEP) * STEP);
+  const b = Math.min(DAY, Math.round(Math.max(start, end) / STEP) * STEP);
+  const plan = planOf(points);
+  if (b - a < STEP || !plan.length) return points.map((p) => ({ ...p }));
+  const out: DayPlan = [];
+  for (const x of plan) {
+    if (x.end <= a || x.start >= b) out.push({ ...x });
+    else {
+      if (x.start < a) out.push({ start: x.start, end: a, profileId: x.profileId });
+      if (x.end > b) out.push({ start: b, end: x.end, profileId: x.profileId });
+    }
+  }
+  out.push({ start: a, end: b, profileId });
+  return pointsOf(out.sort((p, q) => p.start - q.start));
+}

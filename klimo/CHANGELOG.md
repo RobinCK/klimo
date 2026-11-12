@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.28
+
+- **The day is edited right on the chart.** Drag the line between two stretches (on the chart or on the
+  profile ribbon) to move that change; grab a stretch in the middle to move it whole, its start and end
+  together; pick a profile under **Draw a stretch** and drag over the chart to paint it there — the
+  painted stretch replaces what was under it on every day of the type. A click on a stretch opens its
+  change below.
+
 ## 0.2.27
 
 - **The weekly schedule is edited as day types and changes.** Days with the same plan form one day type

@@ -3,7 +3,7 @@
  * the «now» line with «today like a weekend», the editor of one change, the chart itself and the
  * house's plan under a room schedule for comparison.
  */
-import type { Dow, Schedule } from '@api/model';
+import type { Dow, Id, Schedule } from '@api/model';
 import { api } from '@api/endpoints';
 import { useMutation, useResource } from '@data';
 import { usePref } from '@app';
@@ -102,6 +102,32 @@ export function ScheduleNow({ c, schedule, today, nowMinute, mode }: { c: Schedu
   );
 }
 
+/** The profile a drag over the chart paints with: a tap picks it, a second tap puts it away. */
+export function BrushPicker({ c, schedule, mode, brush, onBrush }: { c: ScheduleContext; schedule: Schedule; mode: TargetMode; brush: Id | null; onBrush: (id: Id | null) => void }) {
+  const profiles = c.profiles.data ?? [];
+  const name = profiles.find((p) => p.id === brush)?.name;
+  return (
+    <Section
+      variant="plain"
+      level={3}
+      overline={t('Draw a stretch')}
+      subtitle={
+        name
+          ? t('Drag over the chart to paint «{profile}» there; tap it again to stop.', { profile: name })
+          : t('Pick a profile and drag over the chart. Without one, drag a line to move a change or a stretch to move it whole.')
+      }
+    >
+      <ProfileChoice
+        ariaLabel={t('Profile to draw with')}
+        value={brush ?? ''}
+        tone={mode}
+        options={profiles.map((x) => ({ value: x.id, name: x.name, color: x.color, valueText: targetText(scheduleTargets(schedule, x), mode) }))}
+        onChange={(id) => onBrush(id === brush ? null : id)}
+      />
+    </Section>
+  );
+}
+
 /** The chart of the shown day type. */
 export function DayChart({
   c,
@@ -110,6 +136,7 @@ export function DayChart({
   mode,
   today,
   nowMinute,
+  brush,
 }: {
   c: ScheduleContext;
   schedule: Schedule;
@@ -117,9 +144,11 @@ export function DayChart({
   mode: TargetMode;
   today: Dow;
   nowMinute: number;
+  brush: Id | null;
 }) {
   const type = edit.type;
   if (!type) return null;
+  const brushProfile = c.profileById(brush);
   const isToday = type.days.includes(today);
   const view = dayView(edit.points, c.profiles.data ?? [], schedule, mode, edit.index, isToday ? nowMinute : null);
   return (
@@ -132,6 +161,10 @@ export function DayChart({
       onSelect={(i) => edit.select(i === edit.index ? -1 : i)}
       onMove={c.canEdit ? edit.move : undefined}
       range={edit.range}
+      onShift={c.canEdit ? edit.shift : undefined}
+      shiftRange={edit.shiftRange}
+      brush={c.canEdit && brushProfile ? { color: brushProfile.color } : null}
+      onPaint={brushProfile ? (a, b) => edit.paint(a, b, brushProfile.id) : undefined}
       step={STEP}
       formatMinute={minuteToHhmm}
       formatValue={(v) => fmtTemp(v, { decimals: 0 })}

@@ -26,7 +26,7 @@ import {
 import { t, weekdayLong } from '@i18n';
 import { DOWS } from './blocks';
 import type { ScheduleContext } from './data';
-import { DayChart, HouseComparison, PointEditor, ScheduleNow, TargetModeSwitch, useTargetMode } from './DayParts';
+import { BrushPicker, DayChart, HouseComparison, PointEditor, ScheduleNow, TargetModeSwitch, useTargetMode } from './DayParts';
 import { Exceptions } from './Exceptions';
 import { QuickSetup } from './QuickSetup';
 import { RoomScheduleDialog } from './RoomScheduleDialog';
@@ -177,6 +177,7 @@ function TypeEditor({
   onMode: (m: 'heat' | 'cool') => void;
   onDays: (days: number[]) => void;
 }) {
+  const [brush, setBrush] = useState<Id | null>(null);
   const type = edit.type;
   if (!type) return null;
   const view = dayView(edit.points, c.profiles.data ?? [], schedule, mode, edit.index, type.days.includes(today) ? nowMinute : null);
@@ -189,7 +190,8 @@ function TypeEditor({
             <Text variant="caption">{t('Switch a day on to give it this plan; switch it off to edit it alone.')}</Text>
           </Stack>
         ) : null}
-        <DayChart c={c} schedule={schedule} edit={edit} mode={mode} today={today} nowMinute={nowMinute} />
+        {c.canEdit ? <BrushPicker c={c} schedule={schedule} mode={mode} brush={brush} onBrush={setBrush} /> : null}
+        <DayChart c={c} schedule={schedule} edit={edit} mode={mode} today={today} nowMinute={nowMinute} brush={brush} />
         {schedule.scope === 'room' ? <HouseComparison house={house} type={type} c={c} /> : null}
         <Section variant="plain" level={3} title={t('Changes through the day')} subtitle={t('Each one holds until the next.')}>
           <Stack gap="sm">
