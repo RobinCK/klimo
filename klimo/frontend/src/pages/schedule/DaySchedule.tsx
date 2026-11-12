@@ -26,7 +26,7 @@ import {
 import { t, weekdayLong } from '@i18n';
 import { DOWS } from './blocks';
 import type { ScheduleContext } from './data';
-import { BrushPicker, DayChart, HouseComparison, PointEditor, ScheduleNow, TargetModeSwitch, useTargetMode } from './DayParts';
+import { BrushPicker, DayChart, HouseComparison, NewDayType, PointEditor, ScheduleNow, TargetModeSwitch, toggleDays, useTargetMode } from './DayParts';
 import { Exceptions } from './Exceptions';
 import { QuickSetup } from './QuickSetup';
 import { RoomScheduleDialog } from './RoomScheduleDialog';
@@ -50,6 +50,7 @@ interface Props {
 export function DaySchedule({ c, editor, edit, today, nowMinute, onScope, onDay }: Props) {
   const [adding, setAdding] = useState(false);
   const [setup, setSetup] = useState(false);
+  const [newType, setNewType] = useState(false);
   const [mode, setMode] = useTargetMode(c);
   const schedule = editor.schedule;
   const house = editor.schedules.find((s) => s.scope === 'house') ?? null;
@@ -69,17 +70,7 @@ export function DaySchedule({ c, editor, edit, today, nowMinute, onScope, onDay 
         ? t('Applies to every room without its own schedule ({count} have their own).', { count: ownRooms })
         : t('Applies to every room.');
 
-  // a day switched on joins the shown type; switched off, it is taken out to be edited alone
-  const onDays = (next: number[]) => {
-    if (!type) return;
-    const added = next.find((d) => !type.days.includes(d as Dow));
-    const removed = type.days.find((d) => !next.includes(d));
-    if (added != null) edit.join(added as Dow);
-    else if (removed != null) {
-      edit.detach(removed);
-      onDay(removed);
-    }
-  };
+  const onDays = toggleDays(edit, onDay);
 
   return (
     <Section
@@ -128,6 +119,7 @@ export function DaySchedule({ c, editor, edit, today, nowMinute, onScope, onDay 
                         />
                       );
                     })}
+                    {c.canEdit ? <DashedAddButton label={t('New day type')} onClick={() => setNewType(true)} /> : null}
                   </Stack>
                 </Section>
                 <Exceptions c={c} schedule={schedule} />
@@ -149,6 +141,7 @@ export function DaySchedule({ c, editor, edit, today, nowMinute, onScope, onDay 
           }}
         />
       ) : null}
+      {newType ? <NewDayType edit={edit} onCreated={onDay} onClose={() => setNewType(false)} /> : null}
       {setup && schedule ? <QuickSetup c={c} editor={editor} schedule={schedule} onApplied={edit.reset} onClose={() => setSetup(false)} /> : null}
     </Section>
   );
@@ -187,7 +180,7 @@ function TypeEditor({
         {c.canEdit ? (
           <Stack gap="xs">
             <DayOfWeekToggle ariaLabel={t('Days of this type')} value={type.days} labels={shortDays()} fullLabels={DOWS.map((d) => weekdayLong(d))} onChange={onDays} />
-            <Text variant="caption">{t('Switch a day on to give it this plan; switch it off to edit it alone.')}</Text>
+            <Text variant="caption">{t('Switch a day on to give it this plan; switch it off to make it a type of its own.')}</Text>
           </Stack>
         ) : null}
         {c.canEdit ? <BrushPicker c={c} schedule={schedule} mode={mode} brush={brush} onBrush={setBrush} /> : null}

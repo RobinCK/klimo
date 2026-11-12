@@ -3,14 +3,17 @@
  * phone. The type is the one the shown day belongs to; an edit writes the plan of every day of
  * the type at once. The selection follows its point through edits (by its minute), since the
  * server merges equal neighbours and indexes shift.
+ *
+ * Which days form a type is the user's: days split off or put together by hand stay so in this
+ * browser (per schedule), even with equal plans; the other days group by equal plans.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { Dow, Id, ProfileDto } from '@api/model';
+import { usePref } from '@app';
 import { minuteToHhmm, t, weekdayLong } from '@i18n';
 import {
   addPoint,
   dayTypes,
-  lengthOf,
   movePoint,
   paintStretch,
   planOf,
@@ -18,6 +21,7 @@ import {
   pointRange,
   pointsOf,
   removePoint,
+  reorderedStarts,
   reorderStretches,
   setPointProfile,
   shiftRange,
@@ -25,13 +29,13 @@ import {
   type DayType,
   type SwitchPoint,
 } from './points';
-import { DAY } from './blocks';
 import { daysLabel } from './texts';
 import type { ScheduleEditor } from './useScheduleEditor';
 
 export interface DayEdit {
   types: DayType[];
-  /** The type of the shown day. */
+  /** The shown day and its type. */
+  day: Dow;
   type: DayType | null;
   points: SwitchPoint[];
   /** Index of the selected point, −1 for none. */
@@ -54,8 +58,10 @@ export interface DayEdit {
   add: () => void;
   /** Put `dow` into the shown type (it takes the type's plan). */
   join: (dow: Dow) => void;
-  /** Take `dow` out of its type, to edit it alone. */
+  /** Take `dow` out of the shown type: it becomes a type of its own. */
   detach: (dow: Dow) => void;
+  /** A new type of `days`, all on the plan of the first of them. */
+  create: (days: Dow[]) => void;
   /** Every day back in the type of its plan (after the whole week was replaced). */
   reset: () => void;
 }
@@ -66,13 +72,18 @@ const samePoints = (a: readonly SwitchPoint[], b: readonly SwitchPoint[]) =>
 export function useDayEdit(editor: ScheduleEditor, profiles: readonly ProfileDto[], day: Dow, initialMinute: number | null = null): DayEdit {
   const days = editor.schedule?.days ?? null;
   const scheduleId = editor.schedule?.id ?? null;
-  const [detached, setDetached] = useState<Dow[]>([]);
+  const [stored, setStored] = usePref<Record<string, Dow[][]>>('schedule.dayTypes', {});
+  const groups = scheduleId ? (stored[scheduleId] ?? null) : null;
+  const setGroups = (next: Dow[][] | null) => {
+    if (!scheduleId) return;
+    const all = { ...stored };
+    if (next) all[scheduleId] = next.filter((g) => g.length);
+    else delete all[scheduleId];
+    setStored(all);
+  };
   const [anchor, setAnchor] = useState<number | null>(initialMinute);
 
-  // another schedule starts with every day in its type again
-  useEffect(() => setDetached([]), [scheduleId]);
-
-  const types = useMemo(() => (days ? dayTypes(days, detached) : []), [days, detached]);
+  const types = useMemo(() => (days ? dayTypes(days, groups) : []), [days, groups]);
   const type = types.find((x) => x.days.includes(day)) ?? null;
   const points = useMemo(() => (type ? pointsOf(type.plan) : []), [type]);
   const index = anchor == null || !points.length ? -1 : pointAt(points, anchor);
@@ -84,9 +95,13 @@ export function useDayEdit(editor: ScheduleEditor, profiles: readonly ProfileDto
     editor.edit(first, planOf(next), { also: rest, undo });
     setAnchor(selectMinute);
   };
+  // a drag keeps what is open: the open change follows its stretch, and a closed list stays closed
+  const follow = (moved: Map<number, number>) => (index < 0 ? null : (moved.get(points[index].minute) ?? points[index].minute));
+  const movedBy = (next: readonly SwitchPoint[]) => new Map(points.map((p, k) => [p.minute, next[k]?.minute ?? p.minute]));
 
   return {
     types,
+    day,
     type,
     points,
     index,
@@ -96,7 +111,7 @@ export function useDayEdit(editor: ScheduleEditor, profiles: readonly ProfileDto
       if (!points[i]) return;
       const next = movePoint(points, i, minute);
       if (next[i].minute === points[i].minute) return;
-      write(next, next[i].minute);
+      write(next, follow(movedBy(next)));
     },
     setProfile: (i, profileId) => {
       const p = points[i];
@@ -113,22 +128,24 @@ export function useDayEdit(editor: ScheduleEditor, profiles: readonly ProfileDto
       if (!p) return;
       const next = shiftStretch(points, i, delta);
       if (next[i].minute === p.minute) return;
-      write(next, next[i].minute, t('«{profile}» moved to {time}', { profile: profileName(p.profileId), time: minuteToHhmm(next[i].minute) }));
+      write(next, follow(movedBy(next)), t('«{profile}» moved to {time}', { profile: profileName(p.profileId), time: minuteToHhmm(next[i].minute) }));
     },
     paint: (start, end, profileId) => {
       const next = paintStretch(points, start, end, profileId);
       if (samePoints(next, points)) return;
-      write(next, start, t('{from}–{to} → «{profile}»', { from: minuteToHhmm(start), to: minuteToHhmm(end), profile: profileName(profileId) }));
+      write(next, index < 0 ? null : anchor, t('{from}–{to} → «{profile}»', { from: minuteToHhmm(start), to: minuteToHhmm(end), profile: profileName(profileId) }));
     },
     reorder: (from, to) => {
       const p = points[from];
       if (!p || from === to) return;
       const next = reorderStretches(points, from, to);
       if (samePoints(next, points)) return;
-      // the moved stretch stays open in its new place
-      const before = points.map((_, k) => k).filter((k) => k !== from).slice(0, to);
-      const minute = (points[0].minute + before.reduce((sum, k) => sum + lengthOf(points, k), 0)) % DAY;
-      write(next, minute, t('«{profile}» now from {time}', { profile: profileName(p.profileId), time: minuteToHhmm(minute) }));
+      const starts = reorderedStarts(points, from, to);
+      write(
+        next,
+        follow(new Map(points.map((q, k) => [q.minute, starts[k]]))),
+        t('«{profile}» now from {time}', { profile: profileName(p.profileId), time: minuteToHhmm(starts[from]) }),
+      );
     },
     canRemove: points.length > 1,
     remove: (i) => {
@@ -145,15 +162,22 @@ export function useDayEdit(editor: ScheduleEditor, profiles: readonly ProfileDto
     },
     join: (dow) => {
       if (!type || type.days.includes(dow)) return;
-      setDetached((prev) => prev.filter((d) => d !== dow));
+      setGroups(types.map((x) => (x === type ? [...x.days, dow].sort((a, b) => a - b) : x.days.filter((d) => d !== dow))));
       editor.edit(dow, type.plan, { undo: t('{day} now runs like {days}', { day: weekdayLong(dow), days: daysLabel(type.days) }) });
     },
     detach: (dow) => {
       if (!type || type.days.length < 2 || !type.days.includes(dow)) return;
-      setDetached((prev) => (prev.includes(dow) ? prev : [...prev, dow]));
+      setGroups([...types.map((x) => (x === type ? x.days.filter((d) => d !== dow) : x.days)), [dow]]);
+    },
+    create: (chosen) => {
+      const list = [...new Set(chosen)].sort((a, b) => a - b);
+      if (!list.length || !days) return;
+      setGroups([...types.map((x) => x.days.filter((d) => !list.includes(d))), list]);
+      const [first, ...rest] = list;
+      if (rest.length) editor.edit(first, days[first], { also: rest, undo: t('{days} now run as one type', { days: daysLabel(list) }) });
     },
     reset: () => {
-      setDetached([]);
+      setGroups(null);
       setAnchor(null);
     },
   };

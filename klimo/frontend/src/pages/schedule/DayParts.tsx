@@ -3,12 +3,15 @@
  * the «now» line with «today like a weekend», the editor of one change, the chart itself and the
  * house's plan under a room schedule for comparison.
  */
+import { useState } from 'react';
 import type { Dow, Id, Schedule } from '@api/model';
 import { api } from '@api/endpoints';
 import { useMutation, useResource } from '@data';
 import { usePref } from '@app';
 import {
   Button,
+  DayOfWeekToggle,
+  Dialog,
   ProfileChoice,
   ProfileStrip,
   Row,
@@ -21,11 +24,11 @@ import {
   TimeStepper,
 } from '@ui';
 import { fmtTemp, minuteToHhmm, t, weekdayLong } from '@i18n';
-import { STEP } from './blocks';
+import { DOWS, STEP } from './blocks';
 import type { ScheduleContext } from './data';
 import { localDate } from './dates';
 import { pointAt, pointsOf, untilOf, type DayType } from './points';
-import { scheduleTargets, targetText } from './texts';
+import { scheduleTargets, shortDays, targetText } from './texts';
 import type { DayEdit } from './useDayEdit';
 import { dayView, todayPlan, typeTitle, type TargetMode } from './view';
 
@@ -253,5 +256,57 @@ export function HouseComparison({ house, type, c }: { house: Schedule | null; ty
         })}
       />
     </Stack>
+  );
+}
+
+/**
+ * The days under the shown type: a day switched on joins it; a day switched off becomes a type of
+ * its own while the view stays on this type.
+ */
+export function toggleDays(edit: DayEdit, onDay: (dow: Dow) => void) {
+  return (next: number[]) => {
+    const type = edit.type;
+    if (!type) return;
+    const added = next.find((d) => !type.days.includes(d as Dow));
+    const removed = type.days.find((d) => !next.includes(d));
+    if (added != null) edit.join(added as Dow);
+    else if (removed != null) {
+      edit.detach(removed);
+      // the shown day was the one taken out: show the rest of the type
+      if (removed === edit.day) onDay(type.days.find((d) => d !== removed) ?? removed);
+    }
+  };
+}
+
+/** «Новий тип днів»: pick the days (a pair such as Saturday and Sunday) that get one plan together. */
+export function NewDayType({ edit, onCreated, onClose }: { edit: DayEdit; onCreated: (first: Dow) => void; onClose: () => void }) {
+  const [chosen, setChosen] = useState<number[]>([]);
+  const first = [...chosen].sort((a, b) => a - b)[0] as Dow | undefined;
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={t('New day type')}
+      actions={[
+        { label: t('Cancel'), onClick: onClose, variant: 'secondary' },
+        {
+          label: t('Create'),
+          disabled: !chosen.length,
+          onClick: () => {
+            edit.create(chosen as Dow[]);
+            if (first != null) onCreated(first);
+            onClose();
+          },
+        },
+      ]}
+    >
+      <Stack gap="md">
+        <Text>{t('Pick the days that run on one plan, for example Saturday and Sunday. They leave the types they are in now.')}</Text>
+        <DayOfWeekToggle ariaLabel={t('Days of the new type')} value={chosen} labels={shortDays()} fullLabels={DOWS.map((d) => weekdayLong(d))} onChange={setChosen} />
+        {first != null && chosen.length > 1 ? (
+          <Text variant="caption">{t('They all take the plan of {day}; change it afterwards.', { day: weekdayLong(first).toLowerCase() })}</Text>
+        ) : null}
+      </Stack>
+    </Dialog>
   );
 }

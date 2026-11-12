@@ -26,7 +26,7 @@ import {
 import { minuteToHhmm, t, weekdayLong } from '@i18n';
 import { DOWS } from './blocks';
 import type { ScheduleContext } from './data';
-import { BrushPicker, DayChart, HouseComparison, PointEditor, ScheduleNow, TargetModeSwitch, useTargetMode } from './DayParts';
+import { BrushPicker, DayChart, HouseComparison, NewDayType, PointEditor, ScheduleNow, TargetModeSwitch, toggleDays, useTargetMode } from './DayParts';
 import { Exceptions } from './Exceptions';
 import { PriorityList } from './Priority';
 import { ProfileEditor } from './ProfileEditor';
@@ -70,6 +70,7 @@ export function PhoneDay({ c, editor, edit, today, nowMinute, onScope, onDay }: 
   const [scopes, setScopes] = useState(false);
   const [adding, setAdding] = useState(false);
   const [setup, setSetup] = useState(false);
+  const [newType, setNewType] = useState(false);
   const [brush, setBrush] = useState<Id | null>(null);
   const [mode, setMode] = useTargetMode(c);
   const schedule = editor.schedule;
@@ -115,21 +116,14 @@ export function PhoneDay({ c, editor, edit, today, nowMinute, onScope, onDay }: 
           );
         })}
       </AutoGrid>
+      {c.canEdit ? <DashedAddButton label={t('New day type')} onClick={() => setNewType(true)} /> : null}
       {type && c.canEdit ? (
         <DayOfWeekToggle
           ariaLabel={t('Days of this type')}
           value={type.days}
           labels={shortDays()}
           fullLabels={DOWS.map((d) => weekdayLong(d))}
-          onChange={(next) => {
-            const added = next.find((d) => !type.days.includes(d as Dow));
-            const removed = type.days.find((d) => !next.includes(d));
-            if (added != null) edit.join(added as Dow);
-            else if (removed != null) {
-              edit.detach(removed);
-              onDay(removed);
-            }
-          }}
+          onChange={toggleDays(edit, onDay)}
         />
       ) : null}
       {schedule && type && view ? (
@@ -228,6 +222,7 @@ export function PhoneDay({ c, editor, edit, today, nowMinute, onScope, onDay }: 
           ) : null}
         </Stack>
       </BottomSheet>
+      {newType ? <NewDayType edit={edit} onCreated={onDay} onClose={() => setNewType(false)} /> : null}
       {setup && schedule ? <QuickSetup c={c} editor={editor} schedule={schedule} onApplied={edit.reset} onClose={() => setSetup(false)} /> : null}
       {adding ? (
         <RoomScheduleDialog

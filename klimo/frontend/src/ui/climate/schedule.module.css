@@ -169,6 +169,7 @@
 }
 
 .points {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -177,16 +178,73 @@
   list-style: none;
 }
 
+.points[data-dragging] {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grabbing;
+}
+
 .pointsItem {
   min-width: 0;
 }
 
-.pointsItem[data-dragging] {
-  position: relative;
-  z-index: 2;
-  box-shadow: var(--ui-shadow-elevated);
+/* the dragged row's shadow, left in its place */
+.pointsItem[data-ghost] {
+  opacity: 0.35;
+}
+
+.pointsItem[data-ghost] .point {
+  border-style: dashed;
+}
+
+/* the copy that follows the pointer */
+.pointsFloat {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  overflow: hidden;
   border-radius: var(--ui-radius-xl);
-  cursor: grabbing;
+  box-shadow: var(--ui-shadow-elevated);
+  opacity: 0.94;
+  pointer-events: none;
+}
+
+.pointsFloat .point {
+  border-color: var(--ui-text-1);
+}
+
+/* where the dragged row will go */
+.pointsDrop {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 4;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+  background: var(--ui-text-1);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-text-1) 22%, transparent);
+  pointer-events: none;
+}
+
+.pointsDrop::before,
+.pointsDrop::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ui-text-1);
+}
+
+.pointsDrop::before {
+  left: -6px;
+}
+
+.pointsDrop::after {
+  right: -6px;
 }
 
 .pointHead {

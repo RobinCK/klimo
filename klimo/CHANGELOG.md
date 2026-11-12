@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.30
+
+- **Day types split and join the way you expect.** Switching a day off under a type makes it a type of
+  its own and keeps you on the type you were editing, so Saturday and then Sunday can be taken out one
+  after the other; switching Sunday on under Saturday puts them together as «Weekends». **New day type**
+  picks the days of a type at once (a pair such as Saturday and Sunday). Types made by hand are
+  remembered in the browser, even when their days have the same plan.
+- **Dragging keeps things closed.** Moving a change on the chart or in the list no longer opens its
+  details; an open change stays open and follows its stretch.
+- **Dragging a change in the list** leaves its shadow in place, a copy follows the pointer and a line
+  shows where it will go; the first and last places are easy to reach, and the page scrolls when the
+  pointer comes near the window's edge.
+
 ## 0.2.29
 
 - **The changes of a day swap places.** Each change in the list under the chart has a handle: drag it up or

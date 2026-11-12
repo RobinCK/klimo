@@ -112,17 +112,32 @@ export interface DayType {
   plan: DayPlan;
 }
 
-/** Days grouped by equal plans, in the order of their first day; `detached` days stand alone. */
-export function dayTypes(days: readonly DayPlan[], detached: readonly Dow[]): DayType[] {
-  const types: DayType[] = [];
-  for (const d of DOWS) {
-    const plan = days[d] ?? [];
-    const alone = detached.includes(d);
-    const same = alone ? undefined : types.find((x) => !detached.includes(x.days[0]) && samePlan(x.plan, plan));
-    if (same) same.days.push(d);
-    else types.push({ days: [d], plan });
+/**
+ * Days grouped into types: the groups made by hand (a group whose days no longer share one plan splits
+ * by plan), then the other days grouped by equal plans; in the order of their first day.
+ */
+export function dayTypes(days: readonly DayPlan[], groups: readonly (readonly Dow[])[] | null): DayType[] {
+  const placed = new Set<Dow>();
+  const byPlan = (list: readonly Dow[]) => {
+    const parts: Dow[][] = [];
+    for (const d of list) {
+      const part = parts.find((x) => samePlan(days[x[0]] ?? [], days[d] ?? []));
+      if (part) part.push(d);
+      else parts.push([d]);
+    }
+    return parts;
+  };
+  const out: Dow[][] = [];
+  for (const g of groups ?? []) {
+    const own = DOWS.filter((d) => g.includes(d) && !placed.has(d));
+    own.forEach((d) => placed.add(d));
+    out.push(...byPlan(own));
   }
-  return types;
+  out.push(...byPlan(DOWS.filter((d) => !placed.has(d))));
+  return out
+    .filter((g) => g.length)
+    .sort((a, b) => a[0] - b[0])
+    .map((g) => ({ days: g, plan: days[g[0]] ?? [] }));
 }
 
 /** The two points that bound stretch `i`: its own and the next one (the first, for the last stretch). */
@@ -179,6 +194,20 @@ export function paintStretch(points: readonly SwitchPoint[], start: number, end:
   return pointsOf(out.sort((p, q) => p.start - q.start));
 }
 
+/** Where every stretch starts (by its old index) once stretch `from` is put in place `to`, each keeping its length. */
+export function reorderedStarts(points: readonly SwitchPoint[], from: number, to: number): number[] {
+  const order = points.map((_, k) => k);
+  const [moved] = order.splice(from, 1);
+  order.splice(to, 0, moved);
+  const starts: number[] = [];
+  let minute = points[0]?.minute ?? 0;
+  for (const k of order) {
+    starts[k] = minute % DAY;
+    minute += lengthOf(points, k);
+  }
+  return starts;
+}
+
 /**
  * The stretches of the day in another order: stretch `from` goes to place `to`, each stretch keeps its
  * length, and the first one in the list keeps its start time.
@@ -186,14 +215,6 @@ export function paintStretch(points: readonly SwitchPoint[], start: number, end:
 export function reorderStretches(points: readonly SwitchPoint[], from: number, to: number): SwitchPoint[] {
   const n = points.length;
   if (n < 2 || from === to || !points[from] || to < 0 || to >= n) return points.map((p) => ({ ...p }));
-  const items = points.map((p, i) => ({ profileId: p.profileId, length: lengthOf(points, i) }));
-  const [moved] = items.splice(from, 1);
-  items.splice(to, 0, moved);
-  let minute = points[0].minute;
-  const next = items.map((it) => {
-    const p = { minute: minute % DAY, profileId: it.profileId };
-    minute += it.length;
-    return p;
-  });
-  return pointsOf(planOf(next));
+  const starts = reorderedStarts(points, from, to);
+  return pointsOf(planOf(points.map((p, k) => ({ minute: starts[k], profileId: p.profileId }))));
 }

@@ -276,14 +276,17 @@ control method is chosen per room:
 - **Vacation**: until a date, returning to normal 3 hours early so the house is warm on arrival.
 - **Exceptions** in the schedule cover holidays and days off.
 - **Day types**: the days with the same plan form one type («Weekdays», «Mon–Thu», «Friday», «Weekends»),
-  and an edit of a type changes all its days. Under the type, switch a day on to give it this plan, or off
-  to take it out and edit it alone.
+  and an edit of a type changes all its days. Under the type, switch a day off to make it a type of its own
+  (the view stays on the type), or switch a day on to give it this plan and put it in the type — Saturday
+  and Sunday taken out and then joined become «Weekends». **New day type** picks the days of a type at
+  once. Types made by hand are remembered in the browser, per schedule, even when their plans are equal.
 - **Changes**: a day is a list of changes — «17:30 → Home» holds until the next one, and the last one
   holds over midnight («23:00 → Night» until 06:30). A change opens in place (a sheet on a phone): its
   time in 15-minute steps (−/+, or typed), its profile with the target it gives, and **Delete the
   change**; **Add a change** splits the longest stretch of the day. A change's handle drags it up or down
-  the list (or the arrow keys on it move it a place): the stretches swap places, each keeping its length,
-  and the first one keeps its start time. Changing a profile, deleting and reordering can be undone for
+  the list (or the arrow keys on it move it a place): its shadow stays in place, a line shows where it
+  will go, and the stretches swap places, each keeping its length, the first one keeping its start time.
+  Dragging leaves the details closed (an open change stays open). Changing a profile, deleting and reordering can be undone for
   8 seconds.
 - **The day chart** draws the heating or the cooling target (the switch above it) over the profile
   stretches, and is edited in place: drag the line between two stretches (or the time above it) to move

@@ -127,38 +127,44 @@ export interface SwitchPointListProps {
 
 interface ListDrag {
   from: number;
+  /** Where the pointer took the row, on the page. */
   startY: number;
-  /** Top and height of every row when the drag began. */
+  /** The pointer now, on the page. */
+  y: number;
+  /** Top and height of every row on the page, and the list's top, when the drag began. */
   rects: { top: number; height: number }[];
-  dy: number;
+  listTop: number;
+  /** Height of the dragged row's head (the copy that follows the pointer). */
+  headHeight: number;
 }
 
-/** Where the dragged row lands: the place whose centre is nearest to the row's centre. */
-function dropAt(d: ListDrag): number {
-  const r = d.rects[d.from];
-  if (!r) return d.from;
-  const centre = r.top + d.dy + r.height / 2;
-  let best = d.from;
-  let dist = Infinity;
-  d.rects.forEach((x, i) => {
-    const gap = Math.abs(x.top + x.height / 2 - centre);
-    if (gap < dist) {
-      dist = gap;
-      best = i;
-    }
-  });
-  return best;
+/** A pointer this close to the window's top or bottom scrolls the page while dragging. */
+const EDGE_SCROLL_PX = 64;
+/** Space between two rows (the insertion line sits in it). */
+const ROW_GAP = 8;
+
+/** The gap the pointer is over: 0 above the first row … n below the last one. */
+function gapAt(d: ListDrag): number {
+  return d.rects.filter((r) => r.top + r.height / 2 < d.y).length;
 }
 
-/** The changes of a day as rows; with `onReorder` they drag by a handle into another order. */
+/** The place the dragged row goes to when dropped into gap `g`. */
+const placeOf = (d: ListDrag, g: number) => (g > d.from ? g - 1 : g);
+
+/**
+ * The changes of a day as rows; with `onReorder` they drag by a handle into another order. While a row
+ * is dragged its shadow stays in place, a copy follows the pointer and a line marks where it will go.
+ */
 export function SwitchPointList({ rows, expanded, onToggle, editor, onReorder, ariaLabel }: SwitchPointListProps) {
   const ut = useUiText();
+  const listRef = useRef<HTMLOListElement>(null);
   const items = useRef<(HTMLLIElement | null)[]>([]);
   const grips = useRef<(HTMLButtonElement | null)[]>([]);
   const [drag, setDragState] = useState<ListDrag | null>(null);
   const dragRef = useRef<ListDrag | null>(null);
   const [focusAt, setFocusAt] = useState<number | null>(null);
   const [announce, setAnnounce] = useState('');
+  const swallowClick = useRef(false);
   const reorderRef = useRef(onReorder);
   reorderRef.current = onReorder;
   const setDrag = (next: ListDrag | null) => {
@@ -172,25 +178,43 @@ export function SwitchPointList({ rows, expanded, onToggle, editor, onReorder, a
     grips.current[Math.min(focusAt, rows.length - 1)]?.focus();
   }, [focusAt, rows]);
 
-  // the drag follows the pointer on the window: the rows reorder under the handle
+  // the drag follows the pointer on the window, and near the window's edge the page scrolls along
   const dragging = drag != null;
   useEffect(() => {
     if (!dragging) return undefined;
-    const move = (e: globalThis.PointerEvent) => {
+    let clientY = (dragRef.current?.y ?? 0) - window.scrollY;
+    let frame = 0;
+    const track = () => {
       const d = dragRef.current;
-      if (d) setDrag({ ...d, dy: e.clientY - d.startY });
+      if (d) setDrag({ ...d, y: clientY + window.scrollY });
+    };
+    const scroll = () => {
+      const by = clientY < EDGE_SCROLL_PX ? -12 : clientY > window.innerHeight - EDGE_SCROLL_PX ? 12 : 0;
+      if (by) {
+        window.scrollBy(0, by);
+        track();
+      }
+      frame = window.requestAnimationFrame(scroll);
+    };
+    frame = window.requestAnimationFrame(scroll);
+    const move = (e: globalThis.PointerEvent) => {
+      clientY = e.clientY;
+      track();
     };
     const end = () => {
       const d = dragRef.current;
       setDrag(null);
       if (!d) return;
-      const to = dropAt(d);
+      swallowClick.current = true;
+      window.setTimeout(() => (swallowClick.current = false), 0);
+      const to = placeOf(d, gapAt(d));
       if (to !== d.from) reorderRef.current?.(d.from, to);
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', end);
     window.addEventListener('pointercancel', end);
     return () => {
+      window.cancelAnimationFrame(frame);
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', end);
       window.removeEventListener('pointercancel', end);
@@ -200,11 +224,17 @@ export function SwitchPointList({ rows, expanded, onToggle, editor, onReorder, a
   const onDown = (e: PointerEvent<HTMLButtonElement>, i: number) => {
     if (e.button !== 0) return;
     e.preventDefault();
-    const rects = rows.map((_, k) => {
-      const b = items.current[k]?.getBoundingClientRect();
-      return { top: b?.top ?? 0, height: b?.height ?? 0 };
+    const page = (r: DOMRect | undefined) => ({ top: (r?.top ?? 0) + window.scrollY, height: r?.height ?? 0 });
+    const rects = rows.map((_, k) => page(items.current[k]?.getBoundingClientRect()));
+    const head = e.currentTarget.parentElement?.getBoundingClientRect();
+    setDrag({
+      from: i,
+      startY: e.clientY + window.scrollY,
+      y: e.clientY + window.scrollY,
+      rects,
+      listTop: page(listRef.current?.getBoundingClientRect()).top,
+      headHeight: head?.height ?? rects[i].height,
     });
-    setDrag({ from: i, startY: e.clientY, rects, dy: 0 });
   };
 
   const onKey = (e: KeyboardEvent<HTMLButtonElement>, i: number) => {
@@ -217,57 +247,74 @@ export function SwitchPointList({ rows, expanded, onToggle, editor, onReorder, a
     onReorder?.(i, to);
   };
 
-  // while dragging, the other rows make room where the dragged one would land
-  const order = rows.map((_, i) => i);
-  if (drag) {
-    order.splice(drag.from, 1);
-    order.splice(dropAt(drag), 0, drag.from);
+  // where the dragged row would go: a line in the gap the pointer is over (none over its own place)
+  const gap = drag ? gapAt(drag) : -1;
+  const target = drag && placeOf(drag, gap) !== drag.from ? gap : -1;
+  let lineTop = 0;
+  if (drag && target >= 0) {
+    const r = drag.rects;
+    lineTop = target === 0 ? r[0].top - ROW_GAP / 2 : r[target - 1].top + r[target - 1].height + ROW_GAP / 2;
+    lineTop -= drag.listTop;
   }
+  const dragged = drag ? rows[drag.from] : null;
 
   return (
     <>
-      <ol className={s.points} aria-label={ariaLabel}>
-        {order.map((i, place) => {
-          const row = rows[i];
-          const moving = drag?.from === i;
-          const offset = moving && drag ? drag.rects[drag.from].top + drag.dy - (drag.rects[place]?.top ?? 0) : 0;
-          return (
-            <li
-              key={i}
-              ref={(el) => {
-                items.current[i] = el;
-              }}
-              className={s.pointsItem}
-              data-dragging={moving ? '' : undefined}
-              style={moving ? { transform: `translateY(${offset}px)` } : undefined}
+      <ol ref={listRef} className={s.points} aria-label={ariaLabel} data-dragging={drag ? '' : undefined}>
+        {rows.map((row, i) => (
+          <li
+            key={i}
+            ref={(el) => {
+              items.current[i] = el;
+            }}
+            className={s.pointsItem}
+            data-ghost={drag?.from === i ? '' : undefined}
+          >
+            <SwitchPointRow
+              {...row}
+              expanded={i === expanded}
+              onToggle={() => !swallowClick.current && onToggle(i)}
+              grip={
+                onReorder && rows.length > 1 ? (
+                  <button
+                    ref={(el) => {
+                      grips.current[i] = el;
+                    }}
+                    type="button"
+                    className={s.pointGrip}
+                    aria-label={ut('Move «{title}» — arrow keys up and down', { title: `${row.time} ${row.name}` })}
+                    onPointerDown={(e) => onDown(e, i)}
+                    onKeyDown={(e) => onKey(e, i)}
+                    onBlur={() => setFocusAt((f) => (f === i ? null : f))}
+                  >
+                    <Icon name="grip" size={18} />
+                  </button>
+                ) : undefined
+              }
             >
-              <SwitchPointRow
-                {...row}
-                expanded={i === expanded && !drag}
-                onToggle={() => onToggle(i)}
-                grip={
-                  onReorder && rows.length > 1 ? (
-                    <button
-                      ref={(el) => {
-                        grips.current[i] = el;
-                      }}
-                      type="button"
-                      className={s.pointGrip}
-                      aria-label={ut('Move «{title}» — arrow keys up and down', { title: `${row.time} ${row.name}` })}
-                      onPointerDown={(e) => onDown(e, i)}
-                      onKeyDown={(e) => onKey(e, i)}
-                      onBlur={() => setFocusAt((f) => (f === i ? null : f))}
-                    >
-                      <Icon name="grip" size={18} />
-                    </button>
-                  ) : undefined
-                }
-              >
-                {i === expanded && editor ? editor(i) : null}
-              </SwitchPointRow>
-            </li>
-          );
-        })}
+              {i === expanded && editor ? editor(i) : null}
+            </SwitchPointRow>
+          </li>
+        ))}
+        {drag && target >= 0 ? <li className={s.pointsDrop} style={{ top: `${lineTop}px` }} aria-hidden="true" /> : null}
+        {drag && dragged ? (
+          <li
+            className={s.pointsFloat}
+            style={{ top: `${drag.rects[drag.from].top + (drag.y - drag.startY) - drag.listTop}px`, height: `${drag.headHeight}px` }}
+            aria-hidden="true"
+          >
+            <SwitchPointRow
+              {...dragged}
+              expanded={false}
+              onToggle={() => undefined}
+              grip={
+                <span className={s.pointGrip}>
+                  <Icon name="grip" size={18} />
+                </span>
+              }
+            />
+          </li>
+        ) : null}
       </ol>
       <VisuallyHidden live="polite">{announce}</VisuallyHidden>
     </>
