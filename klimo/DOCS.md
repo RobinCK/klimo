@@ -281,8 +281,10 @@ control method is chosen per room:
 - **Changes**: a day is a list of changes — «17:30 → Home» holds until the next one, and the last one
   holds over midnight («23:00 → Night» until 06:30). A change opens in place (a sheet on a phone): its
   time in 15-minute steps (−/+, or typed), its profile with the target it gives, and **Delete the
-  change**; **Add a change** splits the longest stretch of the day. Changing a profile or deleting can be
-  undone for 8 seconds.
+  change**; **Add a change** splits the longest stretch of the day. A change's handle drags it up or down
+  the list (or the arrow keys on it move it a place): the stretches swap places, each keeping its length,
+  and the first one keeps its start time. Changing a profile, deleting and reordering can be undone for
+  8 seconds.
 - **The day chart** draws the heating or the cooling target (the switch above it) over the profile
   stretches, and is edited in place: drag the line between two stretches (or the time above it) to move
   that change, grab a stretch in the middle to move it whole, or pick a profile under **Draw a stretch**

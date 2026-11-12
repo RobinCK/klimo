@@ -17,11 +17,14 @@ export {
   DayTypeCard,
   ProfileChoice,
   ScheduleNowBar,
+  SwitchPointList,
   SwitchPointRow,
   type DayTypeCardProps,
   type ProfileChoiceOption,
   type ProfileChoiceProps,
   type ScheduleNowBarProps,
+  type SwitchPointListProps,
+  type SwitchPointListRow,
   type SwitchPointRowProps,
 } from './schedule';
 export {

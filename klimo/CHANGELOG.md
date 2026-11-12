@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.29
+
+- **The changes of a day swap places.** Each change in the list under the chart has a handle: drag it up or
+  down (or press the arrow keys on it) to put that stretch in another place of the day. Every stretch keeps
+  its length and the first one keeps its start time, so «Away 6 h» and «Home 12 h» trade places as whole
+  periods; equal neighbours merge. One undo takes it back.
+
 ## 0.2.28
 
 - **The day is edited right on the chart.** Drag the line between two stretches (on the chart or on the

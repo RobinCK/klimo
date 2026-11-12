@@ -178,3 +178,22 @@ export function paintStretch(points: readonly SwitchPoint[], start: number, end:
   out.push({ start: a, end: b, profileId });
   return pointsOf(out.sort((p, q) => p.start - q.start));
 }
+
+/**
+ * The stretches of the day in another order: stretch `from` goes to place `to`, each stretch keeps its
+ * length, and the first one in the list keeps its start time.
+ */
+export function reorderStretches(points: readonly SwitchPoint[], from: number, to: number): SwitchPoint[] {
+  const n = points.length;
+  if (n < 2 || from === to || !points[from] || to < 0 || to >= n) return points.map((p) => ({ ...p }));
+  const items = points.map((p, i) => ({ profileId: p.profileId, length: lengthOf(points, i) }));
+  const [moved] = items.splice(from, 1);
+  items.splice(to, 0, moved);
+  let minute = points[0].minute;
+  const next = items.map((it) => {
+    const p = { minute: minute % DAY, profileId: it.profileId };
+    minute += it.length;
+    return p;
+  });
+  return pointsOf(planOf(next));
+}

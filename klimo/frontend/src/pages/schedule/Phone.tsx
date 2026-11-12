@@ -21,7 +21,7 @@ import {
   SegmentedControl,
   Skeleton,
   Stack,
-  SwitchPointRow,
+  SwitchPointList,
 } from '@ui';
 import { minuteToHhmm, t, weekdayLong } from '@i18n';
 import { DOWS } from './blocks';
@@ -142,24 +142,16 @@ export function PhoneDay({ c, editor, edit, today, nowMinute, onScope, onDay }: 
           <DayChart c={c} schedule={schedule} edit={edit} mode={mode} today={today} nowMinute={nowMinute} brush={brush} />
           {schedule.scope === 'room' ? <HouseComparison house={editor.schedules.find((s) => s.scope === 'house') ?? null} type={type} c={c} /> : null}
           <Stack gap="sm">
-            {view.rows.map((r, i) => (
-              <SwitchPointRow
-                key={`${r.time}-${i}`}
-                time={r.time}
-                name={r.name}
-                color={r.color}
-                untilText={r.untilText}
-                heatText={r.heatText}
-                coolText={r.coolText}
-                emphasis={mode}
-                now={r.now}
-                expanded={false}
-                onToggle={() => {
-                  edit.select(i);
-                  setSheet(true);
-                }}
-              />
-            ))}
+            <SwitchPointList
+              ariaLabel={t('Changes through the day')}
+              rows={view.rows.map((r) => ({ ...r, emphasis: mode }))}
+              expanded={-1}
+              onToggle={(i) => {
+                edit.select(i);
+                setSheet(true);
+              }}
+              onReorder={c.canEdit ? edit.reorder : undefined}
+            />
             {c.canEdit && edit.canAdd ? <DashedAddButton label={t('Add a change')} onClick={edit.add} /> : null}
           </Stack>
           <Exceptions c={c} schedule={schedule} />

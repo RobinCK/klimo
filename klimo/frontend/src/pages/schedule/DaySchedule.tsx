@@ -20,7 +20,7 @@ import {
   Select,
   Split,
   Stack,
-  SwitchPointRow,
+  SwitchPointList,
   Text,
 } from '@ui';
 import { t, weekdayLong } from '@i18n';
@@ -193,25 +193,21 @@ function TypeEditor({
         {c.canEdit ? <BrushPicker c={c} schedule={schedule} mode={mode} brush={brush} onBrush={setBrush} /> : null}
         <DayChart c={c} schedule={schedule} edit={edit} mode={mode} today={today} nowMinute={nowMinute} brush={brush} />
         {schedule.scope === 'room' ? <HouseComparison house={house} type={type} c={c} /> : null}
-        <Section variant="plain" level={3} title={t('Changes through the day')} subtitle={t('Each one holds until the next.')}>
+        <Section
+          variant="plain"
+          level={3}
+          title={t('Changes through the day')}
+          subtitle={c.canEdit ? t('Each one holds until the next. Drag a change by its handle to swap it with another; each keeps its length.') : t('Each one holds until the next.')}
+        >
           <Stack gap="sm">
-            {view.rows.map((r, i) => (
-              <SwitchPointRow
-                key={`${r.time}-${i}`}
-                time={r.time}
-                name={r.name}
-                color={r.color}
-                untilText={r.untilText}
-                heatText={r.heatText}
-                coolText={r.coolText}
-                emphasis={mode}
-                now={r.now}
-                expanded={i === edit.index}
-                onToggle={() => edit.select(i === edit.index ? -1 : i)}
-              >
-                <PointEditor c={c} schedule={schedule} edit={edit} index={i} mode={mode} />
-              </SwitchPointRow>
-            ))}
+            <SwitchPointList
+              ariaLabel={t('Changes through the day')}
+              rows={view.rows.map((r) => ({ ...r, emphasis: mode }))}
+              expanded={edit.index}
+              onToggle={(i) => edit.select(i === edit.index ? -1 : i)}
+              editor={(i) => <PointEditor c={c} schedule={schedule} edit={edit} index={i} mode={mode} />}
+              onReorder={c.canEdit ? edit.reorder : undefined}
+            />
             {c.canEdit && edit.canAdd ? <DashedAddButton label={t('Add a change')} onClick={edit.add} /> : null}
           </Stack>
         </Section>

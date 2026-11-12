@@ -10,6 +10,7 @@ import { minuteToHhmm, t, weekdayLong } from '@i18n';
 import {
   addPoint,
   dayTypes,
+  lengthOf,
   movePoint,
   paintStretch,
   planOf,
@@ -17,12 +18,14 @@ import {
   pointRange,
   pointsOf,
   removePoint,
+  reorderStretches,
   setPointProfile,
   shiftRange,
   shiftStretch,
   type DayType,
   type SwitchPoint,
 } from './points';
+import { DAY } from './blocks';
 import { daysLabel } from './texts';
 import type { ScheduleEditor } from './useScheduleEditor';
 
@@ -43,6 +46,8 @@ export interface DayEdit {
   shift: (index: number, delta: number) => void;
   /** [start, end) painted in a profile. */
   paint: (start: number, end: number, profileId: Id) => void;
+  /** The stretch of point `from` put in place `to`, every stretch keeping its length. */
+  reorder: (from: number, to: number) => void;
   canRemove: boolean;
   remove: (index: number) => void;
   canAdd: boolean;
@@ -114,6 +119,16 @@ export function useDayEdit(editor: ScheduleEditor, profiles: readonly ProfileDto
       const next = paintStretch(points, start, end, profileId);
       if (samePoints(next, points)) return;
       write(next, start, t('{from}–{to} → «{profile}»', { from: minuteToHhmm(start), to: minuteToHhmm(end), profile: profileName(profileId) }));
+    },
+    reorder: (from, to) => {
+      const p = points[from];
+      if (!p || from === to) return;
+      const next = reorderStretches(points, from, to);
+      if (samePoints(next, points)) return;
+      // the moved stretch stays open in its new place
+      const before = points.map((_, k) => k).filter((k) => k !== from).slice(0, to);
+      const minute = (points[0].minute + before.reduce((sum, k) => sum + lengthOf(points, k), 0)) % DAY;
+      write(next, minute, t('«{profile}» now from {time}', { profile: profileName(p.profileId), time: minuteToHhmm(minute) }));
     },
     canRemove: points.length > 1,
     remove: (i) => {

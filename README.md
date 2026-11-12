@@ -195,7 +195,8 @@ schedules and the house schedule. **When it switches on by itself** adds presenc
 The weekly schedule is a few day types — the days that share a plan, such as weekdays and the weekend —
 and each day is a list of changes («17:30 → Home») over a chart of the heating or cooling target. A
 change opens in place to move it in 15-minute steps or to pick another profile; on the chart, drag the
-line between two stretches, move a stretch whole or paint one with a profile, or let **Quick setup** write
+line between two stretches, move a stretch whole or paint one with a profile; in the list the changes drag
+by a handle to swap places. Or let **Quick setup** write
 the week from when you wake up, leave, come back and go to bed. Rooms
 can follow their own schedule, exceptions cover holidays, and **Today like a weekend** is one tap.
 
