@@ -1317,6 +1317,7 @@
   "Day to day a start counts once the switch reads back «on». This signal proves the source really works: «{test}» passes only on it.": "Day to day a start counts once the switch reads back «on». This signal proves the source really works: «{test}» passes only on it.",
   "Day types": "Day types",
   "Days": "Days",
+  "Days of «{type}»": "Days of «{type}»",
   "days of outdoor temperature": "days of outdoor temperature",
   "Days of the new type": "Days of the new type",
   "Days of the week": "Days of the week",

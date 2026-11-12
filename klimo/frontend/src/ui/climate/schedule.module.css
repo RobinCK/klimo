@@ -46,9 +46,30 @@
 }
 
 .dayType[data-variant='tab'] {
+  flex: 1 1 104px;
+  width: auto;
   gap: 6px;
   min-height: 56px;
   padding: 8px 10px;
+}
+
+.dayTypeAdd {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  min-height: 56px;
+  border: 1px dashed var(--ui-ring);
+  border-radius: var(--ui-radius-xl);
+  background: transparent;
+  color: var(--ui-text-2);
+  cursor: pointer;
+}
+
+.dayTypeAdd:focus-visible {
+  outline: 2px solid var(--ui-text-1);
+  outline-offset: 2px;
 }
 
 .dayTypeHead {
@@ -384,6 +405,26 @@
   gap: 8px;
 }
 
+.choice[data-layout='scroll'] {
+  flex-wrap: nowrap;
+  gap: 6px;
+  overflow-x: auto;
+  margin: 0 calc(-1 * var(--ui-gutter, 16px));
+  padding: 2px var(--ui-gutter, 16px);
+  scrollbar-width: none;
+}
+
+.choice[data-layout='scroll']::-webkit-scrollbar {
+  display: none;
+}
+
+.choice[data-layout='scroll'] .choiceItem {
+  flex: none;
+  min-height: 40px;
+  padding: 0 12px 0 10px;
+  font-size: var(--ui-fs-body-sm);
+}
+
 .choice[data-layout='list'] {
   flex-direction: column;
   flex-wrap: nowrap;
@@ -530,4 +571,42 @@
 
 .nowAction {
   margin-left: auto;
+}
+
+/* a phone: the profile now and «today like a weekend» side by side, what comes next under them */
+@media (max-width: 560px) {
+  .now {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'label label'
+      'main action'
+      'next next'
+      'note note';
+    align-items: center;
+    gap: 4px 8px;
+    padding: 10px 12px 12px 14px;
+  }
+
+  .nowLabel {
+    grid-area: label;
+  }
+
+  .nowMain {
+    grid-area: main;
+  }
+
+  .nowAction {
+    grid-area: action;
+    margin: 0;
+  }
+
+  .nowNext {
+    grid-area: next;
+    font-size: var(--ui-fs-body-sm);
+  }
+
+  .nowNote {
+    grid-area: note;
+  }
 }

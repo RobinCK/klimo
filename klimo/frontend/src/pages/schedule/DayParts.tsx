@@ -37,9 +37,10 @@ export function useTargetMode(c: ScheduleContext): [TargetMode, (m: TargetMode) 
   return usePref<TargetMode>('schedule.mode', c.house?.season.season === 'cooling' ? 'cool' : 'heat');
 }
 
-export function TargetModeSwitch({ value, onChange }: { value: TargetMode; onChange: (m: TargetMode) => void }) {
+export function TargetModeSwitch({ value, onChange, full }: { value: TargetMode; onChange: (m: TargetMode) => void; full?: boolean }) {
   return (
     <SegmentedControl<TargetMode>
+      full={full}
       ariaLabel={t('Which target to show')}
       value={value}
       options={[
@@ -106,24 +107,36 @@ export function ScheduleNow({ c, schedule, today, nowMinute, mode }: { c: Schedu
 }
 
 /** The profile a drag over the chart paints with: a tap picks it, a second tap puts it away. */
-export function BrushPicker({ c, schedule, mode, brush, onBrush }: { c: ScheduleContext; schedule: Schedule; mode: TargetMode; brush: Id | null; onBrush: (id: Id | null) => void }) {
+export function BrushPicker({
+  c,
+  schedule,
+  mode,
+  brush,
+  onBrush,
+  compact,
+}: {
+  c: ScheduleContext;
+  schedule: Schedule;
+  mode: TargetMode;
+  brush: Id | null;
+  onBrush: (id: Id | null) => void;
+  /** A phone: one row that scrolls sideways, and the hint only while a profile is picked. */
+  compact?: boolean;
+}) {
   const profiles = c.profiles.data ?? [];
   const name = profiles.find((p) => p.id === brush)?.name;
+  const hint = name
+    ? t('Drag over the chart to paint «{profile}» there; tap it again to stop.', { profile: name })
+    : compact
+      ? undefined
+      : t('Pick a profile and drag over the chart. Without one, drag a line to move a change or a stretch to move it whole.');
   return (
-    <Section
-      variant="plain"
-      level={3}
-      overline={t('Draw a stretch')}
-      subtitle={
-        name
-          ? t('Drag over the chart to paint «{profile}» there; tap it again to stop.', { profile: name })
-          : t('Pick a profile and drag over the chart. Without one, drag a line to move a change or a stretch to move it whole.')
-      }
-    >
+    <Section variant="plain" level={3} overline={t('Draw a stretch')} subtitle={hint}>
       <ProfileChoice
         ariaLabel={t('Profile to draw with')}
         value={brush ?? ''}
         tone={mode}
+        layout={compact ? 'scroll' : 'chips'}
         options={profiles.map((x) => ({ value: x.id, name: x.name, color: x.color, valueText: targetText(scheduleTargets(schedule, x), mode) }))}
         onChange={(id) => onBrush(id === brush ? null : id)}
       />

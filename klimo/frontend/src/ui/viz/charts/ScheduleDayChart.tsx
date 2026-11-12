@@ -15,7 +15,7 @@ const DRAG_PX = 4;
 /** How close to the line between two stretches a pointer grabs that line. */
 const EDGE_PX = 8;
 /** Room a time label needs; closer labels go to a second row. */
-const CHIP_PX = 50;
+const CHIP_PX = 58;
 
 export interface ScheduleDaySegment {
   /** Minutes of the local day, 0..1440. */

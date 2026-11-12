@@ -48,6 +48,15 @@ export function DayTypeCard({ name, daysText, today, segments, summary, selected
   );
 }
 
+/** The tab after the day types that starts a new one. */
+export function DayTypeAdd({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button type="button" className={s.dayTypeAdd} aria-label={label} title={label} onClick={onClick}>
+      <Icon name="plus" size={20} />
+    </button>
+  );
+}
+
 /* ---------------- SwitchPointRow ---------------- */
 
 export interface SwitchPointRowProps {
@@ -339,8 +348,8 @@ export interface ProfileChoiceProps {
   ariaLabel: string;
   /** Colour of the targets. */
   tone: 'heat' | 'cool';
-  /** chips: a wrapping row · list: one per line (a phone sheet). */
-  layout?: 'chips' | 'list';
+  /** chips: a wrapping row · list: one per line (a phone sheet) · scroll: one compact row that scrolls sideways. */
+  layout?: 'chips' | 'list' | 'scroll';
   disabled?: boolean;
 }
 

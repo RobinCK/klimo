@@ -7,12 +7,12 @@ import { useState } from 'react';
 import type { Dow, Id, Schedule } from '@api/model';
 import { navigate, paths } from '@app';
 import {
-  AutoGrid,
   AutosaveStatus,
   BottomSheet,
   Button,
   DashedAddButton,
   DayOfWeekToggle,
+  DayTypeAdd,
   DayTypeCard,
   MobileTopBar,
   RadioCardList,
@@ -97,7 +97,7 @@ export function PhoneDay({ c, editor, edit, today, nowMinute, onScope, onDay }: 
       />
       <TabSwitch value="schedule" />
       {schedule ? <ScheduleNow c={c} schedule={schedule} today={today} nowMinute={nowMinute} mode={mode} /> : null}
-      <AutoGrid min={96} gap="sm" ariaLabel={t('Day types')}>
+      <Row gap="sm" wrap role="group" ariaLabel={t('Day types')}>
         {edit.types.map((x) => {
           const tt = typeTitle(x.days);
           return (
@@ -115,24 +115,12 @@ export function PhoneDay({ c, editor, edit, today, nowMinute, onScope, onDay }: 
             />
           );
         })}
-      </AutoGrid>
-      {c.canEdit ? <DashedAddButton label={t('New day type')} onClick={() => setNewType(true)} /> : null}
-      {type && c.canEdit ? (
-        <DayOfWeekToggle
-          ariaLabel={t('Days of this type')}
-          value={type.days}
-          labels={shortDays()}
-          fullLabels={DOWS.map((d) => weekdayLong(d))}
-          onChange={toggleDays(edit, onDay)}
-        />
-      ) : null}
+        {c.canEdit ? <DayTypeAdd label={t('New day type')} onClick={() => setNewType(true)} /> : null}
+      </Row>
       {schedule && type && view ? (
         <>
-          <Row justify="between" align="center" gap="sm">
-            <Section variant="plain" level={3} title={title?.name ?? ''} />
-            <TargetModeSwitch value={mode} onChange={setMode} />
-          </Row>
-          {c.canEdit ? <BrushPicker c={c} schedule={schedule} mode={mode} brush={brush} onBrush={setBrush} /> : null}
+          <TargetModeSwitch full value={mode} onChange={setMode} />
+          {c.canEdit ? <BrushPicker compact c={c} schedule={schedule} mode={mode} brush={brush} onBrush={setBrush} /> : null}
           <DayChart c={c} schedule={schedule} edit={edit} mode={mode} today={today} nowMinute={nowMinute} brush={brush} />
           {schedule.scope === 'room' ? <HouseComparison house={editor.schedules.find((s) => s.scope === 'house') ?? null} type={type} c={c} /> : null}
           <Stack gap="sm">
@@ -148,6 +136,22 @@ export function PhoneDay({ c, editor, edit, today, nowMinute, onScope, onDay }: 
             />
             {c.canEdit && edit.canAdd ? <DashedAddButton label={t('Add a change')} onClick={edit.add} /> : null}
           </Stack>
+          {c.canEdit ? (
+            <Section
+              variant="plain"
+              level={3}
+              overline={t('Days of «{type}»', { type: title?.name ?? '' })}
+              subtitle={t('Switch a day on to give it this plan; switch it off to make it a type of its own.')}
+            >
+              <DayOfWeekToggle
+                ariaLabel={t('Days of this type')}
+                value={type.days}
+                labels={shortDays()}
+                fullLabels={DOWS.map((d) => weekdayLong(d))}
+                onChange={toggleDays(edit, onDay)}
+              />
+            </Section>
+          ) : null}
           <Exceptions c={c} schedule={schedule} />
           {c.canEdit ? (
             <Button variant="secondary" fullWidth icon="sparkle" onClick={() => setSetup(true)}>

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.31
+
+- **The schedule on a phone is compact.** The «now» card puts the profile and **Today like a weekend**
+  side by side; the day types are small tabs with a «+» for a new one; heating or cooling is one switch
+  without a repeated title; the profiles to draw with are one row that scrolls sideways (the hint shows
+  only while one is picked); the days of the type moved under the list of changes, with what they do;
+  the times above the chart no longer overlap, and «until … the next day» is shorter.
+
 ## 0.2.30
 
 - **Day types split and join the way you expect.** Switching a day off under a type makes it a type of
