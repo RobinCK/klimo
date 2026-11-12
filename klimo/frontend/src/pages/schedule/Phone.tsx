@@ -1,5 +1,5 @@
 /**
- * The schedule on a phone: the day types as tabs, the shown type's chart and its changes; a tap
+ * The schedule on a phone: the day types one under another, the shown type's chart and its changes; a tap
  * on a change opens a sheet to move it by 15 minutes, change its profile or delete it. «Розклад |
  * Профілі | Пріоритети» switch between the day, the profile list (a profile opens as its own
  * screen) and the priority order.
@@ -13,7 +13,6 @@ import {
   Button,
   DashedAddButton,
   DayOfWeekToggle,
-  DayTypeAdd,
   DayTypeCard,
   MobileTopBar,
   RadioCardList,
@@ -37,7 +36,7 @@ import { RoomScheduleDialog } from './RoomScheduleDialog';
 import { scopeName, shortDays } from './texts';
 import type { DayEdit } from './useDayEdit';
 import type { ScheduleEditor } from './useScheduleEditor';
-import { dayView, typeTitle } from './view';
+import { dayView, typeSummary, typeTitle } from './view';
 
 type Tab = 'schedule' | 'profiles' | 'priority';
 
@@ -114,16 +113,17 @@ export function PhoneDay({ c, editor, edit, today, nowMinute, onScope, onDay }: 
           }
         />
       ) : null}
-      <Row gap="sm" wrap role="group" ariaLabel={t('Day types')}>
+      <Stack gap="sm" role="group" ariaLabel={t('Day types')}>
         {edit.types.map((x) => {
           const tt = typeTitle(x.days);
           return (
             <DayTypeCard
               key={x.days.join('')}
-              variant="tab"
               name={tt.name}
               daysText={tt.daysText}
+              today={x.days.includes(today)}
               segments={x.plan.map((b) => ({ start: b.start, end: b.end, color: c.profileById(b.profileId)?.color ?? '' }))}
+              summary={typeSummary(x)}
               selected={x === type}
               onClick={() => {
                 close();
@@ -132,8 +132,8 @@ export function PhoneDay({ c, editor, edit, today, nowMinute, onScope, onDay }: 
             />
           );
         })}
-        {c.canEdit ? <DayTypeAdd label={t('New day type')} onClick={() => setNewType(true)} /> : null}
-      </Row>
+        {c.canEdit ? <DashedAddButton label={t('New day type')} onClick={() => setNewType(true)} /> : null}
+      </Stack>
       {schedule && type && view ? (
         <>
           <TargetModeSwitch full value={mode} onChange={setMode} />

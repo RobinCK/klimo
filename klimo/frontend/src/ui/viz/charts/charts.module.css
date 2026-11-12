@@ -1485,6 +1485,21 @@
   background: var(--well);
 }
 
+/* the scale inside the plot on a phone, where a column for it would push the chart to the right */
+.sdayTickIn {
+  position: absolute;
+  left: 6px;
+  z-index: 1;
+  transform: translateY(-50%);
+  padding: 0 3px;
+  border-radius: var(--ui-radius-xs);
+  background: var(--well);
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-micro);
+  font-weight: 400;
+  pointer-events: none;
+}
+
 .sdayGrid {
   position: absolute;
   left: 0;

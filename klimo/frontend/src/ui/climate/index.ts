@@ -14,7 +14,6 @@ export {
   type ProfileTileProps,
 } from './profiles';
 export {
-  DayTypeAdd,
   DayTypeCard,
   ProfileChoice,
   ScheduleNowBar,

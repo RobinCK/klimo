@@ -53,25 +53,6 @@
   padding: 8px 10px;
 }
 
-.dayTypeAdd {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  min-height: 56px;
-  border: 1px dashed var(--ui-ring);
-  border-radius: var(--ui-radius-xl);
-  background: transparent;
-  color: var(--ui-text-2);
-  cursor: pointer;
-}
-
-.dayTypeAdd:focus-visible {
-  outline: 2px solid var(--ui-text-1);
-  outline-offset: 2px;
-}
-
 .dayTypeHead {
   display: flex;
   align-items: center;

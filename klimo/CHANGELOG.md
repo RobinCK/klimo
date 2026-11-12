@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.34
+
+- **The day chart on a phone takes the full width.** Its temperature scale moved inside the plot (the
+  column for it pushed the chart to the right), and the row of times above it is gone on a phone — the
+  times are in the list of changes right under it.
+- **Day types on a phone stand one under another**, as cards with their full name, their plan and its
+  times, and **New day type** under them.
+
 ## 0.2.33
 
 - **The Schedule page has tabs: Schedule, Profiles, Priority.** Each is its own address and the page

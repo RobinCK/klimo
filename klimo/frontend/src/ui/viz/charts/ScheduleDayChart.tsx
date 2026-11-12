@@ -16,6 +16,8 @@ const DRAG_PX = 4;
 const EDGE_PX = 8;
 /** Room a time label needs; closer labels go to a second row. */
 const CHIP_PX = 58;
+/** Narrower than this (a phone) the chart drops the times above it and keeps its scale inside the plot. */
+const COMPACT_PX = 520;
 
 export interface ScheduleDaySegment {
   /** Minutes of the local day, 0..1440. */
@@ -104,8 +106,10 @@ export function ScheduleDayChart({
   ariaLabel,
 }: ScheduleDayChartProps) {
   const ut = useUiText();
+  const rootRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<HTMLDivElement>(null);
   const { width } = useSize(plotRef);
+  const compact = useSize(rootRef).width < COMPACT_PX;
   const [gesture, setGestureState] = useState<Gesture | null>(null);
   const live = useRef<Live | null>(null);
   const swallowClick = useRef(false);
@@ -299,44 +303,57 @@ export function ScheduleDayChart({
   const dragging = gesture?.kind ?? (brush && onPaint ? 'brush' : hover ?? undefined);
 
   return (
-    <div className={s.sday} role="group" aria-label={ariaLabel} data-gesture={dragging} style={{ '--line': line, '--value': fg } as CSSProperties}>
-      <div className={s.sdayChips} data-lanes={String(laneCount)}>
-        {points.map((p, i) => (
-          <button
-            key={i}
-            type="button"
-            className={s.sdayChip}
-            style={{ left: pct((minuteOf(i) / DAY_MIN) * 100) }}
-            data-end={width > 0 && width - (minuteOf(i) / DAY_MIN) * width < CHIP_PX / 2 ? '' : undefined}
-            data-lane={lanes[i] ? String(lanes[i]) : undefined}
-            data-edit={onMove ? '' : undefined}
-            data-active={shiftOf(i) ? '' : undefined}
-            aria-pressed={p.selected ? true : false}
-            aria-label={p.aria}
-            title={onMove ? ut('Drag it, or move it with the arrow keys') : undefined}
-            onPointerDown={(e) => onChipDown(e, i)}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={stop}
-            onKeyDown={(e) => onKey(e, i)}
-            onClick={() => {
-              if (swallowClick.current) return;
-              onSelect(i);
-            }}
-          >
-            {formatMinute(minuteOf(i))}
-          </button>
-        ))}
-      </div>
-
-      <div className={s.sdayBody}>
-        <div className={s.sdayScale} aria-hidden="true">
-          {ticks.map((v) => (
-            <span key={v} style={{ top: `${y(v)}px` }}>
-              {formatValue(v)}
-            </span>
+    <div
+      ref={rootRef}
+      className={s.sday}
+      role="group"
+      aria-label={ariaLabel}
+      data-gesture={dragging}
+      data-compact={compact ? '' : undefined}
+      style={{ '--line': line, '--value': fg } as CSSProperties}
+    >
+      {/* a phone shows the times in the list of changes instead: there is no room for them above the chart */}
+      {compact ? null : (
+        <div className={s.sdayChips} data-lanes={String(laneCount)}>
+          {points.map((p, i) => (
+            <button
+              key={i}
+              type="button"
+              className={s.sdayChip}
+              style={{ left: pct((minuteOf(i) / DAY_MIN) * 100) }}
+              data-end={width > 0 && width - (minuteOf(i) / DAY_MIN) * width < CHIP_PX / 2 ? '' : undefined}
+              data-lane={lanes[i] ? String(lanes[i]) : undefined}
+              data-edit={onMove ? '' : undefined}
+              data-active={shiftOf(i) ? '' : undefined}
+              aria-pressed={p.selected ? true : false}
+              aria-label={p.aria}
+              title={onMove ? ut('Drag it, or move it with the arrow keys') : undefined}
+              onPointerDown={(e) => onChipDown(e, i)}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerCancel={stop}
+              onKeyDown={(e) => onKey(e, i)}
+              onClick={() => {
+                if (swallowClick.current) return;
+                onSelect(i);
+              }}
+            >
+              {formatMinute(minuteOf(i))}
+            </button>
           ))}
         </div>
+      )}
+
+      <div className={s.sdayBody}>
+        {compact ? null : (
+          <div className={s.sdayScale} aria-hidden="true">
+            {ticks.map((v) => (
+              <span key={v} style={{ top: `${y(v)}px` }}>
+                {formatValue(v)}
+              </span>
+            ))}
+          </div>
+        )}
         <div className={s.sdayLanes}>
           <div
             className={s.sdaySurface}
@@ -354,6 +371,13 @@ export function ScheduleDayChart({
               {ticks.map((v) => (
                 <span key={v} className={s.sdayGrid} style={{ top: `${y(v)}px` }} />
               ))}
+              {compact
+                ? ticks.map((v) => (
+                    <span key={`s-${v}`} className={s.sdayTickIn} style={{ top: `${y(v)}px` }}>
+                      {formatValue(v)}
+                    </span>
+                  ))
+                : null}
               {shown.map((seg, i) => {
                 const a = clamp(seg.start, 0, DAY_MIN);
                 const b = clamp(seg.end, 0, DAY_MIN);

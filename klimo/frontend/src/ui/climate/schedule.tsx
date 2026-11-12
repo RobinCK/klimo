@@ -48,15 +48,6 @@ export function DayTypeCard({ name, daysText, today, segments, summary, selected
   );
 }
 
-/** The tab after the day types that starts a new one. */
-export function DayTypeAdd({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button type="button" className={s.dayTypeAdd} aria-label={label} title={label} onClick={onClick}>
-      <Icon name="plus" size={20} />
-    </button>
-  );
-}
-
 /* ---------------- SwitchPointRow ---------------- */
 
 export interface SwitchPointRowProps {
