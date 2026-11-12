@@ -1366,6 +1366,11 @@
   bottom: 30px;
 }
 
+/* near the right edge the label ends at its line instead of sticking out of the chart */
+.sdayChip[data-end] {
+  transform: translateX(calc(-100% + 2px));
+}
+
 .sdayChip[data-edit] {
   cursor: col-resize;
   touch-action: none;
@@ -1429,7 +1434,11 @@
 
 .sdaySurface[data-edit] {
   cursor: pointer;
-  touch-action: pan-y;
+}
+
+/* only a picked profile keeps a finger on the chart; otherwise it scrolls the page */
+.sdaySurface[data-paint] {
+  touch-action: none;
 }
 
 /* the stretch being painted, and its times */

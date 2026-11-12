@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.32
+
+- **The schedule no longer slides sideways on a phone.** A finger on the day chart scrolls the page — a
+  swipe that went a little sideways used to drag a stretch or a line along the day; a tap still selects
+  a stretch, the times above the chart still drag, and with a profile picked under **Draw a stretch** a
+  finger paints. The row of profiles no longer bleeds to the screen's edges, and a time near midnight
+  ends at its line instead of sticking out of the chart.
+
 ## 0.2.31
 
 - **The schedule on a phone is compact.** The «now» card puts the profile and **Today like a weekend**

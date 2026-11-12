@@ -409,8 +409,8 @@
   flex-wrap: nowrap;
   gap: 6px;
   overflow-x: auto;
-  margin: 0 calc(-1 * var(--ui-gutter, 16px));
-  padding: 2px var(--ui-gutter, 16px);
+  overscroll-behavior-x: contain;
+  padding: 2px 0;
   scrollbar-width: none;
 }
 

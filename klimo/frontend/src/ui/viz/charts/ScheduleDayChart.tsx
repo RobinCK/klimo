@@ -73,7 +73,9 @@ export interface ScheduleDayChartProps {
 type Gesture =
   | { kind: 'edge'; i: number; from: number; minute: number; min: number; max: number }
   | { kind: 'shift'; i: number; moved: number[]; delta: number; min: number; max: number }
-  | { kind: 'paint'; anchor: number; a: number; b: number };
+  | { kind: 'paint'; anchor: number; a: number; b: number }
+  /** A tap selects the stretch under it; moving away gives up (a finger scrolls the page). */
+  | { kind: 'tap' };
 
 type Live = { g: Gesture; x0: number; active: boolean; rect: DOMRect; pointerId: number; el: HTMLElement; click: number | null };
 
@@ -212,6 +214,8 @@ export function ScheduleDayChart({
     const m = minuteAt(rect, e.clientX);
     const under = segmentAt(m).point;
     if (brush && onPaint) return begin(e, { kind: 'paint', anchor: m, a: 0, b: 0 }, under);
+    // a finger on the chart scrolls the page (a tap still selects): lines and stretches move by mouse, or by the times above
+    if (e.pointerType === 'touch') return begin(e, { kind: 'tap' }, under);
     const edge = onMove ? edgeAt(rect, e.clientX) : null;
     if (edge != null) {
       const r = limits(edge);
@@ -222,7 +226,7 @@ export function ScheduleDayChart({
       const next = (under + 1) % points.length;
       return begin(e, { kind: 'shift', i: under, moved: [under, next], delta: 0, min: r.min, max: r.max }, under);
     }
-    begin(e, { kind: 'paint', anchor: m, a: 0, b: 0 }, under);
+    begin(e, { kind: 'tap' }, under);
   };
 
   const onPointerMove = (e: PointerEvent<HTMLElement>) => {
@@ -236,6 +240,7 @@ export function ScheduleDayChart({
       return;
     }
     if (!l.active && Math.abs(e.clientX - l.x0) < DRAG_PX) return;
+    if (l.g.kind === 'tap') return stop();
     if (!l.active) {
       l.active = true;
       l.el.setPointerCapture(l.pointerId);
@@ -248,7 +253,7 @@ export function ScheduleDayChart({
     } else if (g.kind === 'shift') {
       const raw = ((e.clientX - l.x0) / l.rect.width) * DAY_MIN;
       l.g = { ...g, delta: clamp(Math.round(raw / step) * step, g.min, g.max) };
-    } else {
+    } else if (g.kind === 'paint') {
       if (!brush || !onPaint) return;
       let a = snap(Math.min(g.anchor, m));
       let b = snap(Math.max(g.anchor, m));
@@ -302,6 +307,7 @@ export function ScheduleDayChart({
             type="button"
             className={s.sdayChip}
             style={{ left: pct((minuteOf(i) / DAY_MIN) * 100) }}
+            data-end={width > 0 && width - (minuteOf(i) / DAY_MIN) * width < CHIP_PX / 2 ? '' : undefined}
             data-lane={lanes[i] ? '1' : undefined}
             data-edit={onMove ? '' : undefined}
             data-active={shiftOf(i) ? '' : undefined}
@@ -336,6 +342,7 @@ export function ScheduleDayChart({
             className={s.sdaySurface}
             data-surface=""
             data-edit={onMove || onShift || onPaint ? '' : undefined}
+            data-paint={brush && onPaint ? '' : undefined}
             aria-hidden="true"
             onPointerDown={onSurfaceDown}
             onPointerMove={onPointerMove}

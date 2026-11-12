@@ -292,8 +292,9 @@ control method is chosen per room:
   stretches, and is edited in place: drag the line between two stretches (or the time above it) to move
   that change, grab a stretch in the middle to move it whole, or pick a profile under **Draw a stretch**
   and drag over the chart to paint it there (tap the profile again to stop). A focused time moves with the
-  arrow keys (Shift: one hour); a click on a stretch opens its change. Under a room schedule the whole
-  house's plan on the same days is shown to compare.
+  arrow keys (Shift: one hour); a click on a stretch opens its change. On a phone a finger on the chart
+  scrolls the page: the times above it drag, and with a profile picked a finger paints. Under a room
+  schedule the whole house's plan on the same days is shown to compare.
 - **Now**: the line on top tells what the schedule gives now, until when and what comes next. **Today like
   a weekend** adds an exception that runs today like a Saturday; **Back to the week** removes it.
 - **Quick setup** writes the whole week from four times — waking up, leaving, coming back, going to bed —
