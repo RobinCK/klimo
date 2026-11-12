@@ -192,9 +192,11 @@ schedules and the house schedule. **When it switches on by itself** adds presenc
 
 ![Weekly schedule](docs/screenshots/schedule.png)
 
-The weekly schedule is drawn as blocks of profiles; click a block to change its time and profile,
-split it, copy it to weekdays, the weekend or every day. Rooms can follow their own schedule, and
-exceptions cover holidays.
+The weekly schedule is a few day types — the days that share a plan, such as weekdays and the weekend —
+and each day is a list of changes («17:30 → Home») over a chart of the heating or cooling target. A
+change opens in place to move it in 15-minute steps or to pick another profile; drag the times above the
+chart, or let **Quick setup** write the week from when you wake up, leave, come back and go to bed. Rooms
+can follow their own schedule, exceptions cover holidays, and **Today like a weekend** is one tap.
 
 ### System
 

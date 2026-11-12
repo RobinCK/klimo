@@ -19,6 +19,7 @@ export {
   type WeekTimelineDay,
   type WeekTimelineProps,
 } from './charts/WeekTimeline';
+export { ScheduleDayChart, type ScheduleDayChartProps, type ScheduleDayPoint, type ScheduleDaySegment } from './charts/ScheduleDayChart';
 export { BivalenceChart, type BivalenceChartProps, type BivalenceTrack } from './charts/BivalenceChart';
 export { WeatherCurveChart, type CurvePoint, type WeatherCurveChartProps } from './charts/WeatherCurveChart';
 export {

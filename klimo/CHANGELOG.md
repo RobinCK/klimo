@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.2.27
+
+- **The weekly schedule is edited as day types and changes.** Days with the same plan form one day type
+  («Weekdays», «Mon–Thu», «Friday», «Weekends»); editing a type changes all its days, so «Repeat on» and
+  the three «Copy to…» buttons are gone. Switch a day on under the type to give it this plan, switch it
+  off to edit it alone.
+- **A day is a list of changes, not blocks**: «17:30 → Home» holds until the next change, and a night from
+  23:00 to 06:30 is one change instead of two blocks. A change opens in place: its time (−/+ 15 min or
+  typed), its profile with the target it gives, and deleting it; **Add a change** splits the longest stretch.
+- **The targets are on sight**: the day is drawn as the heating or the cooling target over the profile
+  stretches, with the switch times above to drag (or to move with the arrow keys); each change shows both
+  targets, the one of the season larger. A room schedule shows the whole house's plan underneath to compare.
+- **What runs now**: a line on top tells what the schedule gives right now, until when and what comes next;
+  **Today like a weekend** turns today into a Saturday with one tap (an exception), **Back to the week**
+  undoes it.
+- **Quick setup** asks when you wake up, leave, come back and go to bed, on weekdays and at the weekend
+  (or that someone stays at home), and writes the week from the answers, with one undo.
+- **The schedule moves in 15-minute steps** (it was 30).
+
 ## 0.2.26
 
 - **Paging the room's chart no longer makes it jump.** The profile strip above it stays and shows the

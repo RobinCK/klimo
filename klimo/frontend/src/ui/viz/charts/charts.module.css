@@ -1291,3 +1291,254 @@
   color: var(--ui-text-1);
   font-weight: 600;
 }
+
+/* ---------------- ScheduleDayChart ---------------- */
+
+.sday {
+  --well: color-mix(in srgb, var(--ui-surface-1) 55%, var(--ui-bg-page));
+  --scale-w: 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sday[data-dragging] {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: col-resize;
+}
+
+/* the switch times above the plot, one row (two when they crowd) */
+.sdayChips {
+  position: relative;
+  height: 30px;
+  margin-left: calc(var(--scale-w) + 10px);
+}
+
+.sdayChips[data-lanes='2'] {
+  height: 58px;
+}
+
+.sdayChip {
+  position: absolute;
+  bottom: 2px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 8px;
+  transform: translateX(-50%);
+  border: 0;
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface-3);
+  color: var(--ui-text-1);
+  font: inherit;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-fs-caption);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sdayChip[data-lane='1'] {
+  bottom: 30px;
+}
+
+.sdayChip[data-edit] {
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.sdayChip[aria-pressed='true'],
+.sdayChip[data-active] {
+  z-index: 2;
+  background: var(--ui-text-1);
+  color: var(--ui-bg-page);
+}
+
+.sdayChip:focus-visible {
+  outline: 2px solid var(--ui-text-1);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) {
+  .sdayChip:hover:not([aria-pressed='true']) {
+    background: var(--ui-surface-4);
+  }
+}
+
+.sdayBody {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+
+.sdayScale {
+  position: relative;
+  flex: none;
+  width: var(--scale-w);
+  height: 168px;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-micro);
+  font-weight: 400;
+}
+
+.sdayScale span {
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
+}
+
+.sdayLanes {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sdayPlot {
+  position: relative;
+  height: 168px;
+  overflow: hidden;
+  border-radius: var(--ui-radius-md);
+  background: var(--well);
+}
+
+.sdayGrid {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--ui-divider);
+}
+
+.sdayTint {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--fill) 9%, transparent);
+  cursor: pointer;
+}
+
+.sdayTint[data-selected] {
+  background: color-mix(in srgb, var(--fill) 22%, transparent);
+}
+
+.sdayGuide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px dashed color-mix(in srgb, var(--ui-text-1) 14%, transparent);
+  pointer-events: none;
+}
+
+.sdayGuide[data-selected] {
+  border-left-color: color-mix(in srgb, var(--ui-text-1) 55%, transparent);
+}
+
+.sdayStep,
+.sdayRise {
+  position: absolute;
+  border-radius: 2px;
+  background: var(--line);
+  pointer-events: none;
+}
+
+.sdayStep {
+  height: 3px;
+}
+
+.sdayRise {
+  width: 3px;
+  margin-left: -1.5px;
+}
+
+.sdayValue,
+.sdayNone {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: var(--ui-fs-body-sm);
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.sdayValue {
+  color: var(--value);
+}
+
+.sdayNone {
+  bottom: 8px;
+  color: var(--ui-text-3);
+  font-weight: 400;
+}
+
+.sdayNow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ui-text-1);
+  pointer-events: none;
+}
+
+.sdayNowLabel {
+  position: absolute;
+  bottom: 6px;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-text-1);
+  color: var(--ui-bg-page);
+  font-size: var(--ui-fs-micro);
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.sdayNowLabel[data-flip] {
+  margin-left: 0;
+  transform: translateX(calc(-100% - 6px));
+}
+
+.sdayRibbon {
+  position: relative;
+  height: 30px;
+  overflow: hidden;
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface-2);
+}
+
+.sdaySeg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  border-right: 2px solid var(--ui-surface-1);
+  background: var(--fill);
+  color: var(--ink);
+  font-size: var(--ui-fs-caption);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sdaySeg[data-selected] {
+  box-shadow: inset 0 0 0 2px var(--ui-text-1);
+}
+
+.sdayAxis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--ui-text-3);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-fs-micro);
+  font-weight: 400;
+}

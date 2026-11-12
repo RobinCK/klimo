@@ -34,6 +34,8 @@ export interface ScheduleEditor {
    * can be taken back for 8 seconds; the text names what changed.
    */
   edit: (dow: Dow, plan: DayPlan, opts?: { also?: Dow[]; undo?: string }) => void;
+  /** Replace several days at once (each with the days it repeats on), with one undo for all of them. */
+  editDays: (entries: { dow: Dow; plan: DayPlan; also?: Dow[] }[], undo?: string) => void;
   /** Copy a whole day to other days right away (one request), with undo. */
   copyDay: (from: Dow, to: Dow[], message: string) => Promise<void>;
   /** Save what is waiting now (before switching scope or leaving). */
@@ -153,6 +155,26 @@ export function useScheduleEditor(scheduleId: Id | null): ScheduleEditor {
     [queue],
   );
 
+  const editDays = useCallback(
+    (entries: { dow: Dow; plan: DayPlan; also?: Dow[] }[], undo?: string) => {
+      const current = scheduleRef.current;
+      if (!current) return;
+      const touched = [...new Set(entries.flatMap((e) => [e.dow, ...(e.also ?? [])]))];
+      const before = touched.map((d) => ({ dow: d, plan: current.days[d] }));
+      const changed = entries.filter((e) => [e.dow, ...(e.also ?? [])].some((d) => !samePlan(current.days[d], e.plan)));
+      if (!changed.length) return;
+      queue(changed.map((e) => ({ scheduleId: current.id, dow: e.dow, plan: e.plan, also: (e.also ?? []).filter((d) => d !== e.dow) })));
+      if (undo) {
+        undoToast({
+          message: undo,
+          seconds: 8,
+          onUndo: () => queue(before.map((b) => ({ scheduleId: current.id, dow: b.dow, plan: b.plan, also: [] }))),
+        });
+      }
+    },
+    [queue],
+  );
+
   const copyDay = useCallback(
     async (from: Dow, to: Dow[], message: string) => {
       const current = scheduleRef.current;
@@ -204,5 +226,5 @@ export function useScheduleEditor(scheduleId: Id | null): ScheduleEditor {
     };
   }, []);
 
-  return { schedules: merged, schedule, resource, status, retry, edit, copyDay, flush };
+  return { schedules: merged, schedule, resource, status, retry, edit, editDays, copyDay, flush };
 }

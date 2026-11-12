@@ -2,12 +2,12 @@ import { ApiException } from '../common/http';
 import type { ApiErrorIssue, DayPlan, Dow, Id, MinuteOfDay, Schedule, ScheduleBlock, ScheduleException } from '../shared/model';
 
 /* =====================================================================================================
- * Weekly plan editing on a 30-minute grid. A day is a contiguous list of blocks covering 00:00–24:00;
- * blocks are at least 30 minutes; neighbours naming the same profile are merged on save so the plan
+ * Weekly plan editing on a 15-minute grid. A day is a contiguous list of blocks covering 00:00–24:00;
+ * blocks are at least 15 minutes; neighbours naming the same profile are merged on save so the plan
  * always has one canonical shape.
  * ===================================================================================================== */
 
-export const GRID_MIN = 30;
+export const GRID_MIN = 15;
 export const DAY_MIN = 1440;
 
 const copy = (plan: DayPlan): DayPlan => plan.map((b) => ({ start: b.start, end: b.end, profileId: b.profileId }));
@@ -77,7 +77,7 @@ export function splitBlock(plan: DayPlan, index: number, at?: MinuteOfDay): DayP
   }
   const mid = at ?? b.start + Math.round((b.end - b.start) / 2 / GRID_MIN) * GRID_MIN;
   if (mid % GRID_MIN || mid - b.start < GRID_MIN || b.end - mid < GRID_MIN) {
-    throw new ApiException(400, 'validation', 'Split point must leave two blocks of at least 30 minutes', [{ path: 'at', code: 'range', params: { min: b.start + GRID_MIN, max: b.end - GRID_MIN } }]);
+    throw new ApiException(400, 'validation', `Split point must leave two blocks of at least ${GRID_MIN} minutes`, [{ path: 'at', code: 'range', params: { min: b.start + GRID_MIN, max: b.end - GRID_MIN } }]);
   }
   const out = copy(plan);
   out.splice(index, 1, { start: b.start, end: mid, profileId: b.profileId }, { start: mid, end: b.end, profileId: b.profileId });

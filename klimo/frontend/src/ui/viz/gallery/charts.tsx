@@ -6,6 +6,7 @@ import { DayChart } from '../charts/DayChart';
 import { RuntimeBar24h, Timeline24h, type TimelineTrack } from '../charts/Timeline24h';
 import { ProfileStrip } from '../charts/ProfileStrip';
 import { DayTimelineVertical, WeekTimeline } from '../charts/WeekTimeline';
+import { ScheduleDayChart } from '../charts/ScheduleDayChart';
 import { BivalenceChart } from '../charts/BivalenceChart';
 import { WeatherCurveChart, type CurvePoint } from '../charts/WeatherCurveChart';
 import { ConsumptionChart } from '../charts/ConsumptionChart';
@@ -189,6 +190,12 @@ export function GalleryCharts() {
         </Panel>
       </Item>
 
+      <Item name="ScheduleDayChart">
+        <Panel>
+          <ScheduleDayDemo name={name} heatOf={heatOf} now={(now - dayStart) / 60_000} />
+        </Panel>
+      </Item>
+
       <Item name="BivalenceChart">
         <BivalenceChart
           tracks={[
@@ -255,5 +262,36 @@ export function GalleryCharts() {
         </Pair>
       </Item>
     </Group>
+  );
+}
+
+/** A weekday as switch points: the time labels select and drag. */
+function ScheduleDayDemo({ name, heatOf, now }: { name: (id: keyof typeof P) => string; heatOf: Record<keyof typeof P, number>; now: number }) {
+  const ut = useUiText();
+  const [points, setPoints] = useState<{ minute: number; id: keyof typeof P }[]>([
+    { minute: 390, id: 'home' },
+    { minute: 510, id: 'away' },
+    { minute: 1050, id: 'home' },
+    { minute: 1380, id: 'night' },
+  ]);
+  const [sel, setSel] = useState(2);
+  const last = points.length - 1;
+  const segments = [
+    { start: 0, end: points[0].minute, i: last },
+    ...points.map((p, i) => ({ start: p.minute, end: points[i + 1]?.minute ?? 1440, i })),
+  ].map(({ start, end, i }) => {
+    const id = points[i].id;
+    return { start, end, color: P[id].color, ink: P[id].ink, label: name(id), value: heatOf[id], valueText: `${heatOf[id].toFixed(1)}°`, point: i, selected: i === sel };
+  });
+  return (
+    <ScheduleDayChart
+      ariaLabel={ut('Weekdays')}
+      tone="heat"
+      segments={segments}
+      points={points.map((p, i) => ({ minute: p.minute, aria: `${hhmm(p.minute)} → ${name(p.id)}`, selected: i === sel }))}
+      now={{ minute: now, label: hhmm(now) }}
+      onSelect={setSel}
+      onMove={(i, minute) => setPoints((prev) => prev.map((p, k) => (k === i ? { ...p, minute } : p)))}
+    />
   );
 }

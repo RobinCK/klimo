@@ -1010,8 +1010,8 @@ export interface ProfileRoomSetting {
 }
 
 export interface ScheduleBlock {
-  start: MinuteOfDay; // multiple of 30
-  end: MinuteOfDay; // > start, multiple of 30
+  start: MinuteOfDay; // multiple of 15
+  end: MinuteOfDay; // > start, multiple of 15
   profileId: Id;
 }
 /** Contiguous, sorted, covering 0..1440 exactly, blocks ≥ 30 min, equal neighbours merged. */

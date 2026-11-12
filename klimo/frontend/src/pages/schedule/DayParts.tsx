@@ -1,0 +1,224 @@
+/**
+ * Parts of the day editor shared by the wide screen and the phone: which target the chart shows,
+ * the «now» line with «today like a weekend», the editor of one change, the chart itself and the
+ * house's plan under a room schedule for comparison.
+ */
+import type { Dow, Schedule } from '@api/model';
+import { api } from '@api/endpoints';
+import { useMutation, useResource } from '@data';
+import { usePref } from '@app';
+import {
+  Button,
+  ProfileChoice,
+  ProfileStrip,
+  Row,
+  ScheduleDayChart,
+  ScheduleNowBar,
+  Section,
+  SegmentedControl,
+  Stack,
+  Text,
+  TimeStepper,
+} from '@ui';
+import { fmtTemp, minuteToHhmm, t, weekdayLong } from '@i18n';
+import { STEP } from './blocks';
+import type { ScheduleContext } from './data';
+import { localDate } from './dates';
+import { pointAt, pointsOf, untilOf, type DayType } from './points';
+import { scheduleTargets, targetText } from './texts';
+import type { DayEdit } from './useDayEdit';
+import { dayView, todayPlan, typeTitle, type TargetMode } from './view';
+
+/** Heating or cooling targets on the chart; the season decides until the user picks. */
+export function useTargetMode(c: ScheduleContext): [TargetMode, (m: TargetMode) => void] {
+  return usePref<TargetMode>('schedule.mode', c.house?.season.season === 'cooling' ? 'cool' : 'heat');
+}
+
+export function TargetModeSwitch({ value, onChange }: { value: TargetMode; onChange: (m: TargetMode) => void }) {
+  return (
+    <SegmentedControl<TargetMode>
+      ariaLabel={t('Which target to show')}
+      value={value}
+      options={[
+        { value: 'heat', label: t('Heating targets'), icon: 'flame' },
+        { value: 'cool', label: t('Cooling targets'), icon: 'snow' },
+      ]}
+      onChange={onChange}
+    />
+  );
+}
+
+/** What the schedule gives right now, what comes next, and «today like a weekend». */
+export function ScheduleNow({ c, schedule, today, nowMinute, mode }: { c: ScheduleContext; schedule: Schedule; today: Dow; nowMinute: number; mode: TargetMode }) {
+  const exceptions = useResource(`schedule-exceptions:${schedule.id}`, () => api.schedules.exceptions(schedule.id), { reloadOn: ['schedule'] });
+  const date = localDate(c.now);
+  const exception = exceptions.data?.find((e) => e.date === date) ?? null;
+  const profiles = c.profiles.data ?? [];
+  const byId = (id: string) => profiles.find((p) => p.id === id) ?? null;
+  const points = pointsOf(todayPlan(schedule.days, today, exception));
+  const weekend: Dow = 5;
+  const asWeekend = useMutation(() => api.schedules.setException(schedule.id, date, { plan: { likeDow: weekend }, note: null }), {
+    onSuccess: () => void exceptions.reload(),
+    okToast: t('Today runs like {day}', { day: weekdayLong(weekend).toLowerCase() }),
+  });
+  const back = useMutation(() => api.schedules.removeException(schedule.id, date), {
+    onSuccess: () => void exceptions.reload(),
+    okToast: t('Today follows the week again'),
+  });
+  if (!points.length) return null;
+  const i = pointAt(points, nowMinute);
+  const cur = points[i];
+  const profile = byId(cur.profileId);
+  const more = points.length > 1;
+  const next = points[(i + 1) % points.length];
+  const nextProfile = byId(next.profileId);
+  const note = exception
+    ? 'likeDow' in exception.plan
+      ? t('Today runs like {day}.', { day: weekdayLong(exception.plan.likeDow).toLowerCase() })
+      : t('Today has its own plan.')
+    : undefined;
+  const canWeekend = !exception && today < 5;
+  const action = !c.canEdit ? undefined : exception ? (
+    <Button variant="ghost" size="sm" icon="undo" loading={back.pending} onClick={() => void back.run()}>
+      {t('Back to the week')}
+    </Button>
+  ) : canWeekend ? (
+    <Button variant="secondary" size="sm" icon="calendar" loading={asWeekend.pending} onClick={() => void asWeekend.run()}>
+      {t('Today like a weekend')}
+    </Button>
+  ) : undefined;
+  return (
+    <ScheduleNowBar
+      label={t('By the schedule now · {time}', { time: minuteToHhmm(nowMinute) })}
+      name={profile?.name ?? cur.profileId}
+      color={profile?.color ?? ''}
+      valueText={targetText(scheduleTargets(schedule, profile), mode)}
+      tone={mode}
+      untilText={more ? t('until {time}', { time: minuteToHhmm(untilOf(points, i).minute) }) : t('all day')}
+      nextText={more ? t('then {profile} {target}', { profile: nextProfile?.name ?? next.profileId, target: targetText(scheduleTargets(schedule, nextProfile), mode) }) : undefined}
+      note={note}
+      action={action}
+    />
+  );
+}
+
+/** The chart of the shown day type. */
+export function DayChart({
+  c,
+  schedule,
+  edit,
+  mode,
+  today,
+  nowMinute,
+}: {
+  c: ScheduleContext;
+  schedule: Schedule;
+  edit: DayEdit;
+  mode: TargetMode;
+  today: Dow;
+  nowMinute: number;
+}) {
+  const type = edit.type;
+  if (!type) return null;
+  const isToday = type.days.includes(today);
+  const view = dayView(edit.points, c.profiles.data ?? [], schedule, mode, edit.index, isToday ? nowMinute : null);
+  return (
+    <ScheduleDayChart
+      ariaLabel={t('{days}: the target through the day', { days: typeTitle(type.days).name })}
+      segments={view.segments}
+      points={view.chartPoints}
+      tone={mode}
+      now={isToday ? { minute: nowMinute, label: minuteToHhmm(nowMinute) } : null}
+      onSelect={(i) => edit.select(i === edit.index ? -1 : i)}
+      onMove={c.canEdit ? edit.move : undefined}
+      range={edit.range}
+      step={STEP}
+      formatMinute={minuteToHhmm}
+      formatValue={(v) => fmtTemp(v, { decimals: 0 })}
+    />
+  );
+}
+
+/** The editor of change `index`: its time, its profile, and deleting it. */
+export function PointEditor({ c, schedule, edit, index, mode, layout = 'chips' }: { c: ScheduleContext; schedule: Schedule; edit: DayEdit; index: number; mode: TargetMode; layout?: 'chips' | 'list' }) {
+  const p = edit.points[index];
+  const type = edit.type;
+  if (!p || !type) return null;
+  const r = edit.range(index);
+  const until = untilOf(edit.points, index);
+  const disabled = !c.canEdit;
+  const profiles = c.profiles.data ?? [];
+  return (
+    <Stack gap="lg">
+      <Row gap="xl" wrap align="center">
+        <TimeStepper
+          label={t('Starts at')}
+          value={p.minute}
+          text={minuteToHhmm(p.minute)}
+          min={disabled ? p.minute : r.min}
+          max={disabled ? p.minute : r.max}
+          step={STEP}
+          variant={layout === 'list' ? 'tile' : 'inline'}
+          onChange={(m) => edit.move(index, m)}
+          ariaEarlier={t('15 min earlier')}
+          ariaLater={t('15 min later')}
+        />
+        {edit.points.length > 1 ? (
+          <Text variant="caption">
+            {until.nextDay
+              ? t('It holds until {time} the next day, where the next change starts.', { time: minuteToHhmm(until.minute) })
+              : t('It holds until {time}, where the next change starts.', { time: minuteToHhmm(until.minute) })}
+          </Text>
+        ) : null}
+      </Row>
+      <Section variant="plain" level={3} overline={t('Profile')}>
+        <ProfileChoice
+          ariaLabel={t('Profile of the change')}
+          value={p.profileId}
+          tone={mode}
+          layout={layout}
+          disabled={disabled}
+          options={profiles.map((x) => ({
+            value: x.id,
+            name: x.name,
+            color: x.color,
+            valueText: targetText(scheduleTargets(schedule, x), mode),
+          }))}
+          onChange={(id) => edit.setProfile(index, id)}
+        />
+      </Section>
+      <Row gap="md" wrap align="center" justify="between">
+        <Text variant="caption">
+          {type.days.length > 1
+            ? t('Changes on every day of «{type}». To change one day alone, take it out of the type above.', { type: typeTitle(type.days).name })
+            : t('Changes on this day only.')}
+        </Text>
+        {layout === 'chips' && c.canEdit ? (
+          <Button variant="ghost" icon="trash" disabled={!edit.canRemove} onClick={() => edit.remove(index)}>
+            {t('Delete the change')}
+          </Button>
+        ) : null}
+      </Row>
+    </Stack>
+  );
+}
+
+/** Under a room schedule: the house's plan on the same days, to see what the room does its own way. */
+export function HouseComparison({ house, type, c }: { house: Schedule | null; type: DayType | null; c: ScheduleContext }) {
+  if (!house || !type) return null;
+  const profiles = c.profiles.data ?? [];
+  const plan = house.days[type.days[0]] ?? [];
+  return (
+    <Stack gap="xs">
+      <Text variant="caption">{t('The whole house on these days, for comparison')}</Text>
+      <ProfileStrip
+        ariaLabel={t('Whole house')}
+        axis={null}
+        segments={plan.map((b) => {
+          const p = profiles.find((x) => x.id === b.profileId);
+          return { start: b.start, end: b.end, color: p?.color ?? '', ink: p?.ink, label: p?.name ?? b.profileId };
+        })}
+      />
+    </Stack>
+  );
+}

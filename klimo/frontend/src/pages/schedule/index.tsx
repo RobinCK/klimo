@@ -1,8 +1,8 @@
 /**
- * Schedule & profiles («Розклад»): which targets every profile gives the rooms, when each
- * profile is in force (the weekly schedule, rules that switch it on by themselves, dated
- * exceptions) and who wins when rules disagree. Wide screens show it all on one page; phones
- * get the day view, with profiles and priority as their own screens.
+ * Schedule & profiles («Розклад»): when each profile is in force (the weekly schedule as day
+ * types and their changes, rules that switch it on by themselves, dated exceptions), which
+ * targets every profile gives the rooms, and who wins when rules disagree. Wide screens show it
+ * all on one page; phones get the day view, with profiles and priority as their own screens.
  */
 import { useEffect, useMemo } from 'react';
 import type { Dow, Id } from '@api/model';
@@ -11,15 +11,14 @@ import { useLayout, useResource } from '@data';
 import { navigate, paths, usePref, useRoute } from '@app';
 import { Page, Section, Skeleton, Split, Stack, StatusBanner } from '@ui';
 import { t, zonedParts } from '@i18n';
-import { indexAt } from './blocks';
 import { useScheduleContext } from './data';
+import { DaySchedule } from './DaySchedule';
 import { PhoneDay, PhonePriority, PhoneProfile, PhoneProfiles } from './Phone';
 import { PriorityList } from './Priority';
 import { ProfileEditor } from './ProfileEditor';
 import { ProfileItems } from './Profiles';
-import { useBlockEdit } from './useBlockEdit';
+import { useDayEdit } from './useDayEdit';
 import { useScheduleEditor } from './useScheduleEditor';
-import { WeekSchedule } from './WeekSchedule';
 
 export default function SchedulePage(): JSX.Element {
   const route = useRoute();
@@ -49,7 +48,7 @@ export default function SchedulePage(): JSX.Element {
     return s?.id ?? scheduleList.find((x) => x.scope === 'house')?.id ?? null;
   }, [scheduleList, scope]);
   const editor = useScheduleEditor(scheduleId);
-  const edit = useBlockEdit(editor, c.profiles.data ?? [], { dow: day, minute: day === today ? now.minuteOfDay : 12 * 60 });
+  const edit = useDayEdit(editor, c.profiles.data ?? [], day);
 
   const goScope = (id: Id) => {
     void editor.flush();
@@ -57,8 +56,7 @@ export default function SchedulePage(): JSX.Element {
     navigate(paths.schedule({ scope: s?.scope === 'room' && s.roomId ? s.roomId : undefined, day: route.query.day ? day : undefined }), { replace: true });
   };
   const goDay = (d: Dow) => {
-    const plan = editor.schedule?.days[d] ?? [];
-    edit.select(d, plan.length ? indexAt(plan, d === today ? now.minuteOfDay : 12 * 60) : 0);
+    edit.select(-1);
     navigate(paths.schedule({ scope: scope === 'house' ? undefined : scope, day: d === today ? undefined : d }), { replace: true });
   };
 
@@ -93,6 +91,7 @@ export default function SchedulePage(): JSX.Element {
         </Stack>
       ) : (
         <>
+          <DaySchedule c={c} editor={editor} edit={edit} today={today} nowMinute={now.minuteOfDay} onScope={goScope} onDay={goDay} />
           <Split
             asideFirst
             asideBasis={320}
@@ -107,7 +106,6 @@ export default function SchedulePage(): JSX.Element {
             }
             main={selected ? <ProfileEditor key={selected.id} c={c} profile={selected} schedules={editor.schedules} onSelect={setSelectedId} /> : null}
           />
-          <WeekSchedule c={c} editor={editor} edit={edit} today={today} nowMinute={now.minuteOfDay} onScope={goScope} />
         </>
       )}
     </Page>

@@ -1,10 +1,11 @@
 /**
  * Words of the schedule screens built from data: the schedule summary of a profile («Будні
- * 06:30–08:30 і 17:30–23:00»), activation rule cards, priority hints and block captions.
+ * 06:30–08:30 і 17:30–23:00»), activation rule cards, priority hints and the captions of changes.
  */
 import type { ActivationRule, Dow, Id, PriorityKey, ProfileDto, RoomSummary, Schedule, SettingsBundle } from '@api/model';
 import { fmtDateTime, fmtDur, fmtTemp, minuteToHhmm, t, weekdayShort, type CodeContext } from '@i18n';
 import { DAY, DOWS, profileIntervals } from './blocks';
+import { lengthOf, untilOf, type SwitchPoint } from './points';
 
 /** «06:30–08:30»; an interval running past midnight ends on the next day («23:00–06:30»). */
 export const range = (start: number, end: number) => `${minuteToHhmm(start)}–${minuteToHhmm(end > DAY ? end - DAY : end)}`;
@@ -122,39 +123,6 @@ export function priorityHint(key: PriorityKey, settings: SettingsBundle | null):
   }
 }
 
-/**
- * The targets a block gives: the profile defaults for the house, the room's own row for a
- * room schedule; the season decides whether heating, cooling or both matter.
- */
-export function blockTargets(
-  s: Schedule,
-  profile: ProfileDto | null,
-  c: { rooms: readonly RoomSummary[]; ctx: CodeContext; house: { season: { season: 'heating' | 'neutral' | 'cooling' } } | null },
-  opts: { short?: boolean } = {},
-): string {
-  if (!profile) return '';
-  const season = c.house?.season.season ?? 'neutral';
-  const scope = scopeName(s, c.rooms, c.ctx);
-  let heat: number | null = profile.heatC;
-  let cool: number | null = profile.coolC;
-  if (s.scope === 'room') {
-    const row = profile.roomTargets.find((r) => r.roomId === s.roomId);
-    if (row?.mode === 'off' || profile.frostOnly) return t('{scope}: off · frost protection works', { scope });
-    if (row?.mode === 'own') {
-      heat = row.heatC ?? profile.heatC;
-      cool = row.coolC ?? profile.coolC;
-    }
-  } else if (profile.frostOnly) {
-    return t('{scope}: frost protection only', { scope });
-  }
-  const parts: string[] = [];
-  if (season !== 'cooling') parts.push(t('heating {t}', { t: fmtTemp(heat) }));
-  if (season !== 'heating') parts.push(t('cooling {t}', { t: fmtTemp(cool) }));
-  const main = `${scope} · ${parts.join(', ')}`;
-  if (opts.short || s.scope === 'room') return main;
-  return `${main} · ${t('rooms with their own targets — by the profile')}`;
-}
-
 /** Short and full weekday names in Monday-first order (day chips, tabs). */
 export const shortDays = () => DOWS.map((d) => weekdayShort(d));
 
@@ -162,4 +130,32 @@ export const shortDays = () => DOWS.map((d) => weekdayShort(d));
 export function scopeName(s: Schedule | null, rooms: readonly RoomSummary[], ctx: CodeContext): string {
   if (!s || s.scope === 'house') return t('Whole house');
   return rooms.find((r) => r.id === s.roomId)?.name ?? ctx.room?.(s.roomId ?? '') ?? s.roomId ?? '—';
+}
+
+/** «до 08:30 · 2 год», «до 06:30 наступного дня · 7 год 30 хв», «весь день». */
+export function untilText(points: readonly SwitchPoint[], i: number): string {
+  if (points.length === 1) return t('all day');
+  const until = untilOf(points, i);
+  const to = until.nextDay ? t('until {time} the next day', { time: minuteToHhmm(until.minute) }) : t('until {time}', { time: minuteToHhmm(until.minute) });
+  return `${to} · ${fmtDur(lengthOf(points, i))}`;
+}
+
+/**
+ * The heating and cooling targets a profile gives where the schedule applies: the profile's own
+ * for the house, the room's row for a room schedule. Null means none: off, or frost protection only.
+ */
+export function scheduleTargets(s: Schedule | null, profile: ProfileDto | null): { heat: number | null; cool: number | null; frost: boolean; off: boolean } {
+  if (!profile) return { heat: null, cool: null, frost: false, off: false };
+  const row = s?.scope === 'room' ? profile.roomTargets.find((r) => r.roomId === s.roomId) : undefined;
+  if (row?.mode === 'off') return { heat: null, cool: null, frost: false, off: true };
+  if (profile.frostOnly) return { heat: null, cool: null, frost: true, off: false };
+  if (row?.mode === 'own') return { heat: row.heatC ?? profile.heatC, cool: row.coolC ?? profile.coolC, frost: false, off: false };
+  return { heat: profile.heatC, cool: profile.coolC, frost: false, off: false };
+}
+
+/** A target for a row or a chart label: «21.0°», «мороз», «вимк.». */
+export function targetText(x: { heat: number | null; cool: number | null; frost: boolean; off: boolean }, mode: 'heat' | 'cool'): string {
+  if (x.off) return t('off');
+  if (x.frost) return t('frost');
+  return fmtTemp(mode === 'heat' ? x.heat : x.cool);
 }

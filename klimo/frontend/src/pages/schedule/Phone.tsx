@@ -1,19 +1,19 @@
 /**
- * The schedule on a phone: one day at a time as a vertical timeline, a tap on a block opens a
- * sheet to move it by 30 minutes, change its profile or delete it. «Розклад | Профілі» leads to
- * the profile list, a profile's editor and the priority order as their own screens.
+ * The schedule on a phone: the day types as tabs, the shown type's chart and its changes; a tap
+ * on a change opens a sheet to move it by 15 minutes, change its profile or delete it. «Розклад |
+ * Профілі» leads to the profile list, a profile's editor and the priority order as their own screens.
  */
 import { useState } from 'react';
 import type { Dow, Id, Schedule } from '@api/model';
 import { navigate, paths } from '@app';
 import {
+  AutoGrid,
   AutosaveStatus,
   BottomSheet,
   Button,
   DashedAddButton,
   DayOfWeekToggle,
-  DayTabs,
-  DayTimelineVertical,
+  DayTypeCard,
   MobileTopBar,
   RadioCardList,
   Row,
@@ -21,21 +21,22 @@ import {
   SegmentedControl,
   Skeleton,
   Stack,
-  Text,
-  TimeStepper,
-  ToggleChip,
-  AutoGrid,
+  SwitchPointRow,
 } from '@ui';
-import { fmtTemp, minuteToHhmm, t, weekdayLong, weekdayShort } from '@i18n';
+import { minuteToHhmm, t, weekdayLong } from '@i18n';
 import { DOWS } from './blocks';
 import type { ScheduleContext } from './data';
+import { DayChart, HouseComparison, PointEditor, ScheduleNow, TargetModeSwitch, useTargetMode } from './DayParts';
+import { Exceptions } from './Exceptions';
 import { PriorityList } from './Priority';
 import { ProfileEditor } from './ProfileEditor';
 import { ProfileItems } from './Profiles';
+import { QuickSetup } from './QuickSetup';
 import { RoomScheduleDialog } from './RoomScheduleDialog';
-import { blockTargets, range, scopeName, shortDays } from './texts';
-import type { BlockEdit } from './useBlockEdit';
+import { scopeName, shortDays } from './texts';
+import type { DayEdit } from './useDayEdit';
 import type { ScheduleEditor } from './useScheduleEditor';
+import { dayView, typeTitle } from './view';
 
 type Tab = 'schedule' | 'profiles';
 
@@ -57,7 +58,7 @@ function TabSwitch({ value }: { value: Tab }) {
 interface DayProps {
   c: ScheduleContext;
   editor: ScheduleEditor;
-  edit: BlockEdit;
+  edit: DayEdit;
   today: Dow;
   nowMinute: number;
   onScope: (scheduleId: Id) => void;
@@ -68,22 +69,17 @@ export function PhoneDay({ c, editor, edit, today, nowMinute, onScope, onDay }: 
   const [sheet, setSheet] = useState(false);
   const [scopes, setScopes] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [setup, setSetup] = useState(false);
+  const [mode, setMode] = useTargetMode(c);
   const schedule = editor.schedule;
-  const profiles = c.profiles.data ?? [];
-  const day = edit.dow;
-  const plan = schedule?.days[day] ?? [];
-  const cooling = c.house?.season.season === 'cooling';
+  const type = edit.type;
   const scope = scopeName(schedule, c.rooms, c.ctx);
-  const subtitle =
-    schedule?.scope === 'room' ? t('{day} · own schedule of the room', { day: weekdayLong(day) }) : t('{day} · for all rooms', { day: weekdayLong(day) });
-
-  const targetOf = (profileId: Id): number | null => {
-    const p = profiles.find((x) => x.id === profileId);
-    if (!p) return null;
-    const row = schedule?.scope === 'room' ? p.roomTargets.find((r) => r.roomId === schedule.roomId) : undefined;
-    if (row?.mode === 'off' || p.frostOnly) return null;
-    if (row?.mode === 'own') return cooling ? (row.coolC ?? p.coolC) : (row.heatC ?? p.heatC);
-    return cooling ? p.coolC : p.heatC;
+  const title = type ? typeTitle(type.days) : null;
+  const subtitle = schedule?.scope === 'room' ? t('Own schedule of the room') : t('For all rooms');
+  const view = schedule && type ? dayView(edit.points, c.profiles.data ?? [], schedule, mode, edit.index, type.days.includes(today) ? nowMinute : null) : null;
+  const close = () => {
+    setSheet(false);
+    edit.select(-1);
   };
 
   return (
@@ -98,118 +94,114 @@ export function PhoneDay({ c, editor, edit, today, nowMinute, onScope, onDay }: 
         }
       />
       <TabSwitch value="schedule" />
-      <DayTabs
-        ariaLabel={t('Day of the week')}
-        value={day}
-        today={today}
-        labels={shortDays()}
-        onChange={(d) => {
-          setSheet(false);
-          onDay(d as Dow);
-        }}
-      />
-      {schedule && c.canEdit ? <Text variant="caption">{t('Drag a grip between two blocks to move the time; tap a block to change it.')}</Text> : null}
-      {schedule ? (
-        <DayTimelineVertical
-          ariaLabel={t('{day}, schedule of {scope}', { day: weekdayLong(day), scope })}
-          hourPx={23}
-          now={day === today ? { minute: nowMinute, label: minuteToHhmm(nowMinute) } : null}
-          onSelect={(i) => {
-            edit.select(day, i);
-            setSheet(true);
+      {schedule ? <ScheduleNow c={c} schedule={schedule} today={today} nowMinute={nowMinute} mode={mode} /> : null}
+      <AutoGrid min={96} gap="sm" ariaLabel={t('Day types')}>
+        {edit.types.map((x) => {
+          const tt = typeTitle(x.days);
+          return (
+            <DayTypeCard
+              key={x.days.join('')}
+              variant="tab"
+              name={tt.name}
+              daysText={tt.daysText}
+              segments={x.plan.map((b) => ({ start: b.start, end: b.end, color: c.profileById(b.profileId)?.color ?? '' }))}
+              selected={x === type}
+              onClick={() => {
+                close();
+                onDay(x.days.includes(today) ? today : x.days[0]);
+              }}
+            />
+          );
+        })}
+      </AutoGrid>
+      {type && c.canEdit ? (
+        <DayOfWeekToggle
+          ariaLabel={t('Days of this type')}
+          value={type.days}
+          labels={shortDays()}
+          fullLabels={DOWS.map((d) => weekdayLong(d))}
+          onChange={(next) => {
+            const added = next.find((d) => !type.days.includes(d as Dow));
+            const removed = type.days.find((d) => !next.includes(d));
+            if (added != null) edit.join(added as Dow);
+            else if (removed != null) {
+              edit.detach(removed);
+              onDay(removed);
+            }
           }}
-          onBoundary={c.canEdit ? (i, minute) => edit.moveBoundary(day, i, minute) : undefined}
-          formatMinute={minuteToHhmm}
-          blocks={plan.map((b, i) => {
-            const p = profiles.find((x) => x.id === b.profileId);
-            const name = p?.name ?? b.profileId;
-            const value = targetOf(b.profileId);
-            return {
-              start: b.start,
-              end: b.end,
-              color: p?.color ?? '',
-              ink: p?.ink ?? '',
-              label: name,
-              valueText: value != null ? fmtTemp(value) : undefined,
-              rangeText: range(b.start, b.end),
-              aria: `${weekdayShort(day)} ${range(b.start, b.end)}, ${name}${value != null ? `, ${fmtTemp(value)}` : ''}`,
-              selected: sheet && i === edit.index,
-            };
-          })}
         />
+      ) : null}
+      {schedule && type && view ? (
+        <>
+          <Row justify="between" align="center" gap="sm">
+            <Section variant="plain" level={3} title={title?.name ?? ''} />
+            <TargetModeSwitch value={mode} onChange={setMode} />
+          </Row>
+          <DayChart c={c} schedule={schedule} edit={edit} mode={mode} today={today} nowMinute={nowMinute} />
+          {schedule.scope === 'room' ? <HouseComparison house={editor.schedules.find((s) => s.scope === 'house') ?? null} type={type} c={c} /> : null}
+          <Stack gap="sm">
+            {view.rows.map((r, i) => (
+              <SwitchPointRow
+                key={`${r.time}-${i}`}
+                time={r.time}
+                name={r.name}
+                color={r.color}
+                untilText={r.untilText}
+                heatText={r.heatText}
+                coolText={r.coolText}
+                emphasis={mode}
+                now={r.now}
+                expanded={false}
+                onToggle={() => {
+                  edit.select(i);
+                  setSheet(true);
+                }}
+              />
+            ))}
+            {c.canEdit && edit.canAdd ? <DashedAddButton label={t('Add a change')} onClick={edit.add} /> : null}
+          </Stack>
+          <Exceptions c={c} schedule={schedule} />
+          {c.canEdit ? (
+            <Button variant="secondary" fullWidth icon="sparkle" onClick={() => setSetup(true)}>
+              {t('Quick setup')}
+            </Button>
+          ) : null}
+        </>
       ) : (
-        <Skeleton height={552} radius={12} />
+        <Skeleton height={420} radius={12} />
       )}
 
       <BottomSheet
-        open={sheet && Boolean(edit.block)}
-        onClose={() => setSheet(false)}
-        title={edit.block ? `${weekdayShort(day)} · ${edit.profile?.name ?? edit.block.profileId}` : ''}
-        subtitle={schedule ? blockTargets(schedule, edit.profile, c, { short: true }) : undefined}
+        open={sheet && edit.index >= 0}
+        onClose={close}
+        title={edit.index >= 0 && edit.points[edit.index] ? t('Change at {time}', { time: minuteToHhmm(edit.points[edit.index].minute) }) : ''}
+        subtitle={title ? [title.name, title.daysText].filter(Boolean).join(' · ') : undefined}
         footer={
           <Row gap="sm">
-            <Button variant="danger" size="xl" onClick={() => (edit.remove(), setSheet(false))} disabled={!c.canEdit || !edit.canRemove}>
-              {t('Delete')}
-            </Button>
-            <Button variant="secondary" size="xl" onClick={edit.split} disabled={!c.canEdit || !edit.canSplit}>
-              {t('Split')}
-            </Button>
+            {c.canEdit ? (
+              <Button
+                variant="danger"
+                size="xl"
+                onClick={() => {
+                  edit.remove(edit.index);
+                  close();
+                }}
+                disabled={!edit.canRemove}
+              >
+                {t('Delete')}
+              </Button>
+            ) : null}
             <Stack grow align="stretch">
-              <Button variant="primary" size="xl" fullWidth onClick={() => setSheet(false)}>
+              <Button variant="primary" size="xl" fullWidth onClick={close}>
                 {t('Done')}
               </Button>
             </Stack>
           </Row>
         }
       >
-        {edit.block ? (
+        {schedule && edit.index >= 0 ? (
           <Stack gap="lg">
-            <AutoGrid min={140} columns={2} gap="sm">
-              <TimeStepper
-                variant="tile"
-                label={t('Start')}
-                value={edit.block.start}
-                text={minuteToHhmm(edit.block.start)}
-                min={c.canEdit ? edit.startRange.min : edit.block.start}
-                max={c.canEdit ? edit.startRange.max : edit.block.start}
-                onChange={edit.setStart}
-                ariaEarlier={t('30 min earlier')}
-                ariaLater={t('30 min later')}
-              />
-              <TimeStepper
-                variant="tile"
-                label={t('End')}
-                value={edit.block.end}
-                text={minuteToHhmm(edit.block.end)}
-                min={c.canEdit ? edit.endRange.min : edit.block.end}
-                max={c.canEdit ? edit.endRange.max : edit.block.end}
-                onChange={edit.setEnd}
-                ariaEarlier={t('30 min earlier')}
-                ariaLater={t('30 min later')}
-              />
-            </AutoGrid>
-            <Section variant="plain" level={3} overline={t('Profile of the block')}>
-              <Row gap="sm" wrap>
-                {profiles.map((p) => (
-                  <ToggleChip
-                    key={p.id}
-                    pressed={p.id === edit.block?.profileId}
-                    icon={p.icon}
-                    label={p.name}
-                    onToggle={() => c.canEdit && edit.setProfile(p.id)}
-                  />
-                ))}
-              </Row>
-            </Section>
-            <Section variant="plain" level={3} overline={t('Repeat on')}>
-              <DayOfWeekToggle
-                ariaLabel={t('Repeat on')}
-                value={edit.repeat}
-                labels={shortDays()}
-                fullLabels={DOWS.map((d) => weekdayLong(d))}
-                onChange={(v) => c.canEdit && edit.setRepeat(v as Dow[])}
-              />
-            </Section>
+            <PointEditor c={c} schedule={schedule} edit={edit} index={edit.index} mode={mode} layout="list" />
             <AutosaveStatus state={editor.status} retry={editor.retry} />
           </Stack>
         ) : null}
@@ -227,7 +219,7 @@ export function PhoneDay({ c, editor, edit, today, nowMinute, onScope, onDay }: 
             }))}
             onChange={(id) => {
               setScopes(false);
-              setSheet(false);
+              close();
               onScope(id);
             }}
           />
@@ -242,6 +234,7 @@ export function PhoneDay({ c, editor, edit, today, nowMinute, onScope, onDay }: 
           ) : null}
         </Stack>
       </BottomSheet>
+      {setup && schedule ? <QuickSetup c={c} editor={editor} schedule={schedule} onApplied={edit.reset} onClose={() => setSetup(false)} /> : null}
       {adding ? (
         <RoomScheduleDialog
           c={c}

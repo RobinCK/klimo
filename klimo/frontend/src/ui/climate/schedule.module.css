@@ -1,0 +1,420 @@
+/* ---------------- shared ---------------- */
+
+.badge {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface-4);
+  color: var(--ui-text-neutral-strong);
+  font-size: var(--ui-fs-micro);
+  font-weight: 700;
+}
+
+/* ---------------- DayTypeCard ---------------- */
+
+.dayType {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 14px 16px;
+  border-radius: var(--ui-radius-xl);
+  border: 2px solid var(--ui-border);
+  background: var(--ui-surface-1);
+  color: var(--ui-text-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--ui-motion) ease-out;
+}
+
+.dayType[aria-pressed='true'] {
+  border-color: var(--ui-text-1);
+  background: var(--ui-tone-hold-bg);
+}
+
+@media (hover: hover) {
+  .dayType:hover:not([aria-pressed='true']) {
+    border-color: var(--ui-border-strong);
+  }
+}
+
+.dayType:focus-visible {
+  outline: 2px solid var(--ui-text-1);
+  outline-offset: 2px;
+}
+
+.dayType[data-variant='tab'] {
+  gap: 6px;
+  min-height: 56px;
+  padding: 8px 10px;
+}
+
+.dayTypeHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dayTypeName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-fs-title-sm);
+  font-weight: 600;
+}
+
+.dayType[data-variant='tab'] .dayTypeName {
+  font-size: var(--ui-fs-body);
+}
+
+.dayTypeDays {
+  flex: none;
+  margin-left: auto;
+  color: var(--ui-text-2);
+  font-size: var(--ui-fs-body-sm);
+  font-weight: 500;
+}
+
+.dayType[data-variant='tab'] .dayTypeHead {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.dayType[data-variant='tab'] .dayTypeName {
+  max-width: 100%;
+}
+
+.dayType[data-variant='tab'] .dayTypeDays {
+  margin-left: 0;
+  font-size: var(--ui-fs-caption);
+  color: var(--ui-text-3);
+}
+
+.dayTypeStrip {
+  position: relative;
+  display: block;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--ui-track);
+}
+
+.dayType[data-variant='tab'] .dayTypeStrip {
+  height: 6px;
+  border-radius: 3px;
+}
+
+.dayTypeStrip span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.dayTypeSummary {
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------- SwitchPointRow ---------------- */
+
+.point {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: var(--ui-radius-xl);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-2);
+}
+
+.point[data-expanded] {
+  border-color: var(--ui-ring);
+}
+
+.pointHead {
+  display: grid;
+  grid-template-columns: auto 4px minmax(0, 1fr) auto 18px;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 60px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: var(--ui-text-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pointHead:focus-visible {
+  outline: 2px solid var(--ui-text-1);
+  outline-offset: 2px;
+}
+
+.pointTime {
+  min-width: 56px;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-fs-title-lg);
+  font-weight: 600;
+}
+
+.pointBar {
+  align-self: stretch;
+  margin: 4px 0;
+  border-radius: 2px;
+  background: var(--fill);
+}
+
+.pointText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pointName {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pointNameText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-fs-body-lg);
+  font-weight: 600;
+}
+
+.pointUntil {
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-body-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pointTargets {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.pointHeat,
+.pointCool {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-body-sm);
+  white-space: nowrap;
+}
+
+.pointHeat[data-main],
+.pointCool[data-main] {
+  font-size: var(--ui-fs-title);
+  font-weight: 600;
+}
+
+.pointHeat[data-main] {
+  color: var(--ui-tone-heat-fg);
+}
+
+.pointCool[data-main] {
+  color: var(--ui-tone-cool-fg);
+}
+
+.pointChevron {
+  display: inline-flex;
+  transition: transform var(--ui-motion) ease-out;
+}
+
+.point[data-expanded] .pointChevron {
+  transform: rotate(90deg);
+}
+
+.pointBody {
+  padding: 16px 14px 14px;
+  border-top: 1px solid var(--ui-divider);
+}
+
+@media (max-width: 560px) {
+  .pointHead {
+    grid-template-columns: auto 4px minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+
+  .pointChevron {
+    display: none;
+  }
+
+  .pointTargets {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0;
+  }
+}
+
+/* ---------------- ProfileChoice ---------------- */
+
+.choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.choice[data-layout='list'] {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.choiceItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 14px 0 12px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface-3);
+  color: var(--ui-text-1);
+  font: inherit;
+  cursor: pointer;
+}
+
+.choice[data-layout='list'] .choiceItem {
+  min-height: 52px;
+  padding: 0 14px;
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface-2);
+  text-align: left;
+}
+
+.choiceItem[aria-pressed='true'] {
+  border-color: var(--ui-text-1);
+  box-shadow: inset 0 0 0 1px var(--ui-text-1);
+  background: var(--ui-surface-4);
+}
+
+.choiceItem:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.choiceItem:focus-visible {
+  outline: 2px solid var(--ui-text-1);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) {
+  .choiceItem:hover:not([aria-pressed='true']):not(:disabled) {
+    border-color: var(--ui-ring);
+  }
+}
+
+.choiceSwatch {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+}
+
+.choiceName {
+  font-weight: 600;
+}
+
+.choice[data-layout='list'] .choiceName {
+  flex: 1;
+  min-width: 0;
+}
+
+.choiceValue {
+  font-family: var(--ui-font-mono);
+  font-weight: 600;
+}
+
+.choice[data-tone='heat'] .choiceValue {
+  color: var(--ui-tone-heat-fg);
+}
+
+.choice[data-tone='cool'] .choiceValue {
+  color: var(--ui-tone-cool-fg);
+}
+
+.choiceCheck {
+  display: inline-flex;
+  width: 18px;
+}
+
+/* ---------------- ScheduleNowBar ---------------- */
+
+.now {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 12px 16px 12px 20px;
+  border-radius: var(--ui-radius-2xl);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-1);
+}
+
+.nowLabel {
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.nowMain {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.nowName {
+  font-size: var(--ui-fs-title-sm);
+  font-weight: 600;
+}
+
+.nowValue {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-fs-title-sm);
+  font-weight: 600;
+}
+
+.now[data-tone='heat'] .nowValue {
+  color: var(--ui-tone-heat-fg);
+}
+
+.now[data-tone='cool'] .nowValue {
+  color: var(--ui-tone-cool-fg);
+}
+
+.nowNext {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ui-text-2);
+}
+
+.nowNote {
+  flex-basis: 100%;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-body-sm);
+}
+
+.nowAction {
+  margin-left: auto;
+}

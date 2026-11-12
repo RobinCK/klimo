@@ -44,7 +44,8 @@ and the watchdog) and its own container; other add-ons on the internal network a
    it runs, the pumps and their run-on, the rooms on it. Where the boiler or heat pump and the circuits
    meet at a manifold or a hydraulic separator, add a **Manifold** above them, with its primary pump.
 4. **Schedule**: the house schedule ships with weekday and weekend plans over the six seeded profiles
-   (Home, Away, Eco, Night, Guests, Vacation); adjust the targets and the blocks.
+   (Home, Away, Eco, Night, Guests, Vacation); adjust the targets and the changes, or let **Quick setup**
+   write the week from when you wake up, leave, come back and go to bed.
 
 Profiles, triggers and actions are created with English names and notifications start in English,
 whatever language Home Assistant speaks; rename anything, and pick the notification language in
@@ -84,7 +85,7 @@ device with what it expects before it sends a command.
   supply/return sensors and its own primary pump.
 - **Profile** — named targets for heating and cooling with per-room exceptions (own targets or off).
   Home, Away and Eco are system profiles (renamable, not deletable); Vacation is frost protection only.
-- **Schedule** — a weekly plan of profile blocks (30-minute steps) for the house, optional room schedules
+- **Schedule** — a weekly plan of profile changes (15-minute steps) for the house, optional room schedules
   and dated exceptions.
 - **Override** — a time-boxed manual change: a room target, boost, airing, room off, a room or house
   profile, a source locked off. Each one has an end ("until the next slot", 1 h, 3 h…, or none under
@@ -274,11 +275,21 @@ control method is chosen per room:
   (Guests 60 min before "Guests" on the family calendar).
 - **Vacation**: until a date, returning to normal 3 hours early so the house is warm on arrival.
 - **Exceptions** in the schedule cover holidays and days off.
-- **Editing the week**: drag the line between two blocks to move it (30-minute steps, the time shows while
-  dragging), or drag along a day to draw a new block over that stretch — it takes another profile than the
-  one under it and opens in the block panel to pick the right one. The days that repeat the edited one
-  (**Repeat on**, the days with the same plan by default) move along, and every drag can be undone. On a
-  phone each line between two blocks has a grip to drag up or down, and a block's sheet can **Split** it.
+- **Day types**: the days with the same plan form one type («Weekdays», «Mon–Thu», «Friday», «Weekends»),
+  and an edit of a type changes all its days. Under the type, switch a day on to give it this plan, or off
+  to take it out and edit it alone.
+- **Changes**: a day is a list of changes — «17:30 → Home» holds until the next one, and the last one
+  holds over midnight («23:00 → Night» until 06:30). A change opens in place (a sheet on a phone): its
+  time in 15-minute steps (−/+, or typed), its profile with the target it gives, and **Delete the
+  change**; **Add a change** splits the longest stretch of the day. Changing a profile or deleting can be
+  undone for 8 seconds.
+- **The day chart** draws the heating or the cooling target (the switch above it) over the profile
+  stretches; drag a time above the chart to move that change, or focus it and use the arrow keys (Shift:
+  one hour). Under a room schedule the whole house's plan on the same days is shown to compare.
+- **Now**: the line on top tells what the schedule gives now, until when and what comes next. **Today like
+  a weekend** adds an exception that runs today like a Saturday; **Back to the week** removes it.
+- **Quick setup** writes the whole week from four times — waking up, leaving, coming back, going to bed —
+  for the weekdays and the weekend, or with someone at home all day; it can be undone for 8 seconds.
 
 ## Manual control
 

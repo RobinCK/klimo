@@ -14,6 +14,17 @@ export {
   type ProfileTileProps,
 } from './profiles';
 export {
+  DayTypeCard,
+  ProfileChoice,
+  ScheduleNowBar,
+  SwitchPointRow,
+  type DayTypeCardProps,
+  type ProfileChoiceOption,
+  type ProfileChoiceProps,
+  type ScheduleNowBarProps,
+  type SwitchPointRowProps,
+} from './schedule';
+export {
   ContactRow,
   EmitterRow,
   FallbackNote,

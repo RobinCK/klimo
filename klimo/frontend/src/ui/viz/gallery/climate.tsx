@@ -5,6 +5,7 @@ import { RoomTabs } from '../../climate/RoomTabs';
 import { ThermostatDial, type DialValue } from '../../climate/ThermostatDial';
 import { TargetStepper } from '../../climate/TargetStepper';
 import { ProfileIconTile, ProfileListItem, ProfileSwatch, ProfileTile } from '../../climate/profiles';
+import { DayTypeCard, ProfileChoice, ScheduleNowBar, SwitchPointRow } from '../../climate/schedule';
 import { fmtNum } from '../internal/util';
 import { P, SPARK } from './fixtures';
 import { Group, Item, Pair, Panel, galleryStyles as s } from './parts';
@@ -322,6 +323,96 @@ export function GalleryClimate() {
           ))}
         </Panel>
       </Item>
+
+      <Item name="ScheduleNowBar">
+        <ScheduleNowBar
+          label={ut('By the schedule now · {time}', { time: '15:20' })}
+          name={ut('Away')}
+          color={P.away.color}
+          valueText="18.0°"
+          tone="heat"
+          untilText={ut('until {time}', { time: '17:30' })}
+          nextText={ut('then {profile} {target}', { profile: ut('Home'), target: '21.0°' })}
+        />
+      </Item>
+
+      <Item name="DayTypeCard">
+        <Panel narrow>
+          <ScheduleDemoTypes />
+        </Panel>
+      </Item>
+
+      <Item name="SwitchPointRow">
+        <Panel>
+          <ScheduleDemoRows />
+        </Panel>
+      </Item>
     </Group>
+  );
+}
+
+const DEMO_WEEKDAY = [
+  { start: 0, end: 390, color: P.night.color },
+  { start: 390, end: 510, color: P.home.color },
+  { start: 510, end: 1050, color: P.away.color },
+  { start: 1050, end: 1380, color: P.home.color },
+  { start: 1380, end: 1440, color: P.night.color },
+];
+const DEMO_WEEKEND = [
+  { start: 0, end: 480, color: P.night.color },
+  { start: 480, end: 1410, color: P.home.color },
+  { start: 1410, end: 1440, color: P.night.color },
+];
+
+function ScheduleDemoTypes() {
+  const ut = useUiText();
+  const [sel, setSel] = useState(0);
+  return (
+    <>
+      <DayTypeCard name={ut('Weekdays')} daysText={`${ut('Mo')}–${ut('Fr')}`} today segments={DEMO_WEEKDAY} summary="4 · 06:30 · 08:30 · 17:30 · 23:00" selected={sel === 0} onClick={() => setSel(0)} />
+      <DayTypeCard name={ut('Weekends')} daysText={`${ut('Sa')}–${ut('Su')}`} segments={DEMO_WEEKEND} summary="2 · 08:00 · 23:30" selected={sel === 1} onClick={() => setSel(1)} />
+      <DayTypeCard variant="tab" name={ut('Weekends')} daysText={`${ut('Sa')}–${ut('Su')}`} segments={DEMO_WEEKEND} selected={false} onClick={() => setSel(1)} />
+    </>
+  );
+}
+
+function ScheduleDemoRows() {
+  const ut = useUiText();
+  const [open, setOpen] = useState(1);
+  const [profile, setProfile] = useState('home');
+  const rows = [
+    { time: '08:30', name: ut('Away'), color: P.away.color, until: ut('until {time}', { time: '17:30' }), heat: '18.0°', cool: '28.0°' },
+    { time: '17:30', name: ut('Home'), color: P.home.color, until: ut('until {time}', { time: '23:00' }), heat: '21.0°', cool: '25.0°' },
+  ];
+  return (
+    <>
+      {rows.map((r, i) => (
+        <SwitchPointRow
+          key={r.time}
+          time={r.time}
+          name={r.name}
+          color={r.color}
+          untilText={r.until}
+          heatText={r.heat}
+          coolText={r.cool}
+          emphasis="heat"
+          now={i === 0}
+          expanded={open === i}
+          onToggle={() => setOpen(open === i ? -1 : i)}
+        >
+          <ProfileChoice
+            ariaLabel={ut('Profile')}
+            tone="heat"
+            value={profile}
+            onChange={setProfile}
+            options={[
+              { value: 'home', name: ut('Home'), color: P.home.color, valueText: '21.0°' },
+              { value: 'away', name: ut('Away'), color: P.away.color, valueText: '18.0°' },
+              { value: 'night', name: ut('Night'), color: P.night.color, valueText: '19.5°' },
+            ]}
+          />
+        </SwitchPointRow>
+      ))}
+    </>
   );
 }

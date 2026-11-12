@@ -11,8 +11,8 @@ test('a valid day has no issues; gaps, grid and short blocks are reported', () =
   assert.deepEqual(ops.dayIssues(seedHouseDays()[0], exists), []);
   const bad = [
     { start: 0, end: 400, profileId: 'night' },
-    { start: 420, end: 435, profileId: 'home' },
-    { start: 435, end: 1440, profileId: 'ghost' },
+    { start: 420, end: 430, profileId: 'home' },
+    { start: 430, end: 1440, profileId: 'ghost' },
   ];
   assert.deepEqual(ops.dayIssues(bad, exists).map((i) => [i.path, i.code]), [
     ['0', 'step'],
@@ -45,8 +45,10 @@ test('split, remove and copy', () => {
   const split = ops.splitBlock(day, 2); // 08:30–17:30 away → midpoint 13:00
   assert.equal(fmt(split), '0-390:night 390-510:home 510-780:away 780-1050:away 1050-1380:home 1380-1440:night');
   assert.equal(fmt(ops.splitBlock(day, 2, 600)), '0-390:night 390-510:home 510-600:away 600-1050:away 1050-1380:home 1380-1440:night');
-  assert.throws(() => ops.splitBlock(seedHouseDays()[4], 5), (e) => e.code === 'validation'); // Friday 23:30–24:00 is 30 minutes
-  assert.throws(() => ops.splitBlock(day, 2, 525), (e) => e.code === 'validation');
+  assert.equal(fmt(ops.splitBlock(seedHouseDays()[4], 5)), fmt(seedHouseDays()[4]).replace('1410-1440:night', '1410-1425:night 1425-1440:night')); // Friday 23:30–24:00 splits at 23:45
+  assert.throws(() => ops.splitBlock([...day.slice(0, 4), { start: 1380, end: 1395, profileId: 'night' }, { start: 1395, end: 1440, profileId: 'eco' }], 4), (e) => e.code === 'validation'); // 15 minutes do not split
+  assert.equal(fmt(ops.splitBlock(day, 2, 525)), '0-390:night 390-510:home 510-525:away 525-1050:away 1050-1380:home 1380-1440:night');
+  assert.throws(() => ops.splitBlock(day, 2, 520), (e) => e.code === 'validation');
 
   // removing grows the previous block; equal neighbours then merge
   assert.equal(fmt(ops.removeBlock(day, 2)), '0-390:night 390-1380:home 1380-1440:night');
