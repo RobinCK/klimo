@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.26
+
+- **Paging the room's chart no longer makes it jump.** The profile strip above it stays and shows the
+  plan of the day on screen (no now marker on a past day), and the four numbers under the chart keep
+  their place with dashes while a day loads.
+
 ## 0.2.25
 
 - **The room's chart pages back through the days.** Arrows above the room's day chart open yesterday and

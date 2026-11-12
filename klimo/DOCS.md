@@ -162,7 +162,7 @@ of its state.
   On a phone the chart opens from the chart icon at the top of the room page, next to its settings.
 - The arrows above the chart step back through the days the recorder still keeps (Home Assistant
   keeps 10 days by default): the temperature, the target band, when the room heated and the day's
-  minimum, maximum and heating time. **Today** brings the current day back; past the oldest kept day the
+  minimum, maximum and heating time; the profile strip above shows that day's plan. **Today** brings the current day back; past the oldest kept day the
   back arrow stops.
 
 ### Tolerance and requests

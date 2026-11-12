@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { EpochMs, LocalDate, ProfileDto, RoomDayDto, RoomDetailDto, RoomState } from '@api/model';
+import type { EpochMs, LocalDate, ProfileDto, ResolvedDayDto, RoomDayDto, RoomDetailDto, RoomState } from '@api/model';
 import { api } from '@api/endpoints';
 import { liveStore, useLive, useLiveEvent, useResource, useRetryUntilComplete, type ResourceState } from '@data';
 import { AutoGrid, DayChart, PeriodNav, ProfileStrip, Skeleton, Stack, StatTile, type ProfileStripSegment } from '@ui';
@@ -18,6 +18,15 @@ function shown(c: number | null): number | null {
   return displayUnits() === 'F' ? (c * 9) / 5 + 32 : c;
 }
 const scale = (d: number) => (displayUnits() === 'F' ? (d * 9) / 5 : d);
+
+/** The planned profile blocks of a past day (the schedule that governed the room then). */
+function planSegments(segments: ResolvedDayDto['segments'], profiles: readonly ProfileDto[] | undefined): ProfileStripSegment[] {
+  const byId = new Map((profiles ?? []).map((p) => [p.id, p] as const));
+  return segments.map((seg) => {
+    const p = byId.get(seg.profileId);
+    return { start: seg.start, end: seg.end, color: p?.color ?? 'var(--ui-dot)', ink: p?.ink, label: p?.name };
+  });
+}
 
 /** Local midnight of a calendar day in the house's time zone. */
 function midnightOf(date: LocalDate): EpochMs {
@@ -132,6 +141,14 @@ export function RoomToday({
   const past = picked && picked.roomId === id && picked.date < today ? picked.date : null;
   const pastRes = useResource(past ? `room-day:${id}:${past}` : null, () => api.rooms.day(id, past ?? undefined));
   const pastDay = past && pastRes.data && pastRes.data.roomId === id && pastRes.data.date === past ? pastRes.data : undefined;
+  // the profile strip of a past day: the plan of the schedule that governs the room (no strip today, none then)
+  const scheduleId = room.schedule?.enabled ? room.schedule.id : 'house';
+  const hasStrip = room.thermostat.strip.length > 0;
+  const pastPlan = useResource(past && hasStrip ? `room-plan:${id}:${scheduleId}:${past}` : null, () =>
+    api.schedules.resolved(scheduleId, { date: past ?? undefined, roomId: id }),
+  );
+  // the strip of the day shown before stays until the next one arrives, so the chart under it does not jump
+  const keptStrip = useRef<ProfileStripSegment[]>([]);
   // a heating span of this room started or ended
   useLiveEvent('span', (s) => {
     if (s.subject === 'room' && s.subjectId === id) void reload();
@@ -194,15 +211,26 @@ export function RoomToday({
           dur: fmtDur(cooled ? d.stats.cooledMin : d.stats.heatedMin),
         })
     : t('Temperature in {room} today', { room: roomName });
-  // the profile strip is today's plan: a past day has none
-  const segments = past ? [] : stripSegments(room, profiles, now);
+  const segments = !past
+    ? stripSegments(room, profiles, now)
+    : !hasStrip
+      ? []
+      : pastPlan.data && pastPlan.data.date === past
+        ? planSegments(pastPlan.data.segments, profiles)
+        : keptStrip.current;
+  keptStrip.current = segments;
   // only the bands of the modes the room works in now: a summer cooling target is noise in January
   const coolShown = state.activeModes.cool;
   const heatShown = state.activeModes.heat || !coolShown;
   return (
     <Stack gap="md">
       {segments.length ? (
-        <ProfileStrip segments={segments} now={zonedParts(now).minuteOfDay} height={compact ? 22 : 26} ariaLabel={t('Profiles today')} />
+        <ProfileStrip
+          segments={segments}
+          now={past ? null : zonedParts(now).minuteOfDay}
+          height={compact ? 22 : 26}
+          ariaLabel={past ? t('Profiles, {day}', { day: dayName }) : t('Profiles today')}
+        />
       ) : null}
       {d || day.data || past ? (
         <DayChart
@@ -230,15 +258,16 @@ export function RoomToday({
       ) : (
         <Skeleton height={compact ? 180 : 240} radius={12} />
       )}
-      {d ? (
+      {/* while a past day loads the tiles keep their place, with dashes */}
+      {d || past ? (
         <AutoGrid min={150} gap="sm">
           <StatTile
             variant="well"
             title={past ? (cooled ? t('Cooled that day') : t('Heated that day')) : cooled ? t('Cooled today') : t('Heated today')}
-            value={fmtDur(cooled ? d.stats.cooledMin : d.stats.heatedMin)}
+            value={d ? fmtDur(cooled ? d.stats.cooledMin : d.stats.heatedMin) : '—'}
           />
-          <StatTile variant="well" title={t('Minimum')} value={atText(d.stats.min)} />
-          <StatTile variant="well" title={t('Maximum')} value={atText(d.stats.max)} />
+          <StatTile variant="well" title={t('Minimum')} value={d ? atText(d.stats.min) : '—'} />
+          <StatTile variant="well" title={t('Maximum')} value={d ? atText(d.stats.max) : '—'} />
           <StatTile
             variant="well"
             title={cooled ? t('Cooling speed') : t('Warming speed')}
@@ -247,7 +276,7 @@ export function RoomToday({
                 ? t('How many degrees an hour the room loses while it is cooled, learned from its recent runs.')
                 : t('How many degrees an hour the room gains while it is heated, learned from its recent warm-ups. Optimal start uses it to begin early enough before a warmer slot.')
             }
-            value={`≈ ${fmtRate(Math.abs(d.stats.rateCPerH ?? (cooled ? room.thermostat.rate.cool : room.thermostat.rate.heat)), { sign: false })}`}
+            value={d ? `≈ ${fmtRate(Math.abs(d.stats.rateCPerH ?? (cooled ? room.thermostat.rate.cool : room.thermostat.rate.heat)), { sign: false })}` : '—'}
           />
         </AutoGrid>
       ) : null}
