@@ -304,6 +304,86 @@ test('a floor that runs with the boiler takes its share while its pump runs (wit
   assert.equal(room('r_g').demandMin, 90);
 });
 
+test('the pumps\' meters shared out too: a floor pump to its floor\'s rooms, a circuit or manifold pump to the rooms that asked while it ran', async () => {
+  const pumpRun = (id, pumpId, from, to) => ({ id, subject: 'pump', subjectId: pumpId, kind: 'run', mode: 'heat', startTs: from, endTs: to, meta: null });
+  const ask = (id, roomId, from, to) => ({ id, subject: 'room', subjectId: roomId, kind: 'demand', mode: 'heat', startTs: from, endTs: to, meta: null });
+  const { service, ha, config, meter } = setup({
+    extraSpans: [
+      pumpRun('pf', 'p_floor', MIDNIGHT + 6 * HOUR, MIDNIGHT + 7 * HOUR),
+      pumpRun('pr', 'p_rad', MIDNIGHT + 6 * HOUR, MIDNIGHT + 7 * HOUR),
+      pumpRun('pm', 'p_main', MIDNIGHT + 6 * HOUR, MIDNIGHT + 7 * HOUR),
+      ask('da', 'r_a', MIDNIGHT + 6 * HOUR, MIDNIGHT + 7 * HOUR),
+      ask('db', 'r_b', MIDNIGHT + 6.5 * HOUR, MIDNIGHT + 7 * HOUR),
+    ],
+  });
+  const plugs = { 'sensor.floor_plug': 0.05, 'sensor.rad_plug': 0.04, 'sensor.main_plug': 0.03 };
+  for (const id of Object.keys(plugs)) ha.set(state(id, '1', { unit_of_measurement: 'kWh', state_class: 'total_increasing', device_class: 'energy' }));
+  const gasStats = ha.statisticsFn;
+  ha.statisticsFn = (ids, start, end, period, types) => {
+    const out = gasStats(ids, start, end, period, types);
+    for (const [id, perHour] of Object.entries(plugs)) {
+      if (!ids.includes(id)) continue;
+      const rows = [];
+      for (let h = Math.floor(start / HOUR) * HOUR; h < end && h + HOUR <= NOW; h += HOUR) if (h >= MIDNIGHT - DAY) rows.push({ start: h, change: perHour });
+      out[id] = rows;
+    }
+    return out;
+  };
+  config.settings.tariffs = { ...config.settings.tariffs, electricityPerKwh: 4 };
+  config.rooms = [{ id: 'r_f1' }, { id: 'r_f2' }, { id: 'r_a' }, { id: 'r_b' }];
+  config.circuits = [
+    { id: 'c_floor', mode: 'follow_source', manifoldId: null, sourceIds: ['s_boiler'] },
+    { id: 'c_rad', mode: 'zoned', manifoldId: 'm_1', sourceIds: ['s_boiler'] },
+  ];
+  config.emitters = [
+    { id: 'e_f1', roomId: 'r_f1', enabled: true, sourceId: null, circuitId: 'c_floor' },
+    { id: 'e_f2', roomId: 'r_f2', enabled: true, sourceId: null, circuitId: 'c_floor' },
+    { id: 'e_a', roomId: 'r_a', enabled: true, sourceId: null, circuitId: 'c_rad' },
+    { id: 'e_b', roomId: 'r_b', enabled: true, sourceId: null, circuitId: 'c_rad' },
+  ];
+  const plug = (entityId) => ({ kind: 'electricity', entityId, unit: 'kWh' });
+  config.pumps = [
+    { id: 'p_floor', circuitId: 'c_floor', manifoldId: null, enabled: true, meter: plug('sensor.floor_plug') },
+    { id: 'p_rad', circuitId: 'c_rad', manifoldId: null, enabled: true, meter: plug('sensor.rad_plug') },
+    { id: 'p_main', circuitId: null, manifoldId: 'm_1', enabled: true, meter: plug('sensor.main_plug') },
+  ];
+  config.list = (c) => ({ sources: config.sources, rooms: config.rooms, circuits: config.circuits, emitters: config.emitters, pumps: config.pumps })[c] ?? [];
+
+  const h = await service.house();
+  const room = (id) => h.rooms.find((r) => r.roomId === id);
+  // 06–07: the floor's pump ran for both floor rooms; the radiators' and the manifold's for r_a all hour, r_b half of it
+  near(room('r_f1').electricity, 0.05 / 2);
+  near(room('r_f2').electricity, 0.05 / 2);
+  near(room('r_a').electricity, ((0.04 + 0.03) * 2) / 3);
+  near(room('r_b').electricity, (0.04 + 0.03) / 3);
+  near(h.rooms.reduce((sum, r) => sum + r.electricity, 0) + h.unassigned.electricity, h.electricity);
+  near(h.electricity, (0.05 + 0.04 + 0.03) * 14);
+  // the floor's rooms keep their share of the boiler while their pump ran: 60 min each against r_a's 60 and r_b's 30
+  const six = meter.hour(MIDNIGHT + 6 * HOUR) * FT3;
+  near(room('r_f1').gas, (six * 60) / 210, 0.002);
+  near(room('r_f1').cost, ((six * 60) / 210) * 8 + 0.025 * 4, 0.02);
+
+  const f = await service.room('r_f1');
+  assert.deepEqual({ roomId: f.roomId, gas: f.gas, electricity: f.electricity, cost: f.cost, demandMin: f.demandMin }, room('r_f1'));
+  assert.deepEqual(
+    f.meters.map((m) => [m.kind, m.sourceIds, m.pumpIds, m.own]),
+    [
+      ['gas', ['s_boiler'], [], false],
+      ['electricity', [], ['p_floor'], false],
+    ],
+  );
+  const pump = f.meters[1];
+  near(pump.amount, 0.025);
+  near(pump.meterTotal, 0.05 * 14);
+  assert.equal(pump.minutes, 60);
+  near(f.buckets[6].electricity, 0.025);
+  assert.equal(f.buckets[3].electricity, 0, 'the plug\'s standby while the pump stood is nobody\'s');
+  near(f.sourcesTotal.electricity, h.electricity);
+  assert.equal(f.configured, true);
+  const a = await service.room('r_a');
+  assert.deepEqual(a.meters.filter((m) => m.kind === 'electricity').map((m) => m.pumpIds[0]).sort(), ['p_main', 'p_rad']);
+});
+
 const demandSpan = (id, roomId, from, to) => ({ id, subject: 'room', subjectId: roomId, kind: 'demand', mode: 'heat', startTs: from, endTs: to, meta: null });
 const runSpan = (id, sourceId, from, to) => ({ id, subject: 'source', subjectId: sourceId, kind: 'run', mode: 'heat', startTs: from, endTs: to, meta: null });
 const shareOf = (d) => ({ roomId: d.roomId, gas: d.gas, electricity: d.electricity, cost: d.cost, demandMin: d.demandMin });

@@ -107,7 +107,7 @@ export function RoomDesktop({
           </AutoGrid>
         </>
       ) : tab === 'use' ? (
-        <Section title={t('Consumption')} subtitle={t('The room’s share of its sources’ meters, by how long it took their heat.')} action={<RangeControl />}>
+        <Section title={t('Consumption')} subtitle={t('The room’s share of its sources’ and pumps’ meters, by how long it took their heat.')} action={<RangeControl />}>
           {/* another room starts on the date of its own link, or on the current period */}
           <RoomConsumption key={id} roomId={id} phone={false} startDate={startDate} />
         </Section>

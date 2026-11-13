@@ -1,8 +1,8 @@
 /**
- * «Споживання» of a room: its share of what the meters of the sources that serve it counted, per
- * hour, day or month, split as on System → Consumption (each hour a source ran, by how long each
- * room took its heat). The heated time and the outdoor temperature run under the bars; below, the
- * meters it came from and the sources that are not counted for want of a meter.
+ * «Споживання» of a room: its share of what the meters of the sources and the pumps that serve it
+ * counted, per hour, day or month, split as on System → Consumption (each hour a source or a pump
+ * ran, by how long each room took its heat). The heated time and the outdoor temperature run under
+ * the bars; below, the meters it came from and the sources that are not counted for want of a meter.
  */
 import { Fragment, useEffect, useRef, useState } from 'react';
 import type { ConsumptionRange, Id, LocalDate, RoomConsumptionDto, RoomDetailDto, RoomMeterUse } from '@api/model';
@@ -106,13 +106,15 @@ export function RoomConsumption({ roomId, phone, startDate }: { roomId: Id; phon
   const c = useRoomConsumption(roomId, range, date);
   const names = useCodeContext();
   const name = (id: Id) => names.sourceLabel(id) ?? id;
+  const meterName = (m: RoomMeterUse) => [...m.sourceIds.map(name), ...m.pumpIds.map((id) => names.pump?.(id) ?? id)].join(', ');
   // the period lives on in this state: the address drops the date, so the stored route reopens the panel on the current period
   const route = useRoute();
   useEffect(() => {
     if (route.name === 'roomUse' && route.query.date != null) navigate(paths.roomUse(route.params.id ?? roomId), { replace: true });
   }, [route, roomId]);
 
-  if (c.data) return <RoomBody data={c.data} range={range} pending={c.pending} setDate={setDate} picked={picked} onKind={setPicked} phone={phone} name={name} />;
+  if (c.data)
+    return <RoomBody data={c.data} range={range} pending={c.pending} setDate={setDate} picked={picked} onKind={setPicked} phone={phone} name={name} meterName={meterName} />;
   if (c.error) {
     // a past period that fails (a date edited by hand) leads back to the current one; the current one is asked again
     const action = date ? { label: t('To the current period'), onClick: () => setDate(null) } : { label: t('Try again'), onClick: () => void c.reload() };
@@ -149,6 +151,7 @@ function RoomBody({
   onKind,
   phone,
   name,
+  meterName,
 }: {
   data: RoomConsumptionDto;
   range: ConsumptionRange;
@@ -158,6 +161,7 @@ function RoomBody({
   onKind: (k: Kind) => void;
   phone: boolean;
   name: (id: Id) => string;
+  meterName: (m: RoomMeterUse) => string;
 }) {
   // what the room's own meters count: the house may have a carrier that never reaches this room
   const kinds = KINDS.filter((k) => data.meters.some((m) => m.kind === k));
@@ -187,17 +191,17 @@ function RoomBody({
   });
   // a period before recorded only in part is said once, under the tiles
   const change = (now: number | null, before: number | null) => (data.previousComplete ? (changeAgainst(data, now, before, true) ?? undefined) : undefined);
-  // what part of all the sources' meters counted went to this room
+  // what part of all the sources' and pumps' meters counted went to this room
   const share = (k: Kind) => {
     const total = data.sourcesTotal[k];
     const own = data[k];
-    return own != null && own > 0 && total != null && total > 0 ? t('{pct} of what all the sources used', { pct: partText(own, total) }) : null;
+    return own != null && own > 0 && total != null && total > 0 ? t('{pct} of what all the sources and pumps used', { pct: partText(own, total) }) : null;
   };
   // a meter without readings in the period leaves the total short: say whose (a silent recorder has its banner)
   const unread = (k: Kind) => {
     if (data.recorder === 'unavailable') return null;
-    const ids = Array.from(new Set(data.meters.filter((m) => m.kind === k && m.amount == null).flatMap((m) => m.sourceIds)));
-    return ids.length ? t('no readings: {sources}', { sources: ids.map(name).join(', ') }) : null;
+    const who = Array.from(new Set(data.meters.filter((m) => m.kind === k && m.amount == null).map(meterName)));
+    return who.length ? t('no readings: {sources}', { sources: who.join(', ') }) : null;
   };
   const priced = hasPrice(data.tariffs, kinds);
 
@@ -259,7 +263,7 @@ function RoomBody({
         <Text variant="caption">{t('In a year each day is split as a whole, so a month here can differ slightly from the month view.')}</Text>
       ) : null}
 
-      <Meters data={data} phone={phone} name={name} />
+      <Meters data={data} phone={phone} meterName={meterName} />
       <Unmetered ids={data.unmetered} name={name} />
     </Stack>
   );
@@ -289,17 +293,21 @@ function NoMeter({ data }: { data: RoomConsumptionDto }) {
 
 /* ---------------- where it came from ---------------- */
 
-/** The room's part of each meter of its sources; a row opens the source. */
-function Meters({ data, phone, name }: { data: RoomConsumptionDto; phone: boolean; name: (id: Id) => string }) {
+/** The room's part of each meter of its sources and pumps; a row opens the source, or the pumps' meters on System → Consumption. */
+function Meters({ data, phone, meterName }: { data: RoomConsumptionDto; phone: boolean; meterName: (m: RoomMeterUse) => string }) {
   const units = data.units;
   const priced = data.meters.some((m) => m.cost != null);
   const caption = (m: RoomMeterUse) => {
     const took =
-      m.minutes > 0
-        ? m.sourceIds.length > 1
-          ? t('heated or cooled {dur} while the sources ran', { dur: fmtDur(m.minutes) })
-          : t('heated or cooled {dur} while the source ran', { dur: fmtDur(m.minutes) })
-        : t('not heated or cooled');
+      m.minutes <= 0
+        ? t('not heated or cooled')
+        : !m.sourceIds.length
+          ? m.pumpIds.length > 1
+            ? t('heated or cooled {dur} while the pumps ran', { dur: fmtDur(m.minutes) })
+            : t('heated or cooled {dur} while the pump ran', { dur: fmtDur(m.minutes) })
+          : m.sourceIds.length > 1
+            ? t('heated or cooled {dur} while the sources ran', { dur: fmtDur(m.minutes) })
+            : t('heated or cooled {dur} while the source ran', { dur: fmtDur(m.minutes) });
     // an own meter is the room's whole: a percentage of it says nothing
     const part = m.own
       ? t('the room’s own meter')
@@ -317,22 +325,22 @@ function Meters({ data, phone, name }: { data: RoomConsumptionDto; phone: boolea
   // a phone has no room for four columns: the carrier goes under the name, the cost under the amount
   const cols: DataColumn[] = phone
     ? [
-        { key: 'who', label: t('Source'), width: '1.4fr' },
+        { key: 'who', label: t('Who'), width: '1.4fr' },
         { key: 'used', label: t('The room’s part'), width: '1fr', align: 'end' },
       ]
     : [
-        { key: 'who', label: t('Source'), width: '1.8fr' },
+        { key: 'who', label: t('Who'), width: '1.8fr' },
         { key: 'kind', label: t('Meter'), width: '1fr' },
         { key: 'amount', label: t('The room’s part'), width: '1fr', align: 'end' },
         ...(priced ? [{ key: 'cost', label: t('Cost'), width: '1fr', align: 'end' as const }] : []),
       ];
   const rows: DataRow[] = data.meters.map((m) => {
-    const title = m.sourceIds.map(name).join(', ');
+    const title = meterName(m);
     const sub = caption(m);
     const amount = fmtAmount(m.amount, units[m.kind]);
     return {
       key: `${m.kind}:${m.entityId}`,
-      onClick: m.sourceIds.length ? () => navigate(paths.source(m.sourceIds[0])) : undefined,
+      onClick: () => navigate(m.sourceIds.length ? paths.source(m.sourceIds[0]) : paths.energy()),
       ariaLabel: `${title}, ${kindLabel(m.kind)}, ${sub}, ${amount}${m.cost != null ? `, ${fmtMoney(m.cost, units.currency)}` : ''}`,
       cells: {
         who: who(title, phone ? `${kindLabel(m.kind)} · ${sub}` : sub),
@@ -353,7 +361,7 @@ function Meters({ data, phone, name }: { data: RoomConsumptionDto; phone: boolea
       variant="plain"
       level={3}
       title={t('Where it came from')}
-      subtitle={t('the meters of the sources that heat or cool this room, and the room’s part of each')}
+      subtitle={t('the meters of the sources and the pumps that heat or cool this room, and the room’s part of each')}
     >
       <DataTable columns={cols} rows={rows} minWidth={phone ? 0 : 520} ariaLabel={t('Where it came from')} empty={t('No meter yet')} />
     </Section>

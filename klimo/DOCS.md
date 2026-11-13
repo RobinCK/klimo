@@ -485,13 +485,16 @@ row for every source and pump — its gas, electricity, cost and running time. A
 sources counts in both rows and once in the house. A row without a meter says so; a source's row opens
 its page, where its meters are chosen.
 
-**By room** shares the sources' gas and electricity out between the rooms. Each hour a source ran (each
-day in a year), what its meter counted goes to the rooms that took its heat or cooling meanwhile, by how
+**By room** shares the sources' and the pumps' gas and electricity out between the rooms. Each hour a source
+or a pump ran (each day in a year), what its meter counted goes to the rooms that took its heat or cooling meanwhile, by how
 long each took it: a room takes it while it asks, and a floor that runs with the source while its pump
 runs (with no pump of its own, its collector's; with none, while the source runs). Two rooms asking the
 whole hour get half each; one asking the whole hour and one for half of it, two thirds and one third.
 What ran while no room took it (run-on, frost protection, a stove on the same gas meter, standby) stays
-under *No room took it*. Pumps are not shared out; their meters stay in their own rows. A room's asking
+under *No room took it*. A pump's meter (the energy sensor of its plug) goes to the rooms of its loop — a
+collector's pump, to the rooms of the collector's loops — the same way: a floor's pump to the floor's rooms
+while it runs, on top of their share of the boiler; a radiator pump to the rooms that asked while it ran.
+Its standby and weekly exercise go under *No room took it*. A room's asking
 is kept 400 days; before version 0.2.15 it was kept 30 days, so older periods go under *No room took it*.
 A meter only a room's own sources have (an air conditioner or a heater on its own plug) is that room's
 whole, standby included. In a year each day is shared as a whole, so a month there can differ a little
@@ -499,10 +502,10 @@ from the same month viewed on its own.
 
 **A room's own consumption** is on its page, under the hero (on a phone: the *Consumption* row of the room,
 or a row of *By room*): its gas, electricity and cost for a day, a week, a month or a year against the
-period before, the time it was heated or cooled, its part of what all the sources used, a chart per
+period before, the time it was heated or cooled, its part of what all the sources and pumps used, a chart per
 hour, day or month with the outdoor temperature and the heated time under the bars, and **Where it came from**
-— each meter of the sources that serve it, the room's part of it and how long the room took heat while
-that source ran. A source serving the room without a meter is named, its use not counted. The change
+— each meter of the sources and the pumps that serve it, the room's part of it and how long the room took
+heat while that source or pump ran. A source serving the room without a meter is named, its use not counted. The change
 against the period before is left out while that period is recorded only in part: Klimo's records of
 when rooms asked begin at its install and are kept 400 days.
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.39
+
+- **A room's consumption counts the pumps' electricity too.** The energy sensor of a pump's plug was
+  shown in the pump's own row only, so a room's share had the gas and the electricity of its sources
+  and none of what the pumps working for it drew. A pump's meter is now shared out like a source's: each
+  hour it ran, between the rooms of its loop (a collector's pump, of the collector's loops) by how long
+  each took heat or cooling meanwhile. A floor's pump goes to the floor's rooms while it runs, on top of
+  their share of the boiler for the same time; a radiator pump to the rooms that asked. Its standby and
+  weekly exercise go under *No room took it*. *Where it came from* lists the pump with the room's part,
+  the share tiles count it in «of what all the sources and pumps used», and *By room* on System →
+  Consumption adds up the same numbers.
+
 ## 0.2.38
 
 - **The room sheet of the dashboard cards keeps clear of the notch and the Dynamic Island.** A tall sheet

@@ -1,6 +1,6 @@
 {
   "name": "klimo-backend",
-  "version": "0.2.38",
+  "version": "0.2.39",
   "private": true,
   "scripts": {
     "build": "tsc -p tsconfig.json",

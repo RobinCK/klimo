@@ -3400,7 +3400,7 @@ export interface ConsumerUse {
   meters: ConsumptionMeterDto[];
 }
 
-/** A room's share of what the sources used (see HouseConsumptionDto.rooms). */
+/** A room's share of what the sources and the pumps used (see HouseConsumptionDto.rooms). */
 export interface RoomUse {
   roomId: Id;
   gas: number | null;
@@ -3439,19 +3439,22 @@ export interface HouseConsumptionDto {
   /** Pumps with a meter. */
   pumps: ({ pumpId: Id } & ConsumerUse)[];
   /**
-   * Every room, with its share of the sources' meters: each hour (each day of a year) a source ran, what
-   * its meters counted is split between the rooms that took its heat or cooling meanwhile — those that
-   * asked, and the rooms of a floor that runs with the source while its pump ran — by how long each took
-   * it. A meter only one room's own sources have (an AC, a heater on its plug) is that room's whole,
-   * standby included. Pumps are not shared out. A year is split by whole days (the statistics' day rows):
+   * Every room, with its share of the sources' and the pumps' meters: each hour (each day of a year) a
+   * source or a pump ran, what its meters counted is split between the rooms that took its heat or cooling
+   * meanwhile — those that asked, and the rooms of a floor that runs with the source while its pump ran —
+   * by how long each took it. A pump serves the rooms of its circuit (a manifold's pump, those of the
+   * manifold's circuits): a floor's pump goes to the floor's rooms, on top of their share of the boiler. A
+   * meter only one room's own sources have (an AC, a heater on its plug) is that room's whole, standby
+   * included. A year is split by whole days (the statistics' day rows):
    * a day in which a room took heat or cooling while the source ran shares out everything the meter
    * counted that day, the hours nobody took it included, so a month of the year differs from the same
    * month in the month range.
    */
   rooms: RoomUse[];
   /**
-   * What the sources' meters counted while none of their rooms asked: run-on, frost protection, a stove on
-   * the gas meter, standby (never from a room's own meter); 0 when a room took all of it.
+   * What the sources' and the pumps' meters counted while none of their rooms asked: run-on, frost
+   * protection, a pump's exercise, a stove on the gas meter, standby (never from a room's own meter); 0
+   * when a room took all of it.
    */
   unassigned: ConsumptionValues;
   /** At least one source or pump has a meter (otherwise the tile invites to bind one). */
@@ -3474,10 +3477,12 @@ export interface RoomConsumptionBucket {
   future: boolean;
 }
 
-/** One meter's part of a room's use: a source's gas or electricity meter (a meter two sources share is one row). */
+/** One meter's part of a room's use: a source's gas or electricity meter, or a pump's (a meter two of them share is one row). */
 export interface RoomMeterUse {
-  /** The sources that have this meter (usually one). */
+  /** The sources that have this meter (usually one; none for a pump's). */
   sourceIds: Id[];
+  /** The pumps that have this meter (the energy sensor of a pump's plug); none for a source's. */
+  pumpIds: Id[];
   kind: 'gas' | 'electricity';
   entityId: EntityId;
   /** The room's part, in `units[kind]`. */
@@ -3485,7 +3490,7 @@ export interface RoomMeterUse {
   cost: number | null;
   /** What the meter counted in the period: every room's part and what no room took. */
   meterTotal: number | null;
-  /** Minutes the room took heat or cooling while one of these sources ran. */
+  /** Minutes the room took heat or cooling while one of these sources or pumps ran. */
   minutes: number;
   /** Only the room's own sources have it (an AC, a heater on its plug): everything it counted is the room's. */
   own: boolean;
@@ -3493,7 +3498,7 @@ export interface RoomMeterUse {
 
 /**
  * GET /api/rooms/:id/consumption?range=day|week|month|year&date=YYYY-MM-DD — one room's share of the
- * sources' meters, split as in HouseConsumptionDto.rooms (the same numbers), per hour, day or month,
+ * sources' and the pumps' meters, split as in HouseConsumptionDto.rooms (the same numbers), per hour, day or month,
  * meter by meter, against the period before. The split goes hour by hour, in the year range day by day
  * (hourly statistics over a year would weigh on Home Assistant): what a meter counted in a whole day is
  * shared by how long each room took heat or cooling that day while its sources ran, so a room that asked
@@ -3526,18 +3531,18 @@ export interface RoomConsumptionDto {
    */
   previousComplete: boolean;
   /**
-   * The house's sources, not the room's: what every source meter in the house counted in the period,
-   * all rooms' shares and what no room took (pumps left out).
+   * The house's sources and pumps, not the room's: what every source and pump meter in the house counted
+   * in the period, all rooms' shares and what no room took.
    */
   sourcesTotal: { gas: number | null; electricity: number | null; cost: number | null };
   outdoorAvgC: Celsius | null;
-  /** The meters of the sources that serve the room, gas first. */
+  /** The meters of the sources and the pumps that serve the room, gas first. */
   meters: RoomMeterUse[];
   /** Enabled sources that serve the room without a gas or electricity meter: what they use is not counted. */
   unmetered: Id[];
   units: ConsumptionUnits;
   tariffs: EnergyTariffs;
-  /** A source serving the room has a gas or electricity meter. */
+  /** A source or a pump serving the room has a gas or electricity meter. */
   configured: boolean;
   recorder: 'ok' | 'unavailable';
   now: EpochMs;

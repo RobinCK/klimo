@@ -269,7 +269,7 @@ function ByRoom({ d, data, phone }: { d: SystemData; data: HouseConsumptionDto; 
       variant="plain"
       level={3}
       title={t('By room')}
-      subtitle={t('each hour a source ran, what it used is split between the rooms that took its heat meanwhile, by how long each took it: a room that asked, or a floor while its pump ran; pumps are not split')}
+      subtitle={t('each hour a source or a pump ran, what it used is split between the rooms that took its heat meanwhile, by how long each took it: a room that asked, or a floor while its pump ran')}
     >
       <DataTable columns={cols} rows={table} minWidth={phone ? 0 : 520} ariaLabel={t('By room')} empty={t('No room yet.')} />
     </Section>

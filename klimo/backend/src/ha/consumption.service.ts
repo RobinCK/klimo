@@ -116,12 +116,14 @@ interface Share {
   electricity: number | null;
 }
 
-/** One meter of the sources shared out between rooms, bin by bin (see splitByRoom). */
+/** One meter of the sources or the pumps shared out between rooms, bin by bin (see splitByRoom). */
 interface MeterSplit {
   ref: MeterRef;
   kind: 'gas' | 'electricity';
   /** The sources that have it. */
   owners: Id[];
+  /** The pumps that have it (the energy sensor of a pump's plug). */
+  pumpIds: Id[];
   /** The rooms that share it; for an own meter, the one room. */
   rooms: Id[];
   /** Only one room's own sources have it: everything it counted is that room's. */
@@ -132,11 +134,11 @@ interface MeterSplit {
   parts: Map<Id, number[]>;
   /** What no room took per bin. */
   left: number[];
-  /** Milliseconds each room took heat or cooling while one of the owners ran, per bin. */
+  /** Milliseconds each room took heat or cooling while one of the owners or the pumps ran, per bin. */
   taken: Map<Id, number[]>;
 }
 
-/** The sources' meters over a stretch of time shared out between rooms, in fine bins. */
+/** The sources' and the pumps' meters over a stretch of time shared out between rooms, in fine bins. */
 interface RoomSplit {
   /** Bin k is [edges[k], edges[k + 1]): hours, or days for a year. */
   edges: EpochMs[];
@@ -392,16 +394,19 @@ export class ConsumptionService implements IConsumption {
   }
 
   /**
-   * The sources' meters shared out between rooms. Each meter once (two boilers on one gas meter share it
-   * as one); each hour (each day of a year) what it counted goes to the rooms that took their heat or
-   * cooling while one of them ran, by how long each took it; with no room taking it, it stays unassigned.
-   * A room takes it while it asks, and while the pump of a floor that runs with the source runs (such a
-   * floor warms its rooms whether they ask or not). A meter only one room's own sources have (an AC, a
+   * The sources' and the pumps' meters shared out between rooms. Each meter once (two boilers on one gas
+   * meter share it as one); each hour (each day of a year) what it counted goes to the rooms that took
+   * their heat or cooling while one of them ran, by how long each took it; with no room taking it, it
+   * stays unassigned. A room takes it while it asks, and while the pump of a floor that runs with the
+   * source runs (such a floor warms its rooms whether they ask or not). A pump serves the rooms of its
+   * circuit (a manifold's pump, of the manifold's circuits): a floor's pump goes to the floor's rooms,
+   * which take the boiler's share too while it runs. A meter only one room's own sources have (an AC, a
    * heater on its plug) is that room's whole, standby included. Kept bin by bin, meter by meter, so the
    * house's list and a room's detail add up the same numbers.
    */
   private splitByRoom(
     sources: { id: Id; refs: MeterRef[] }[],
+    pumpMeters: { id: Id; refs: MeterRef[] }[],
     reading: Reading,
     house: MeterValues,
     tariffs: EnergyTariffs,
@@ -414,13 +419,22 @@ export class ConsumptionService implements IConsumption {
     const served = this.roomsBySource();
     const configs = new Map(this.config.list('sources').map((s) => [s.id, s]));
     const sourceSpans = spans.source;
-    const withSource = new Map(this.config.list('circuits').filter((c) => c.mode === 'follow_source').map((c) => [c.id, c]));
+    const circuits = this.config.list('circuits');
+    const withSource = new Map(circuits.filter((c) => c.mode === 'follow_source').map((c) => [c.id, c]));
     const pumps = this.config.list('pumps').filter((p) => p.enabled);
+    const emitters = this.config.list('emitters').filter((e) => e.enabled && e.circuitId);
+    // the rooms of a pump's circuit, or of every circuit of its manifold
+    const pumpRooms = new Map<Id, Set<Id>>();
+    for (const p of this.config.list('pumps')) {
+      const loops = new Set(circuits.filter((c) => (p.circuitId && c.id === p.circuitId) || (p.manifoldId && c.manifoldId === p.manifoldId)).map((c) => c.id));
+      pumpRooms.set(p.id, new Set(emitters.filter((e) => loops.has(e.circuitId as Id)).map((e) => e.roomId)));
+    }
+
     // the floor's own pumps; with none, its manifold's; with none either, the sources' runs themselves
     const floorPumps = new Map<Id, Set<Id>>();
     const floorSources = new Map<Id, Set<Id>>();
-    for (const e of this.config.list('emitters')) {
-      const c = e.enabled && e.circuitId ? withSource.get(e.circuitId) : undefined;
+    for (const e of emitters) {
+      const c = e.circuitId ? withSource.get(e.circuitId) : undefined;
       if (!c) {
         continue;
       }
@@ -446,32 +460,44 @@ export class ConsumptionService implements IConsumption {
       demand.set(r.id, intervalsOf(taken, from, until, now));
     }
 
-    const meters = new Map<string, { ref: MeterRef; owners: Id[] }>();
+    const meters = new Map<string, { ref: MeterRef; owners: Id[]; pumpIds: Id[] }>();
+    const meterOf = (ref: MeterRef) => {
+      const key = `${ref.meter.kind}|${ref.meter.entityId}`;
+      const m = meters.get(key) ?? { ref, owners: [], pumpIds: [] };
+      meters.set(key, m);
+
+      return m;
+    };
     for (const s of sources) {
       for (const ref of s.refs) {
-        const key = `${ref.meter.kind}|${ref.meter.entityId}`;
-        const m = meters.get(key) ?? { ref, owners: [] };
-        m.owners.push(s.id);
-        meters.set(key, m);
+        meterOf(ref).owners.push(s.id);
+      }
+    }
+
+    for (const p of pumpMeters) {
+      for (const ref of p.refs) {
+        meterOf(ref).pumpIds.push(p.id);
       }
     }
 
     const bins = edges.length - 1;
     const out: MeterSplit[] = [];
-    for (const { ref, owners } of meters.values()) {
+    for (const { ref, owners, pumpIds } of meters.values()) {
       const kind = ref.meter.kind === 'gas' ? 'gas' : 'electricity';
       const own = new MeterValues([ref], reading, tariffs);
-      const runs = intervalsOf(sourceSpans.filter((s) => owners.includes(s.subjectId)), from, until, now);
+      const runs = intervalsOf([...sourceSpans.filter((s) => owners.includes(s.subjectId)), ...spans.pump.filter((s) => pumpIds.includes(s.subjectId))], from, until, now);
       // the room of the owners when every one of them is a room's own source, of the same room
       const homes = new Set(owners.map((id) => (configs.get(id)?.scope === 'room' ? (configs.get(id)?.roomId ?? null) : null)));
-      const home = homes.size === 1 ? [...homes][0] : null;
+      const home = homes.size === 1 && !pumpIds.length ? [...homes][0] : null;
       const whole = home !== null && demand.has(home) ? home : null;
-      const rooms = whole !== null ? [whole] : [...new Set(owners.flatMap((id) => [...(served.get(id) ?? [])]))].filter((id) => demand.has(id));
+      const servedBy = [...owners.flatMap((id) => [...(served.get(id) ?? [])]), ...pumpIds.flatMap((id) => [...(pumpRooms.get(id) ?? [])])];
+      const rooms = whole !== null ? [whole] : [...new Set(servedBy)].filter((id) => demand.has(id));
       const weights = rooms.map((id) => binned(intersect(runs, demand.get(id) ?? []), edges));
       const split: MeterSplit = {
         ref,
         kind,
         owners,
+        pumpIds,
         rooms,
         own: whole !== null,
         amounts: [],
@@ -693,7 +719,7 @@ export class ConsumptionService implements IConsumption {
 
   /**
    * Every source and pump with a meter over the period and the one before, read in one go; the
-   * sources' meters shared out between rooms for both (a room's detail compares against the one before),
+   * sources' and the pumps' meters shared out between rooms for both (a room's detail compares against the one before),
    * the one before only once a room asks for it.
    */
   private async readHouse(range: ConsumptionRange, date: LocalDate, now: EpochMs): Promise<HouseSplit> {
@@ -734,8 +760,8 @@ export class ConsumptionService implements IConsumption {
       reading,
       house,
       spans,
-      current: this.splitByRoom(sources, reading, house, tariffs, spans, fineEdges(plan, until, fine, tz), now),
-      previous: () => (previous ??= this.splitByRoom(sources, reading, house, tariffs, spans, fineEdges(prevPlan, prevTo, fine, tz), now)),
+      current: this.splitByRoom(sources, pumps, reading, house, tariffs, spans, fineEdges(plan, until, fine, tz), now),
+      previous: () => (previous ??= this.splitByRoom(sources, pumps, reading, house, tariffs, spans, fineEdges(prevPlan, prevTo, fine, tz), now)),
     };
   }
 
@@ -826,6 +852,7 @@ export class ConsumptionService implements IConsumption {
 
         return {
           sourceIds: m.owners,
+          pumpIds: m.pumpIds,
           kind: m.kind,
           entityId: m.ref.meter.entityId,
           amount: roundTo(amount, 3),
