@@ -3,5 +3,5 @@ export { BottomTabBar, MobileTopBar, TopBar, type BottomTabBarProps, type Mobile
 export { AutoGrid, Row, ScrollX, Spacer, Split, Stack, type AutoGridProps, type FlexProps, type ScrollXProps, type SplitProps } from './Layout';
 export { Link, useRouteClick, type LinkProps } from './Link';
 export { OverlayPanel, type OverlayPanelProps } from './OverlayPanel';
-export { Page, SubNav, type PageProps, type SubNavProps } from './Page';
+export { Page, SideNav, SubNav, type PageProps, type SideNavItem, type SideNavProps, type SubNavProps } from './Page';
 export { SchemeScope } from './SchemeScope';

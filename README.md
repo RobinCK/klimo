@@ -152,11 +152,12 @@ block) asks what it is and then finds it in all of Home Assistant; replace a dev
 removed radiator head gets its own sensor, a 20° target and an unlocked keypad back; a room that leaves
 the floor gives up its place on the floor pump. Every change is in the journal.
 
-The rest of the page is the room's configuration — what heats and cools it and how (an air
-conditioner can top up the radiators when the room lacks more than 1.5°), the radiator valves with
-their battery, signal and confirmation state, the temperature sensors and how they are combined, the
-tolerance per mode, humidity and the dew point, windows and doors, smart functions and the room's own
-notifications:
+Under it the room at a glance has a row per part of its settings with its state; **Consumption** and
+**Settings** are tabs of their own. The settings list their parts — what heats and cools the room and
+how (an air conditioner can top up the radiators when the room lacks more than 1.5°), the radiator
+valves with their battery, signal and confirmation state, the temperature sensors and how they are
+combined, the tolerance per mode, humidity and the dew point, windows and doors, smart functions and
+the room's own notifications — and show the one that is open:
 
 ![Room settings](docs/screenshots/room-settings.png)
 

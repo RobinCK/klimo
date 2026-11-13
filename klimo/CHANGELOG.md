@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.35
+
+- **A room on a wide screen comes in three parts: Overview, Consumption, Settings.** The page held the
+  room's state, its consumption and every setting one under another (eight screens long). The
+  overview now shows the temperature, the target, why and today's chart, and the room at a glance — a
+  row per part of its settings with its state («What heats · Heating», «Temperature sensors · 19.8°»,
+  «Radiator valves · in sync»), each leading to that part. The settings list their parts with a live
+  summary beside the one that is open, as the phone's settings do. Each part is its own address, and
+  another room in the tabs opens on the same part, so settings compare room by room.
+
 ## 0.2.34
 
 - **The day chart on a phone takes the full width.** Its temperature scale moved inside the plot (the

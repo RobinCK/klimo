@@ -103,7 +103,13 @@ device with what it expects before it sends a command.
 ## Rooms
 
 The tabs above a room page show each room's temperature, a dot for its state and, while the room asks
-for heat, a flame (a snowflake when it asks for cooling). **Order of the rooms** — the button after
+for heat, a flame (a snowflake when it asks for cooling). Under them the room has three parts, each its
+own address: **Overview** (the temperature, the target, why, today's chart and the room at a glance —
+a row per part of its settings with its state, each leading there), **Consumption**, and **Settings** —
+a list of their parts (room and devices, sensors, what heats, tolerance, windows, valves, humidity,
+targets by profile, smart functions, notifications, Home Assistant) with a live summary each, beside
+the one that is open. Another room in the tabs opens on the same part. A phone shows the same parts as
+screens of their own. **Order of the rooms** — the button after
 **+** in the tabs, or beside it on the phone's *Rooms* — drags the rooms into the order the tabs, the
 overview and the cards use. The phone's list still puts rooms that need attention first.
 

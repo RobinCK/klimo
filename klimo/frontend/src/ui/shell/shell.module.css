@@ -303,6 +303,80 @@
   display: none;
 }
 
+/* ---------- SideNav ---------- */
+
+.sideNav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-radius: var(--ui-radius-2xl);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-1);
+}
+
+.sideLink {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 10px;
+  border-radius: var(--ui-radius-lg);
+  color: var(--ui-text-2);
+  text-decoration: none;
+  transition: background-color var(--ui-motion) ease-out, color var(--ui-motion) ease-out;
+}
+
+.sideLink:hover {
+  color: var(--ui-text-1);
+  background: color-mix(in srgb, var(--ui-surface-2) 60%, transparent);
+}
+
+.sideLink[aria-current='page'] {
+  background: var(--ui-surface-2);
+  color: var(--ui-text-1);
+}
+
+:global([data-mantine-color-scheme='light']) .sideLink[aria-current='page'],
+:global([data-ui-scheme='light']) .sideLink[aria-current='page'] {
+  background: var(--ui-surface-3);
+}
+
+.sideIcon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface-2);
+  color: var(--ui-text-3);
+}
+
+.sideLink[aria-current='page'] .sideIcon {
+  background: var(--ui-surface-4);
+  color: var(--ui-text-1);
+}
+
+.sideText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sideLabel {
+  font-weight: 600;
+}
+
+.sideHint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-text-3);
+  font-size: var(--ui-fs-caption);
+}
+
 /* ---------- Stack / Row / AutoGrid / Split ---------- */
 
 .stack,

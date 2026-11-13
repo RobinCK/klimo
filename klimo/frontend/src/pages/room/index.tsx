@@ -1,7 +1,8 @@
 /**
- * Room page. Wide screens: room tabs, the hero (temperature, target editor, why, today's chart),
- * the room's consumption and every setting in two columns. Phones: the dial page, the settings as
- * accordions on `#/rooms/<id>/settings` and the consumption on `#/rooms/<id>/use`.
+ * Room page. Wide screens: room tabs, then three parts with their own addresses — the overview
+ * (temperature, target editor, why, today's chart, the room at a glance), the consumption on
+ * `#/rooms/<id>/use` and the settings on `#/rooms/<id>/settings`, one part of them at a time. Phones:
+ * the dial page, the settings as accordions and the consumption as their own screens.
  */
 import { useCallback, useEffect, useMemo } from 'react';
 import type { RoomDetailDto, RoomPatch } from '@api/model';
@@ -128,7 +129,8 @@ export default function RoomPage(): JSX.Element {
       rooms={rooms}
       profiles={profiles.data}
       now={now}
-      section={route.name === 'roomSettings' ? section : route.name === 'roomUse' ? 'use' : undefined}
+      tab={route.name === 'roomSettings' ? 'settings' : route.name === 'roomUse' ? 'use' : 'overview'}
+      section={section}
       startDate={date}
     />
   );

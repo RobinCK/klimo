@@ -65,7 +65,8 @@ function nextLine(p: SectionProps, now: EpochMs): string | null {
     : t('Next: {time} → {profile}', { time: fmtClock(n.at, now), profile: name });
 }
 
-function settingsRows(
+/** The room at a glance, one row per part of its settings (phone room page, desktop overview). */
+export function settingsRows(
   p: SectionProps,
 ): { key: string; icon: Parameters<typeof SourceRow>[0]['icon']; name: string; meta: string; chip: { tone: Tone; label: string }; to?: string }[] {
   const { room, state } = p;

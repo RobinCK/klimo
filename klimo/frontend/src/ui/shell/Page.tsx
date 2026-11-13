@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import type { IconName } from '../types';
+import { Icon } from '../basic/Icon';
 import { useUiNav } from '../UiNavContext';
 import { useRouteClick } from './Link';
 import s from './shell.module.css';
@@ -59,6 +61,50 @@ export function SubNav({ items, current, ariaLabel }: SubNavProps) {
     <nav className={s.subNav} aria-label={ariaLabel}>
       {items.map((i) => (
         <SubNavItem key={i.key} to={i.to} label={i.label} active={i.key === current} />
+      ))}
+    </nav>
+  );
+}
+
+export interface SideNavItem {
+  key: string;
+  label: string;
+  /** A live one-line summary under the label («медіана · 3 · 19.8°»). */
+  hint?: string;
+  icon?: IconName;
+  to: string;
+}
+
+export interface SideNavProps {
+  items: SideNavItem[];
+  current: string;
+  ariaLabel: string;
+}
+
+function SideNavLink({ item, active }: { item: SideNavItem; active: boolean }) {
+  const nav = useUiNav();
+  const onClick = useRouteClick(item.to);
+  return (
+    <a className={s.sideLink} href={nav.href(item.to)} aria-current={active ? 'page' : undefined} onClick={onClick}>
+      {item.icon ? (
+        <span className={s.sideIcon} aria-hidden="true">
+          <Icon name={item.icon} size={18} />
+        </span>
+      ) : null}
+      <span className={s.sideText}>
+        <span className={s.sideLabel}>{item.label}</span>
+        {item.hint ? <span className={s.sideHint}>{item.hint}</span> : null}
+      </span>
+    </a>
+  );
+}
+
+/** The parts of a long page as a vertical list beside it (a room's settings): one is shown at a time. */
+export function SideNav({ items, current, ariaLabel }: SideNavProps) {
+  return (
+    <nav className={s.sideNav} aria-label={ariaLabel}>
+      {items.map((i) => (
+        <SideNavLink key={i.key} item={i} active={i.key === current} />
       ))}
     </nav>
   );

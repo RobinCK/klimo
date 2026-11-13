@@ -1,4 +1,4 @@
-// The room's settings sections, in the order each layout shows them.
+// The room's settings sections, in the order the phone's accordions and the desktop's settings list show them.
 import { humiditySection } from './Humidity';
 import { haSection } from './HaEntities';
 import { profileTargetsSection } from './ProfileTargets';
@@ -14,16 +14,7 @@ import { windowsSection } from './Windows';
 export { DangerZone } from './Danger';
 export type { SectionDef, SectionProps } from './types';
 
-/** Desktop, full width above the columns: the room as the wizard set it up, to edit. */
-export const SETUP_SECTION: SectionDef = setupSection;
-
-/** Desktop, left column: what serves the room and how it measures and reacts. */
-export const LEFT_SECTIONS: SectionDef[] = [sourcesSection, sensorsSection, toleranceSection, windowsSection, profileTargetsSection];
-
-/** Desktop, right column: devices and the rest. */
-export const RIGHT_SECTIONS: SectionDef[] = [trvsSection, humiditySection, smartSection, notifySection, haSection];
-
-/** Phone accordions, most used first. */
+/** Phone accordions and the desktop's settings list, most used first. */
 export const PHONE_SECTIONS: SectionDef[] = [
   setupSection,
   sensorsSection,
