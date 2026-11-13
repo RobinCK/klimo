@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.36
+
+- **The phone's room list lost its pencils.** A pencil beside every room card, outside it, opened the
+  room's devices; it did not match the other lists and narrowed every card. The cards now take the full
+  width alike — a tap opens the room, and its devices and heating are under **Edit room** there.
+
 ## 0.2.35
 
 - **A room on a wide screen comes in three parts: Overview, Consumption, Settings.** The page held the
