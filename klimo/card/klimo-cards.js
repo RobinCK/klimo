@@ -63,7 +63,7 @@
  * `klimo-room-sheet` and `klimo-open`).
  */
 
-const VERSION = '0.2.37';
+const VERSION = '0.2.38';
 
 /* ─────────────────────────────── 1 Tokens ──────────────────────────────────────────────────────
  * The same values as the panel's design tokens. `npm run tokens:card` in klimo/frontend copies
@@ -4185,13 +4185,18 @@ const SHEET_CSS = `
 :host { position: fixed; inset: 0; z-index: 1000; display: block; }
 .scrim { position: absolute; inset: 0; background: var(--k-scrim); animation: kfade .18s ease-out; }
 .sheet { position: absolute; left: 50%; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
-  width: min(430px, calc(100vw - 20px)); max-height: calc(100vh - 20px - env(safe-area-inset-bottom, 0px)); overflow: auto; overscroll-behavior: contain;
+  width: min(430px, calc(100vw - 20px)); overflow: auto; overscroll-behavior: contain;
+  /* a tall sheet stops short of the notch or Dynamic Island as well as the home bar */
+  max-height: calc(100vh - 20px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  max-height: calc(100dvh - 20px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   display: flex; flex-direction: column; gap: 14px; padding: 18px; border-radius: 24px;
   background: var(--k-s1); color: var(--k-t1); border: 1px solid var(--k-bd); box-shadow: var(--k-shadow);
   font-family: var(--ha-font-family-body, 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif);
   font-size: 14px; line-height: 1.4; font-variant-numeric: tabular-nums; animation: kup .2s ease-out; container-type: inline-size; }
 @media (min-width: 700px) {
-  .sheet { top: 50%; bottom: auto; transform: translate(-50%, -50%); width: min(480px, calc(100vw - 40px)); max-height: calc(100vh - 40px); border-radius: 18px; animation: kpop .18s ease-out; }
+  .sheet { top: 50%; bottom: auto; transform: translate(-50%, -50%); width: min(480px, calc(100vw - 40px)); border-radius: 18px; animation: kpop .18s ease-out;
+    max-height: calc(100vh - 40px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    max-height: calc(100dvh - 40px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); }
 }
 @keyframes kfade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes kup { from { transform: translate(-50%, 24px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }

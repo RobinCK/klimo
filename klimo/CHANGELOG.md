@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.38
+
+- **The room sheet of the dashboard cards keeps clear of the notch and the Dynamic Island.** A tall sheet
+  grew up to the top of the phone's screen, so its header (the room, its mode and the close button) went
+  under the status bar and the island; it now stops short of the top inset as well as the home bar, on
+  a phone and on an iPad.
+
 ## 0.2.37
 
 - **Nothing hides under the iPhone's notch or Dynamic Island.** iOS gives its safe-area insets to the top
