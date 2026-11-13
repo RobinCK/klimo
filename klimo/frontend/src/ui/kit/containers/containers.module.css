@@ -437,7 +437,7 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--ui-space-8);
-  padding: var(--ui-space-12) var(--ui-space-20) calc(var(--ui-space-12) + env(safe-area-inset-bottom));
+  padding: var(--ui-space-12) var(--ui-space-20) calc(var(--ui-space-12) + var(--ui-safe-bottom));
   border-top: 1px solid var(--ui-divider);
   background: var(--ui-bg-chrome);
 }
@@ -445,7 +445,8 @@
 /* the sheet: rounded top corners, grabber, content-sized up to 92 % of the screen */
 .sheetContent.sheetContent {
   height: auto;
-  max-height: 92dvh;
+  /* a tall sheet stops short of the notch or island */
+  max-height: min(92dvh, calc(100dvh - var(--ui-safe-top) - 12px));
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -511,14 +512,14 @@
 }
 
 .sheetBody:last-child {
-  padding-bottom: calc(var(--ui-space-24) + env(safe-area-inset-bottom));
+  padding-bottom: calc(var(--ui-space-24) + var(--ui-safe-bottom));
 }
 
 .sheetFooter {
   flex: none;
   display: flex;
   gap: var(--ui-space-8);
-  padding: var(--ui-space-8) var(--ui-space-16) calc(var(--ui-space-20) + env(safe-area-inset-bottom));
+  padding: var(--ui-space-8) var(--ui-space-16) calc(var(--ui-space-20) + var(--ui-safe-bottom));
 }
 
 .sheetFooter > * {
@@ -545,7 +546,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--ui-space-12);
-  padding: calc(var(--ui-space-14) + env(safe-area-inset-top)) var(--ui-space-16) var(--ui-space-10);
+  padding: calc(var(--ui-space-14) + var(--ui-safe-top)) var(--ui-space-16) var(--ui-space-10);
 }
 
 .wizardTop {
@@ -597,7 +598,7 @@
   flex: none;
   display: flex;
   gap: var(--ui-space-10);
-  padding: var(--ui-space-12) var(--ui-space-16) calc(var(--ui-space-14) + env(safe-area-inset-bottom));
+  padding: var(--ui-space-12) var(--ui-space-16) calc(var(--ui-space-14) + var(--ui-safe-bottom));
   border-top: 1px solid var(--ui-divider);
   background: var(--ui-bg-chrome);
 }

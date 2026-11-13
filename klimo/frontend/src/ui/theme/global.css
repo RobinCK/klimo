@@ -3,6 +3,20 @@
  * --ui-* variables written by UiProvider (tokensToCss), so this file never names a hex.
  */
 
+:root {
+  /*
+   * The notch or island and the home bar: the page's own insets, or those of the page around it when
+   * the panel runs in Home Assistant's iframe (iOS gives an iframe none; the app measures them).
+   */
+  --ui-safe-top: max(env(safe-area-inset-top), var(--ui-frame-safe-top, 0px));
+  --ui-safe-bottom: max(env(safe-area-inset-bottom), var(--ui-frame-safe-bottom, 0px));
+}
+
+/* toasts at the top keep clear of the notch or island */
+.mantine-Notifications-root[data-position^='top'] {
+  top: calc(var(--mantine-spacing-md) + var(--ui-safe-top));
+}
+
 html,
 body {
   background: var(--ui-bg-page);

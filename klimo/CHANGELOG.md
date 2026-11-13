@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.37
+
+- **Nothing hides under the iPhone's notch or Dynamic Island.** iOS gives its safe-area insets to the top
+  page only, so inside Home Assistant's frame the panel saw none: when the frame reached the top of the
+  screen, the page's header, the toasts and a tall sheet went under the island, and the tab bar sat on
+  the home bar. The panel now reads the insets of the page around it, less where the frame starts (under
+  Home Assistant's toolbar nothing changes), and keeps the header, the toasts, the sheets, the wizard and
+  the tab bar clear of them; a strip in the page's colour covers the island while the page scrolls.
+
 ## 0.2.36
 
 - **The phone's room list lost its pencils.** A pencil beside every room card, outside it, opened the

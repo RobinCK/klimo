@@ -7,13 +7,27 @@
   flex-direction: column;
   background: var(--ui-bg-page);
   color: var(--ui-text-1);
+  /* the page starts under the notch or island (a phone has no top bar to carry it) */
+  padding-top: var(--ui-safe-top);
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
 }
 
+/* the strip behind the notch or island stays the page's colour while the page scrolls under it */
+.app::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 190;
+  height: var(--ui-safe-top);
+  background: var(--ui-bg-page);
+  pointer-events: none;
+}
+
 .top {
   flex: none;
-  padding-top: env(safe-area-inset-top);
 }
 
 .banner {
@@ -38,7 +52,7 @@
 
 .app[data-has-bottom] .main {
   /* room for the fixed tab bar and the home indicator */
-  padding-bottom: calc(84px + env(safe-area-inset-bottom) + var(--ui-space-16));
+  padding-bottom: calc(84px + var(--ui-safe-bottom) + var(--ui-space-16));
 }
 
 .bottom {
@@ -130,7 +144,7 @@
 .tabBar {
   display: grid;
   grid-template-columns: repeat(var(--tabs, 4), minmax(0, 1fr));
-  padding: 6px 8px calc(10px + env(safe-area-inset-bottom));
+  padding: 6px 8px calc(10px + var(--ui-safe-bottom));
   background: var(--ui-bg-chrome);
   border-top: 1px solid var(--ui-divider);
 }
