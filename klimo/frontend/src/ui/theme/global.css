@@ -12,11 +12,6 @@
   --ui-safe-bottom: max(env(safe-area-inset-bottom), var(--ui-frame-safe-bottom, 0px));
 }
 
-/* toasts at the top keep clear of the notch or island */
-.mantine-Notifications-root[data-position^='top'] {
-  top: calc(var(--mantine-spacing-md) + var(--ui-safe-top));
-}
-
 html,
 body {
   background: var(--ui-bg-page);

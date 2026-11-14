@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.40
+
+- **No empty strip above the page on a phone.** Since 0.2.37 the panel left room for the notch or the
+  Dynamic Island at the top of every page, the toasts and the setup wizard, and in the Home Assistant app,
+  where the panel sits under Home Assistant's own toolbar, that showed as an empty band above the title.
+  The page, its header, the toasts and the wizard start where they did before; only a tall sheet still
+  stops short of the island. The tab bar keeps clear of the home bar as in 0.2.37.
+
 ## 0.2.39
 
 - **A room's consumption counts the pumps' electricity too.** The energy sensor of a pump's plug was

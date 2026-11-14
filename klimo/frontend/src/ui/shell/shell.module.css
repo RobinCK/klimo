@@ -7,27 +7,13 @@
   flex-direction: column;
   background: var(--ui-bg-page);
   color: var(--ui-text-1);
-  /* the page starts under the notch or island (a phone has no top bar to carry it) */
-  padding-top: var(--ui-safe-top);
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
 }
 
-/* the strip behind the notch or island stays the page's colour while the page scrolls under it */
-.app::before {
-  content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 190;
-  height: var(--ui-safe-top);
-  background: var(--ui-bg-page);
-  pointer-events: none;
-}
-
 .top {
   flex: none;
+  padding-top: env(safe-area-inset-top);
 }
 
 .banner {
