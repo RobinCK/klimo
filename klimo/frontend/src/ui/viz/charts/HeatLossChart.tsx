@@ -46,7 +46,8 @@ export function HeatLossChart({ points, fit, ariaLabel, xUnit, yUnit, formatX = 
     const xHi = Math.max(xLo + xStep, Math.ceil(xHi0 / xStep) * xStep);
     // the line's ends stay inside the plot
     const ys = [...points.map((p) => p.y), ...(fit ? [fit.a + fit.b * xLo, fit.a + fit.b * xHi] : [])];
-    const yLo0 = ys.length ? Math.min(...ys) : 0;
+    // heat is never below zero: the line is cut there
+    const yLo0 = ys.length ? Math.max(0, Math.min(...ys)) : 0;
     const yHi0 = ys.length ? Math.max(...ys) : 10;
     const yStep = [1, 2, 5, 10, 20, 25, 50, 100, 200, 500].find((st) => (yHi0 - yLo0) / st <= 4) ?? 1000;
     const yLo = Math.floor(yLo0 / yStep) * yStep;
@@ -57,6 +58,7 @@ export function HeatLossChart({ points, fit, ariaLabel, xUnit, yUnit, formatX = 
       Y: linear(yLo, yHi, PY_BOTTOM, PY_TOP),
       xLo,
       xHi,
+      yLo,
       xTicks: gridValues(xLo, xHi, xStep),
       yTicks: gridValues(yLo, yHi, yStep),
     };
@@ -73,7 +75,7 @@ export function HeatLossChart({ points, fit, ariaLabel, xUnit, yUnit, formatX = 
           <path d={g.yTicks.map((v) => `M${g.px0.toFixed(1)} ${g.Y(v).toFixed(1)}H${PX1}`).join('')} className={s.heatLossGrid} vectorEffect="non-scaling-stroke" />
           {fit ? (
             <path
-              d={`M${g.X(g.xLo).toFixed(1)} ${g.Y(fit.a + fit.b * g.xLo).toFixed(1)}L${g.X(g.xHi).toFixed(1)} ${g.Y(fit.a + fit.b * g.xHi).toFixed(1)}`}
+              d={`M${g.X(fitFrom(fit, g.xLo, g.yLo)).toFixed(1)} ${g.Y(fit.a + fit.b * fitFrom(fit, g.xLo, g.yLo)).toFixed(1)}L${g.X(g.xHi).toFixed(1)} ${g.Y(fit.a + fit.b * g.xHi).toFixed(1)}`}
               className={s.heatLossFit}
               vectorEffect="non-scaling-stroke"
             />
@@ -102,4 +104,9 @@ export function HeatLossChart({ points, fit, ariaLabel, xUnit, yUnit, formatX = 
       </div>
     </div>
   );
+}
+
+/** Where the line enters the plot: at its left edge, or later where it rises above the bottom. */
+function fitFrom(fit: { a: number; b: number }, xLo: number, yLo: number): number {
+  return fit.b > 0 && fit.a + fit.b * xLo < yLo ? (yLo - fit.a) / fit.b : xLo;
 }

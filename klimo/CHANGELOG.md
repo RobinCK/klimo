@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.42
+
+- **The heat characteristic's chart reads cleanly.** The difference axis no longer steps by 2.5 K (which
+  rounded to «3, 5, 8, 10, 13»), and the heat axis stops at zero instead of following the line below it,
+  in the widget and on System → Consumption alike.
+- The README shows the widgets in English.
+
 ## 0.2.41
 
 - **Four dashboard widgets.** New Lovelace cards that chart the house rather than control it, each with a

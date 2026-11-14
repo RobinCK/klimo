@@ -76,7 +76,7 @@
  * `klimo-room-sheet` and `klimo-open`).
  */
 
-const VERSION = '0.2.41';
+const VERSION = '0.2.42';
 
 /* ─────────────────────────────── 1 Tokens ──────────────────────────────────────────────────────
  * The same values as the panel's design tokens. `npm run tokens:card` in klimo/frontend copies
@@ -4253,7 +4253,8 @@ function niceTicks(lo, hi, count = 4) {
   const span = Math.max(hi - lo, 1e-6);
   const raw = span / count;
   const mag = 10 ** Math.floor(Math.log10(raw));
-  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) || 10 * mag;
+  // no 2.5: whole-number labels stay exact
+  const step = [1, 2, 5, 10].map((m) => m * mag).find((s) => s >= raw) || 10 * mag;
   const a = Math.floor(lo / step) * step;
   const b = Math.ceil(hi / step) * step;
   const out = [];
@@ -4595,7 +4596,8 @@ class KlimoHeatLossCard extends KlimoWidget {
     const xt = niceTicks(Math.min(...xs), Math.max(...xs), 5);
     // the line's ends stay inside the plot
     const ends = fit ? [fit.a + fit.b * xt[0], fit.a + fit.b * xt[xt.length - 1]] : [];
-    const yt = niceTicks(Math.min(...ys, ...ends), Math.max(...ys, ...ends), 3);
+    // heat is never below zero: the line is cut there
+    const yt = niceTicks(Math.max(0, Math.min(...ys, ...ends)), Math.max(...ys, ...ends), 3);
     const [x0, x1] = [xt[0], xt[xt.length - 1]];
     const [y0, y1] = [yt[0], yt[yt.length - 1]];
     const X = (x) => pctOf(x, x0, x1);
