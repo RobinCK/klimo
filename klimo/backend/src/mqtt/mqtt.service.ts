@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy, Optional } from '@nestjs/common';
 import { errorText, LogOnce } from '../common/logger';
 import { Db } from '../db/database';
 import { env, type Env } from '../env';
@@ -17,6 +17,7 @@ import type {
   Id,
   IEngine,
   IHistory,
+  IHouseStats,
   IMqtt,
   ISupervisor,
   ITexts,
@@ -25,8 +26,9 @@ import type {
   Season,
   SeasonState,
   SparkDto,
+  StatsAttrs,
 } from '../shared/model';
-import { BUS, CLOCK, CONFIG_STORE, HA_PORT, HISTORY, MQTT_TRANSPORT, SUPERVISOR } from '../tokens';
+import { BUS, CLOCK, CONFIG_STORE, HA_PORT, HISTORY, HOUSE_STATS, MQTT_TRANSPORT, SUPERVISOR } from '../tokens';
 import { CommandsService } from './commands.service';
 import { buildDiscovery, commandSubscriptions, deviceInfo, TOPIC, type DiscoveredEntity, type DeviceInfo } from './discovery';
 import {
@@ -90,6 +92,8 @@ const READY_FALLBACK_MS = 20_000;
 const HEARTBEAT_MS = 60_000;
 const SPARKS_EVERY_MS = 5 * 60_000;
 const SPARKS_MIN_REAL_MS = 5_000;
+/** The widgets' sensor (sensor.klimo_stats) is read again this often. */
+const STATS_EVERY_MS = 5 * 60_000;
 const OFFLINE_ALERT_MS = 5 * 60_000;
 const DORMANT =
   'No MQTT broker found. Install the Mosquitto broker add-on and the MQTT integration, or set mqtt_host in the add-on options.';
@@ -159,6 +163,11 @@ export class MqttService implements IMqtt, OnApplicationBootstrap, OnModuleDestr
   private sparksRooms = '';
   private sparksLoading = false;
 
+  private statsDoc: StatsAttrs | null = null;
+  private statsAt = Number.NEGATIVE_INFINITY;
+  private statsReal = Number.NEGATIVE_INFINITY;
+  private statsLoading = false;
+
   private chain: Promise<void> = Promise.resolve();
   private passTimer: { cancel(): void } | null = null;
   private forceNext = false;
@@ -178,6 +187,7 @@ export class MqttService implements IMqtt, OnApplicationBootstrap, OnModuleDestr
     @Inject(MqttPorts) private readonly ports: MqttPortAccess,
     @Inject(CommandsService) private readonly commands: CommandsService,
     @Inject(Z2mService) private readonly z2m: Z2mService,
+    @Optional() @Inject(HOUSE_STATS) private readonly houseStats: IHouseStats | null = null,
   ) {
     transport.onConnect(() => void this.onConnected());
     transport.onClose(() => this.onDisconnected());
@@ -465,6 +475,7 @@ export class MqttService implements IMqtt, OnApplicationBootstrap, OnModuleDestr
       const view = this.view(ctx);
       if (view) await this.publishStates(view, new Set(opts.urgentRooms ?? []), !!opts.urgentHub);
       this.refreshSparks(ctx.cfg);
+      this.refreshStats();
       this.once.reset('pass');
     } catch (e) {
       this.once.error('pass', `Publishing failed: ${e instanceof Error ? e.stack ?? e.message : String(e)}`);
@@ -620,6 +631,11 @@ export class MqttService implements IMqtt, OnApplicationBootstrap, OnModuleDestr
     const hubOpts = (): PublishOpts => ({ retain: true, qos: 0, coalesce: true, urgent: urgentHub });
     await this.offerState(TOPIC.hubState, () => hubState(view), hubOpts);
     await this.offerState(TOPIC.hubAttrs, () => doc(hubAttrs(ix)), hubOpts);
+    const stats = this.statsDoc;
+    if (stats) {
+      await this.offerState(TOPIC.statsAttrs, () => doc(stats));
+      await this.offerState(TOPIC.statsState, () => 'ok');
+    }
   }
 
   /** Builds and offers one state topic; a topic no current entity reads is never published (it could not be pruned). */
@@ -769,6 +785,28 @@ export class MqttService implements IMqtt, OnApplicationBootstrap, OnModuleDestr
       .catch((e: unknown) => this.once.warn('sparks', `Sparklines unavailable: ${errorText(e)}`))
       .finally(() => {
         this.sparksLoading = false;
+      });
+  }
+
+  /** The widgets' charts, every 5 minutes (they read the recorder): published by the next pass. */
+  private refreshStats(): void {
+    const stats = this.houseStats;
+    if (!stats || this.statsLoading) return;
+    const due = this.clock.now() - this.statsAt >= STATS_EVERY_MS || this.clock.now() < this.statsAt;
+    if (!due || this.timers.now() - this.statsReal < SPARKS_MIN_REAL_MS) return;
+    this.statsLoading = true;
+    this.statsReal = this.timers.now();
+    stats
+      .widgets()
+      .then((doc) => {
+        if (!doc) return;
+        this.statsDoc = doc;
+        this.statsAt = this.clock.now();
+        this.schedulePass();
+      })
+      .catch((e: unknown) => this.once.warn('stats', `Widget statistics unavailable: ${errorText(e)}`))
+      .finally(() => {
+        this.statsLoading = false;
       });
   }
 

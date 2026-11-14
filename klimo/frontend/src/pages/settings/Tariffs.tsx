@@ -101,6 +101,23 @@ export function TariffsSection({ bundle, onSaved, canEdit }: { bundle: SettingsB
             ],
           }}
         />
+        <NumberField
+          label={t('Boiler efficiency')}
+          unit="%"
+          value={v.boilerEfficiencyPct}
+          min={50}
+          max={110}
+          step={1}
+          onChange={(boilerEfficiencyPct) => set({ boilerEfficiencyPct })}
+          disabled={!canEdit}
+          hint={{
+            title: t('The part of the gas’s energy that reaches the water.'),
+            text: [
+              t('About 90 % for most boilers: a condensing one gives 95–98 %, an older conventional one 85–90 %. Its manual or the boiler’s plate tells.'),
+              t('{product} uses it for the house’s heat characteristic on System → Consumption: heat from gas = gas × calorific value × efficiency.', { product: brand.productName }),
+            ],
+          }}
+        />
       </Stack>
     </Section>
   );

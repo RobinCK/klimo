@@ -184,11 +184,13 @@ export function defaultSettings(lang: Lang = 'en'): GeneralSettings {
 
 /** Calorific value of natural gas, kWh per m³ (the usual billing value in Europe). */
 export const DEFAULT_GAS_KWH_PER_M3 = 10.5;
+/** A gas boiler's efficiency when nobody set it: between a condensing and a conventional one. */
+export const DEFAULT_BOILER_EFFICIENCY_PCT = 90;
 /** Base of the heating degree-days on the consumption charts. */
 export const HDD_BASE_C = 18;
 
 export function defaultTariffs(): EnergyTariffs {
-  return { currency: '', electricityPerKwh: null, gasPrice: null, gasPriceUnit: 'm³', gasKwhPerM3: DEFAULT_GAS_KWH_PER_M3 };
+  return { currency: '', electricityPerKwh: null, gasPrice: null, gasPriceUnit: 'm³', gasKwhPerM3: DEFAULT_GAS_KWH_PER_M3, boilerEfficiencyPct: DEFAULT_BOILER_EFFICIENCY_PCT };
 }
 
 /**

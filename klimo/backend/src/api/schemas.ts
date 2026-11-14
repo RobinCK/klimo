@@ -451,6 +451,7 @@ export const generalSettingsPatch: Schema<DeepPartial<GeneralSettingsPatch>> = p
     gasPrice: nullable(num(0, 10_000)),
     gasPriceUnit: oneOf(GAS_PRICE_UNITS),
     gasKwhPerM3: num(5, 15),
+    boilerEfficiencyPct: num(50, 110),
   }),
   onboardingDismissed: bool(),
 });

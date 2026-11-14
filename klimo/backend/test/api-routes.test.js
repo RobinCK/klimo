@@ -169,6 +169,7 @@ GET    /api/energy                                           U
 PATCH  /api/energy                                           A
 POST   /api/energy/setup                                     A
 GET    /api/energy/consumption                               U
+GET    /api/energy/heat-loss                                 U
 GET    /api/triggers                                         U
 POST   /api/triggers                                         A
 PATCH  /api/triggers/:id                                     A

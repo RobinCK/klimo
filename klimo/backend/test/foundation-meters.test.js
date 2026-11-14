@@ -37,7 +37,7 @@ test('a source saved before meters existed reads its power sensor as the electri
 test('a settings row saved before tariffs existed gets the defaults (10.5 kWh per m³)', () => {
   const { tariffs, ...rest } = defaultSettings('uk');
   const settings = singletonFromRow('settings', { id: 'settings', ...rest, tariffs: null });
-  assert.deepEqual(settings.tariffs, { currency: '', electricityPerKwh: null, gasPrice: null, gasPriceUnit: 'm³', gasKwhPerM3: 10.5 });
+  assert.deepEqual(settings.tariffs, { currency: '', electricityPerKwh: null, gasPrice: null, gasPriceUnit: 'm³', gasKwhPerM3: 10.5, boilerEfficiencyPct: 90 });
   assert.equal(tariffs.gasKwhPerM3, 10.5);
 });
 
@@ -56,7 +56,7 @@ test('meters: one per kind, in a unit that fits; tariffs are validated', () =>
     assert.equal(e.issues[0].path, 'meters.0.entityId');
 
     await config.patchSingleton('settings', { tariffs: { currency: '₴', gasPrice: 7.96, electricityPerKwh: 4.32 } }, ACTOR);
-    assert.deepEqual(config.singleton('settings').tariffs, { currency: '₴', electricityPerKwh: 4.32, gasPrice: 7.96, gasPriceUnit: 'm³', gasKwhPerM3: 10.5 });
+    assert.deepEqual(config.singleton('settings').tariffs, { currency: '₴', electricityPerKwh: 4.32, gasPrice: 7.96, gasPriceUnit: 'm³', gasKwhPerM3: 10.5, boilerEfficiencyPct: 90 });
     e = await rejection(() => config.patchSingleton('settings', { tariffs: { gasKwhPerM3: 40 } }, ACTOR));
     assert.equal(e.issues[0].path, 'tariffs.gasKwhPerM3');
   }));

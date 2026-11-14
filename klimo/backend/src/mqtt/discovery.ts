@@ -26,6 +26,8 @@ export const TOPIC = {
   hubAttrs: 'klimo/hub/attrs',
   replyState: 'klimo/reply/state',
   replyAttrs: 'klimo/reply/attrs',
+  statsState: 'klimo/stats/state',
+  statsAttrs: 'klimo/stats/attrs',
   house: 'klimo/house/state',
   resync: 'klimo/resync/press',
   room: (roomId: Id) => `klimo/room/${roomId}/state`,
@@ -140,6 +142,7 @@ const NAMES = {
   resync: ['Resend targets', 'Переслати цілі'],
   hub: ['Hub', 'Хаб'],
   reply: ['Reply', 'Відповідь'],
+  stats: ['Statistics', 'Статистика'],
   bivalent_point: ['Bivalent point', 'Точка бівалентності'],
   pump: ['Pump', 'Насос'],
   allowed: ['allowed', 'дозволено'],
@@ -483,6 +486,20 @@ export function buildDiscovery(input: DiscoveryInput): DiscoveredEntity[] {
       json_attributes_topic: TOPIC.replyAttrs,
     },
     read: { stateTopic: TOPIC.replyState, stateKey: null, attrsTopic: TOPIC.replyAttrs, attrs: whole },
+  });
+  c.add({
+    component: 'sensor',
+    uniqueId: 'klimo_stats',
+    object: 'klimo_stats',
+    role: 'stats',
+    name: label('stats', lang),
+    config: {
+      icon: 'mdi:chart-bell-curve-cumulative',
+      entity_category: 'diagnostic',
+      state_topic: TOPIC.statsState,
+      json_attributes_topic: TOPIC.statsAttrs,
+    },
+    read: { stateTopic: TOPIC.statsState, stateKey: null, attrsTopic: TOPIC.statsAttrs, attrs: whole },
   });
 
   /* plant */

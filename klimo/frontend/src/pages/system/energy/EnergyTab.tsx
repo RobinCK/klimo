@@ -48,6 +48,7 @@ import {
 } from '@i18n';
 import type { SystemData } from '../shared';
 import { useManifolds } from '../Manifolds';
+import { HeatCharacteristic } from './HeatCharacteristic';
 import { PumpMetersTable } from './pumpMeters';
 
 const FIVE_MIN = 5 * 60_000;
@@ -102,6 +103,7 @@ export function EnergyTab({ d, phone, nav }: { d: SystemData; phone: boolean; na
         )}
       </Section>
       {c.data?.configured ? <ByRoom d={d} data={c.data} phone={phone} /> : null}
+      <HeatCharacteristic />
       <Consumers d={d} data={c.data} phone={phone} reload={() => void c.reload()} />
     </Stack>
   );

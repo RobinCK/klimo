@@ -54,6 +54,8 @@ export interface ArchiveRun {
 
 export interface Archive {
   outdoor: HourRow[];
+  /** The house's temperature, as Klimo's room sensors would have recorded it. */
+  indoor: HourRow[];
   sunnyWall: HourRow[];
   gas: HourRow[];
   hpEnergy: HourRow[];
@@ -145,9 +147,10 @@ class HourAcc {
 
 export function buildArchive(spec: ArchiveSpec, start: MeterReadings): Archive {
   const climate = new ArchiveClimate(spec.seed);
-  const out: Archive = { outdoor: [], sunnyWall: [], gas: [], hpEnergy: [], hpHeat: [], floorPump: [], end: { ...start }, runs: [] };
+  const out: Archive = { outdoor: [], indoor: [], sunnyWall: [], gas: [], hpEnergy: [], hpHeat: [], floorPump: [], end: { ...start }, runs: [] };
   const readings = { ...start };
   const outdoorAcc = new HourAcc();
+  const indoorAcc = new HourAcc();
   const wallAcc = new HourAcc();
   const meterRow = (rows: HourRow[], hour: EpochMs, value: number, base: number) => {
     const state = meterValue(value);
@@ -216,11 +219,14 @@ export function buildArchive(spec: ArchiveSpec, start: MeterReadings): Archive {
       readings.floorPumpKwh += (hp.on || boiler.on ? FLOOR_PUMP_KW : PLUG_STANDBY_KW) * h;
 
       outdoorAcc.add(tout);
+      indoorAcc.add(tin);
       wallAcc.add(tout + sunnyWallBonus(minute, doy));
       if ((t + MIN) % HOUR === 0 && t + MIN <= lastHour) {
         const o = outdoorAcc.row(hour);
+        const i = indoorAcc.row(hour);
         const s = wallAcc.row(hour);
         if (o) out.outdoor.push(o);
+        if (i) out.indoor.push(i);
         if (s) out.sunnyWall.push(s);
         meterRow(out.gas, hour, readings.gasM3, start.gasM3);
         meterRow(out.hpEnergy, hour, readings.hpKwh, start.hpKwh);

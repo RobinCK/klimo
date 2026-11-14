@@ -410,6 +410,7 @@ export class SimWorldService implements ISimControl, OnModuleInit, OnApplication
     );
     const rec = this.ha.recorder;
     rec.importHours('sensor.outdoor_temperature', 'measurement', archive.outdoor);
+    for (const r of this.config.list('rooms')) rec.importHours(`sensor.klimo_${r.slug.toLowerCase().replace(/[^a-z0-9_]/g, '_')}_temperature`, 'measurement', archive.indoor);
     rec.importHours(SUNNY_WALL_ENTITY, 'measurement', archive.sunnyWall);
     rec.importHours(GAS_METER, 'meter', archive.gas);
     for (const m of GAS_METER_MIRRORS) {

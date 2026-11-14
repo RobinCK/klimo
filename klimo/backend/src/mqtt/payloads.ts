@@ -882,6 +882,9 @@ export function hubAttrs(ix: ViewIndex): HubAttrs {
         at: line.at,
         attn: !!issue || s.state === 'window',
         ord: s.order,
+        h: r0(s.humidityPct),
+        dk: s.device.kind,
+        vp: r0(s.device.valvePct),
       };
     });
 

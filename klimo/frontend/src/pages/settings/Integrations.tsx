@@ -10,7 +10,7 @@ import { Button, CodeBlock, KeyValueList, Row, Section, Select, Skeleton, Stack,
 import { t } from '@i18n';
 import { HaControlHelp } from './HaControl';
 
-type CardKind = 'room' | 'rooms' | 'thermostat' | 'house' | 'system';
+type CardKind = 'room' | 'rooms' | 'thermostat' | 'house' | 'system' | 'heating' | 'heatLoss' | 'cycles' | 'inertia';
 
 function cardYaml(kind: CardKind, room: RoomSummary | undefined): string {
   const roomRef = room?.slug ?? 'living';
@@ -25,6 +25,14 @@ function cardYaml(kind: CardKind, room: RoomSummary | undefined): string {
       return ['type: custom:klimo-house-card', 'show_profile: true', 'profile_change: confirm', 'show_system: [source, pumps, outdoor]'].join('\n');
     case 'system':
       return ['type: custom:klimo-system-card', 'show: [sources, circuits, energy, triggers]'].join('\n');
+    case 'heating':
+      return ['type: custom:klimo-heating-card', 'rooms: all'].join('\n');
+    case 'heatLoss':
+      return 'type: custom:klimo-heat-loss-card';
+    case 'cycles':
+      return ['type: custom:klimo-cycles-card', 'show_pumps: true'].join('\n');
+    case 'inertia':
+      return 'type: custom:klimo-inertia-card';
   }
 }
 
@@ -40,6 +48,14 @@ function cardLabel(kind: CardKind): string {
       return t('House');
     case 'system':
       return t('System');
+    case 'heating':
+      return t('Rooms and heating');
+    case 'heatLoss':
+      return t('Heat characteristic');
+    case 'cycles':
+      return t('Boiler cycles');
+    case 'inertia':
+      return t('Thermal inertia');
   }
 }
 
@@ -145,7 +161,7 @@ export function IntegrationsSection({
                 ariaLabel={t('Card')}
                 size="sm"
                 value={card}
-                options={(['room', 'rooms', 'thermostat', 'house', 'system'] as const).map((k) => ({ value: k, label: cardLabel(k) }))}
+                options={(['room', 'rooms', 'thermostat', 'house', 'system', 'heating', 'heatLoss', 'cycles', 'inertia'] as const).map((k) => ({ value: k, label: cardLabel(k) }))}
                 onChange={setCard}
               />
             </Row>

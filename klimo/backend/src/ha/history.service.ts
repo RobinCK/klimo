@@ -418,6 +418,29 @@ export class HistoryService implements IHistory, RecentRoomTemps, OnModuleInit, 
     return out;
   }
 
+  /**
+   * Means of the rooms' temperatures over [from, to) from Home Assistant's statistics of Klimo's own
+   * room sensors: hours (kept for good, they are measurements) or 5 minutes (the last ten days). Rooms
+   * without statistics are left out; a failing recorder throws.
+   */
+  async indoorMeans(from: EpochMs, to: EpochMs, period: 'hour' | '5minute'): Promise<Record<Id, { start: EpochMs; mean: number }[]>> {
+    const rooms = this.config.list('rooms');
+    if (!rooms.length || to <= from || !this.ha.connected) return {};
+    const ids = this.klimoIds(rooms);
+    const key = `indoor|${period}|${rooms.map((r) => r.id).join(',')}|${minuteOf(from)}|${minuteOf(to)}`;
+    return this.cached(key, STATISTICS_TTL, async () => {
+      const stats = await this.ha.statistics(rooms.map((r) => ids.get(r.id)!.temperature), from, to, period, ['mean']);
+      const out: Record<Id, { start: EpochMs; mean: number }[]> = {};
+      for (const r of rooms) {
+        const id = ids.get(r.id)!.temperature;
+        const unit = this.tempUnitOf(id);
+        const rows = (stats[id] ?? []).flatMap((row) => (typeof row.mean === 'number' && Number.isFinite(row.mean) ? [{ start: row.start, mean: unit === '°F' ? fToC(row.mean) : row.mean }] : []));
+        if (rows.length) out[r.id] = rows;
+      }
+      return out;
+    });
+  }
+
   /* ── room day ──────────────────────────────────────────────────────────────────────────────── */
 
   async roomDay(roomId: Id, date: LocalDate): Promise<RoomDayDto> {

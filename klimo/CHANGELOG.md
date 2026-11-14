@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.2.41
+
+- **Four dashboard widgets.** New Lovelace cards that chart the house rather than control it, each with a
+  visual editor and a YAML snippet in Settings → Integrations:
+  - **Rooms and heating** (`klimo-heating-card`): every room on one temperature scale — where it is against
+    its target, what it is doing, the valve its heads report (or *pump* for a floor) — with how many rooms
+    ask, their mean and the outdoor temperature. A row opens the room's details.
+  - **Heat characteristic** (`klimo-heat-loss-card`): the house's heat loss in W/K, the heat it needs at
+    −10 °C and −20 °C and the outdoor temperature above which it needs none.
+  - **Boiler cycles** (`klimo-cycles-card`): a source's runs over the last 24 hours with the pumps of the
+    floors that follow it, the hourly outdoor temperature, the starts per hour, the average run and pause
+    and the short runs.
+  - **Thermal inertia** (`klimo-inertia-card`): how fast the house cools without heat, from the boiler's
+    night pauses of the last ten days — the time constant τ, the heat capacity, and the next 12 hours at
+    0, −10 and −20 °C outdoors with the hours to 18 °C and 16 °C.
+  They read the new `sensor.klimo_stats`, refreshed every 5 minutes; exclude it from the recorder like the
+  other card sensors. The hub now carries each room's humidity, heating kind and valve opening.
+- **The heat characteristic on System → Consumption.** Day by day over the last 30 days, the heat the
+  sources gave (gas × calorific value × the boiler's efficiency, plus the heat meters of sources without
+  gas) against the difference between the rooms and the outdoors, the line through the heating days, and
+  what it says: heat loss, the load in a frost, the balance temperature. *Settings → Energy prices* has a
+  new field for the boiler's efficiency (90 % by default).
+
 ## 0.2.40
 
 - **No empty strip above the page on a phone.** Since 0.2.37 the panel left room for the notch or the

@@ -418,7 +418,55 @@
         at: r.at,
         attn: !!r.iss || r.st === 'window',
         ord: i,
+        h: r.h,
+        dk: r.dev.k,
+        vp: r.dev.k === 'trv' || r.dev.k === 'trvfloor' ? (r.st === 'heat' ? 28 + i * 7 : 0) : null,
       })),
+    };
+  }
+
+  /** sensor.klimo_stats: a boiler that cycles all day (some short runs on the mild afternoon), its floor pump, a month of heating days. */
+  function statsAttrs() {
+    const now = Date.now();
+    const from = Math.floor((now - 24 * 60 * MIN) / MIN) * MIN;
+    const runs = [];
+    for (let t = 6, i = 0; t < 1400; i++) {
+      const on = i % 6 === 2 ? 3 : 12 + ((i * 7) % 11);
+      const off = 16 + ((i * 11) % 23);
+      runs.push([t, t + on]);
+      t += on + off;
+    }
+    runs.push([1431, null]);
+    const pump = [];
+    for (const [a, b] of runs) {
+      const end = b === null ? null : Math.min(1440, b + 10);
+      const last = pump[pump.length - 1];
+      if (last && last[1] !== null && a <= last[1]) last[1] = end === null ? null : Math.max(last[1], end);
+      else pump.push([a, end]);
+    }
+    const out = Array.from({ length: 24 }, (_, h) => Math.round((4.6 - 7 * Math.sin((Math.PI * h) / 23)) * 10) / 10);
+    const pts = [[14.6, 105], [16.4, 113], [18.9, 133], [17.6, 121], [15.3, 104], [19.8, 140], [22.7, 160], [20.5, 146], [17.9, 126], [16.7, 116], [18.2, 128], [19.1, 136]];
+    return {
+      kv: 'klimo_stats',
+      v: 1,
+      from,
+      now,
+      out,
+      src: [
+        { id: 's_boiler', n: 'Газовий котел', runs, p: [{ id: 'p_floor', n: 'Насос ТП', runs: pump }] },
+        { id: 's_hp', n: 'Тепловий насос', runs: [[60, 300], [700, 980]], p: [] },
+      ],
+      heat: {
+        from: '2026-10-08',
+        to: '2026-11-06',
+        pts,
+        tin: 21.4,
+        fit: { wpk: 330, a: -10.4, b: 7.62, bal: 22.8, l10: 9.6, l20: 12.8 },
+        kpm: 9.3,
+        eff: 92,
+        ok: true,
+      },
+      inertia: { tau: 41, n: 6, c: 13.5 },
     };
   }
 
@@ -433,6 +481,7 @@
     const out = {};
     const hub = hubAttrs(world);
     out['sensor.klimo_hub'] = entity('sensor.klimo_hub', world.cooling ? 'cooling' : 'heating', { ...hub, friendly_name: 'Klimo hub' });
+    out['sensor.klimo_stats'] = entity('sensor.klimo_stats', 'ok', { ...statsAttrs(), friendly_name: 'Klimo statistics' });
     out['sensor.klimo_reply'] = entity('sensor.klimo_reply', world.replies.length ? world.replies[world.replies.length - 1].reqId : 'none', {
       kv: 'klimo_reply',
       v: 1,

@@ -40,6 +40,7 @@ import type {
   EnergyPatch,
   EnergySetupRequest,
   EntityId,
+  HeatLossDto,
   HouseConsumptionDto,
   ConsumptionQuery,
   SourceConsumptionDto,
@@ -477,6 +478,8 @@ export const api = {
     setup: (body: EnergySetupRequest) => http.post<EnergyDto>('/energy/setup', body),
     /** What the house used in a period and who used it (default: today — the overview energy tile). */
     consumption: (q: Partial<ConsumptionQuery> = {}) => http.get<HouseConsumptionDto>(`/energy/consumption${qs({ range: q.range, date: q.date })}`),
+    /** The house's heat characteristic over the last 30 days. */
+    heatLoss: () => http.get<HeatLossDto>('/energy/heat-loss'),
   },
   triggers: {
     list: () => http.get<TriggerDto[]>('/triggers'),

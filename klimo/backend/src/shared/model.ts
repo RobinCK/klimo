@@ -483,6 +483,8 @@ export interface EnergyTariffs {
   gasPriceUnit: GasPriceUnit; // 'm³'
   /** Calorific value: converts gas volume to energy (boiler efficiency, gas billed per kWh). */
   gasKwhPerM3: number; // 10.5 [5…15]
+  /** The gas boilers' efficiency: the part of the gas's energy that reaches the water (the house's heat characteristic). */
+  boilerEfficiencyPct: number; // 90 [50…110]
 }
 
 /** Singleton `safety` (System «Захист і запобіжники»). */
@@ -3548,6 +3550,71 @@ export interface RoomConsumptionDto {
   now: EpochMs;
 }
 
+/** One day of the house's heat characteristic (see HeatLossDto). */
+export interface HeatLossDay {
+  date: LocalDate;
+  /** Mean of the rooms' temperatures (Klimo's own sensors), of the hours recorded. */
+  indoorC: Celsius | null;
+  outdoorC: Celsius | null;
+  /** indoorC − outdoorC. */
+  deltaK: number | null;
+  /** The gas meters' energy (the calorific value applied to a volume). */
+  gasKwh: number | null;
+  /** Heat the sources gave: gas × the boilers' efficiency, plus the heat meters of the sources without gas. */
+  heatKwh: number | null;
+  /** The day is a point of the fit: heat, both temperatures and a difference of at least 2 K. */
+  used: boolean;
+}
+
+/** The line through the days: heat a day = slope × ΔT + intercept. */
+export interface HeatLossFit {
+  /** kWh a day per kelvin of difference. */
+  slopeKwhPerK: number;
+  interceptKwh: number;
+  /** How well the line fits (0…1). */
+  r2: number;
+  /** Heat loss of the house: watts per kelvin (slope ÷ 24 h). */
+  wPerK: number;
+  /** Outdoor temperature above which no heating is needed, at the mean indoor temperature. */
+  balanceC: Celsius;
+  /** Heat the house needs at −10 °C and at −20 °C outdoors, kW. */
+  loadKw: { minus10: number; minus20: number };
+}
+
+/**
+ * GET /api/energy/heat-loss — the house's heat characteristic: day by day over the last 30 complete
+ * days, the heat the sources gave against the difference between the rooms and the outdoors, and the
+ * line through them. Heat counts gas (by the calorific value and the boilers' efficiency) and the heat
+ * meters of sources without gas; electric heaters and air conditioners without a heat meter are not counted.
+ */
+export interface HeatLossDto {
+  /** First and last day (the last is yesterday). */
+  from: LocalDate;
+  to: LocalDate;
+  days: HeatLossDay[];
+  /** Days that make the fit. */
+  used: number;
+  /** Mean indoor temperature of those days (the loads assume it). */
+  indoorC: Celsius | null;
+  /** null below 5 days or under 3 K of spread between them, or when the line does not rise. */
+  fit: HeatLossFit | null;
+  gasKwhPerM3: number;
+  boilerEfficiencyPct: number;
+  /** A source has a gas or heat meter. */
+  configured: boolean;
+  recorder: 'ok' | 'unavailable';
+  now: EpochMs;
+}
+
+/** The last 24 h of a source's runs (see StatsAttrs.src). Minutes from StatsAttrs.from; an open end runs on now. */
+export interface SourceCycles {
+  id: Id;
+  n: string;
+  runs: [number, number | null][];
+  /** The pumps of the circuits that run with the source (a floor that follows it). */
+  p: { id: Id; n: string; runs: [number, number | null][] }[];
+}
+
 /* 7.10 Simulator (KLIMO_SIMULATE=1 only) --------------------------------------------------------------- */
 
 export type SimScenarioId = 'heating_evening' | 'frost_morning' | 'blackout_sun' | 'shoulder' | 'summer';
@@ -3673,7 +3740,45 @@ export interface HubAttrs {
     at: EpochMs | null;
     attn: boolean;
     ord: number;
+    /** Humidity %, null when the room has no sensor. */
+    h: Pct | null;
+    /** What heats or cools the room (RoomSummary.device.kind) and its valve opening for heads that report it. */
+    dk: RoomSummary['device']['kind'];
+    vp: Pct | null;
   }[];
+}
+
+/**
+ * sensor.klimo_stats attributes (topic klimo/stats/attrs), refreshed every 5 minutes: what the
+ * dashboard widgets chart. The last 24 h of the sources' runs with the hourly outdoor temperature,
+ * and the house's heat characteristic (HeatLossDto in short).
+ */
+export interface StatsAttrs {
+  kv: 'klimo_stats';
+  v: 1;
+  /** Start of the 24 h; `now` its end. */
+  from: EpochMs;
+  now: EpochMs;
+  /** Outdoor mean of each hour since `from`, oldest first (24); null where none is recorded. */
+  out: (number | null)[];
+  src: SourceCycles[];
+  heat: {
+    from: LocalDate;
+    to: LocalDate;
+    /** The days of the fit: [ΔT K, heat kWh]. */
+    pts: [number, number][];
+    tin: Celsius | null;
+    fit: { wpk: number; a: number; b: number; bal: Celsius; l10: number; l20: number } | null;
+    kpm: number;
+    eff: number;
+    ok: boolean;
+  } | null;
+  /**
+   * How fast the house cools without heat, from the boiler's night pauses of the last ten days: the
+   * time constant τ (h) of the rooms' mean temperature falling towards the outdoors, the pauses it
+   * comes from, and the heat capacity τ × the heat loss (kWh/K) when the heat characteristic has a fit.
+   */
+  inertia: { tau: number; n: number; c: number | null } | null;
 }
 
 /** sensor.klimo_<slug>_card attributes (topic klimo/room/<roomId>/card). Budget ≤ 4 KB. */
@@ -4413,6 +4518,15 @@ export interface IHistory {
   roomDay(roomId: Id, date: LocalDate): Promise<RoomDayDto>;
   sparks(roomIds?: Id[]): Promise<Record<Id, SparkDto>>;
   outdoor(days: number): Promise<OutdoorHistoryDto>;
+  /** Means of the rooms' temperatures (Klimo's own sensors) from Home Assistant's statistics, by room: hours, or 5 minutes for the last ten days. */
+  indoorMeans(from: EpochMs, to: EpochMs, period: 'hour' | '5minute'): Promise<Record<Id, { start: EpochMs; mean: number }[]>>;
+}
+
+/** ha/house-stats.service.ts — the house's heat characteristic and the sources' last 24 h, for the panel and the widgets. */
+export interface IHouseStats {
+  heatLoss(): Promise<HeatLossDto>;
+  /** The dashboard widgets' sensor; null while Home Assistant is not connected. */
+  widgets(): Promise<StatsAttrs | null>;
 }
 
 /** ha/consumption.service.ts — what sources used, from their meters' statistics and Klimo's run spans. */

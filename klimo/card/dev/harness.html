@@ -94,6 +94,8 @@
       card('klimo-house-card', { show_profile: true, profile_change: 'confirm', show_attention: true }, house),
       card('klimo-rooms-card', { rooms: 'all', variant: 'compact', sort: 'config' }, house),
       card('klimo-thermostat-card', { rooms: 'all' }, house),
+      card('klimo-heating-card', { rooms: 'all' }, house),
+      card('klimo-cycles-card', {}, house),
     );
     framed('Телефон · 412 px · світла тема · охолодження', frame);
     return house;
@@ -110,13 +112,15 @@
       column(card('klimo-house-card', {}, house), card('klimo-thermostat-card', { room: 'vitalnia' }, house)),
       column(...slugs.slice(0, 4).map((room) => card('klimo-room-card', { room }, house))),
       column(card('klimo-system-card', { show: ['sources', 'circuits', 'energy', 'triggers'] }, house), ...slugs.slice(4).map((room) => card('klimo-room-card', { room }, house))),
+      column(card('klimo-heating-card', { rooms: 'all' }, house), card('klimo-heat-loss-card', {}, house)),
+      column(card('klimo-cycles-card', {}, house), card('klimo-inertia-card', {}, house)),
     );
     framed('Планшет · 1180 px · темна тема · опалення', frame);
     return house;
   }
 
   async function start() {
-    const tags = ['klimo-house-card', 'klimo-room-card', 'klimo-rooms-card', 'klimo-thermostat-card', 'klimo-system-card'];
+    const tags = ['klimo-house-card', 'klimo-room-card', 'klimo-rooms-card', 'klimo-thermostat-card', 'klimo-system-card', 'klimo-heating-card', 'klimo-heat-loss-card', 'klimo-cycles-card', 'klimo-inertia-card'];
     const script = document.createElement('script');
     // HA loads the bundle as a module; browsers refuse module scripts from file://
     if (location.protocol !== 'file:') script.type = 'module';

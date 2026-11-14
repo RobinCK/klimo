@@ -3,7 +3,8 @@
  *
  * Room-by-room climate on the Home Assistant dashboard. The add-on publishes everything the
  * cards show as MQTT entities: the hub sensor (`sensor.klimo_hub`: house, season, sources,
- * rooms), one card sensor per room (`sensor.klimo_<slug>_card`: card texts, sparkline,
+ * rooms), the widgets' statistics sensor (`sensor.klimo_stats`: the last 24 h of runs, the
+ * heat characteristic, the inertia), one card sensor per room (`sensor.klimo_<slug>_card`: card texts, sparkline,
  * thermostat model, device sync) and a reply sensor (`sensor.klimo_reply`: the answers to
  * card commands). Entities are also found by the shape of their attributes, so renamed ids
  * keep working. Commands go back through `mqtt.publish` on `klimo/command`; every command
@@ -58,12 +59,24 @@
  *   show: [sources, circuits, energy, triggers]
  *   sources: all                          # all | active | [source ids]
  *
+ *   type: custom:klimo-heating-card       # rooms on one scale: now, target, valve; asking, average, outdoor
+ *   rooms: all                            # all | [slugs or ids]
+ *   exclude: []
+ *
+ *   type: custom:klimo-heat-loss-card     # heat loss W/K, the load at −10/−20 °C (sensor.klimo_stats)
+ *
+ *   type: custom:klimo-cycles-card        # a source's runs over 24 h with its pumps (sensor.klimo_stats)
+ *   source: s_boiler                      # default: the gas boiler
+ *   show_pumps: true
+ *
+ *   type: custom:klimo-inertia-card       # cooling time constant, heat capacity, 12 h forecast (sensor.klimo_stats)
+ *
  * Common options: theme (auto | dark | light), language (auto | uk | en), title,
  * hub_entity, tap_action / hold_action / double_tap_action (Home Assistant actions plus
  * `klimo-room-sheet` and `klimo-open`).
  */
 
-const VERSION = '0.2.40';
+const VERSION = '0.2.41';
 
 /* ─────────────────────────────── 1 Tokens ──────────────────────────────────────────────────────
  * The same values as the panel's design tokens. `npm run tokens:card` in klimo/frontend copies
@@ -524,6 +537,26 @@ const STRINGS = {
     k_humidity: 'вологість', k_window: 'вікно', k_device: 'пристрій', k_source: 'джерело', k_pumps: 'насоси',
     k_outdoor: 'надворі', k_sources: 'джерела', k_circuits: 'контури', k_energy: 'енергія', k_triggers: 'тригери',
     k_boost: 'підсилення', k_airing: 'провітрювання',
+    statsWaiting: 'Чекаю на статистику Klimo — вона оновлюється кожні 5 хвилин.',
+    w_roomsHeat: 'Кімнати · опалення', w_roomsCool: 'Кімнати · охолодження', w_room: 'Кімната', w_now: 'зараз', w_valve: 'клапан',
+    w_srcOn: 'Працює: {name}', w_srcOff: 'Джерела не працюють', w_floor: 'тепла підлога', w_humidity: 'вологість {v} %',
+    w_pump: 'насос', w_ac: 'кондиц.', w_demandHeat: 'Попит на тепло', w_demandCool: 'Попит на холод', w_ofRooms: 'з {n} кімнат',
+    w_average: 'Середня',
+    w_heatLoss: 'Теплова характеристика', w_days: '{n} {w}', f_days: ['день', 'дні', 'днів'], w_loss: 'Тепловтрати будинку', w_lossShort: 'Тепловтрати',
+    w_wpk: 'Вт/K', w_needAt: 'Потрібно при {t} °C', w_kwUnit: 'кВт', w_kwhUnit: 'кВт·год', w_noHeatAbove: 'Опалення не потрібне вище',
+    w_cOutdoors: '°C надворі', w_heatFromGas: 'Тепло з газу', w_gasBasis: '{k} кВт·год/м³ × ККД котла {e} %',
+    w_noGas: 'Потрібен лічильник газу котла або лічильник тепла джерела — прив’яжіть його на сторінці джерела в Klimo.',
+    w_fewDays: 'Поки замало днів з опаленням: {n} з 5. Лінія з’явиться, коли їх стане більше, з різною погодою.',
+    w_heatAria: 'Тепло джерел за добу проти різниці температур у кімнатах і надворі, з лінією через ці дні',
+    w_cycles: 'Такти за 24 год', w_cyclesOf: '{name} · такти за 24 год', w_onFor: 'Увімкнено · {d}', w_offFor: 'Вимкнено · {d}', w_offDay: 'Не вмикався',
+    w_noSource: 'Немає такого джерела — оберіть його в налаштуваннях картки.', w_source: 'Джерело', w_duty: '{v} % часу', w_starts: 'Пуски',
+    w_perHour: 'за годину', w_startsN: 'Пусків', w_avgRun: 'Сер. такт', w_avgPause: 'Сер. пауза', w_short: 'Короткі < 5 хв', w_minUnit: 'хв',
+    w_cyclesAria: 'Увімкнення {name} і насосів, що йдуть з ним, температура надворі та пуски по годинах за останні 24 години',
+    w_inertia: 'Тепла інерція', w_fromPauses: 'з {n} {w}', f_pauses: ['нічної паузи', 'нічних пауз', 'нічних пауз'], w_tau: 'Стала остигання τ', w_hUnit: 'год',
+    w_capacity: 'Тепломісткість', w_kwhk: 'кВт·год/K', w_noHeatOut: 'Без опалення, надворі', w_downTo: 'до {t} °C',
+    w_noPauses: 'Ще немає нічних пауз опалення, з яких видно, як швидко остигає будинок. Вони з’являться після кількох холодних ночей.',
+    w_coolAria: 'Як остигатиме будинок без опалення від {t} °C за 12 годин при 0, −10 і −20 °C надворі',
+    ed_source: 'Джерело', ed_auto_source: 'газовий котел', ed_pumps: 'Показувати насоси',
   },
   en: {
     waiting: 'Waiting for Klimo data',
@@ -783,6 +816,26 @@ const STRINGS = {
     k_humidity: 'humidity', k_window: 'window', k_device: 'device', k_source: 'source', k_pumps: 'pumps',
     k_outdoor: 'outdoor', k_sources: 'sources', k_circuits: 'circuits', k_energy: 'energy', k_triggers: 'triggers',
     k_boost: 'boost', k_airing: 'airing',
+    statsWaiting: 'Waiting for Klimo’s statistics — they refresh every 5 minutes.',
+    w_roomsHeat: 'Rooms · heating', w_roomsCool: 'Rooms · cooling', w_room: 'Room', w_now: 'now', w_valve: 'valve',
+    w_srcOn: 'On: {name}', w_srcOff: 'No source running', w_floor: 'floor heating', w_humidity: 'humidity {v} %',
+    w_pump: 'pump', w_ac: 'AC', w_demandHeat: 'Asking for heat', w_demandCool: 'Asking for cooling', w_ofRooms: 'of {n} rooms',
+    w_average: 'Average',
+    w_heatLoss: 'Heat characteristic', w_days: '{n} {w}', f_days: ['day', 'days', 'days'], w_loss: 'Heat loss of the house', w_lossShort: 'Heat loss',
+    w_wpk: 'W/K', w_needAt: 'Needed at {t} °C', w_kwUnit: 'kW', w_kwhUnit: 'kWh', w_noHeatAbove: 'No heating needed above',
+    w_cOutdoors: '°C outdoors', w_heatFromGas: 'Heat from gas', w_gasBasis: '{k} kWh/m³ × boiler efficiency {e} %',
+    w_noGas: 'It needs the boiler’s gas meter or a source’s heat meter — bind one on the source’s page in Klimo.',
+    w_fewDays: 'Not enough heating days yet: {n} of 5. The line shows once there are more, in different weather.',
+    w_heatAria: 'The sources’ heat a day against the difference between the rooms and the outdoors, with a line through the days',
+    w_cycles: 'Cycles in 24 h', w_cyclesOf: '{name} · cycles in 24 h', w_onFor: 'On · {d}', w_offFor: 'Off · {d}', w_offDay: 'Did not run',
+    w_noSource: 'No such source — pick it in the card settings.', w_source: 'Source', w_duty: '{v} % of the time', w_starts: 'Starts',
+    w_perHour: 'per hour', w_startsN: 'Starts', w_avgRun: 'Avg run', w_avgPause: 'Avg pause', w_short: 'Short < 5 min', w_minUnit: 'min',
+    w_cyclesAria: '{name} and the pumps that follow it, the outdoor temperature and the starts by hour over the last 24 hours',
+    w_inertia: 'Thermal inertia', w_fromPauses: 'from {n} {w}', f_pauses: ['night pause', 'night pauses', 'night pauses'], w_tau: 'Cooling time constant τ', w_hUnit: 'h',
+    w_capacity: 'Heat capacity', w_kwhk: 'kWh/K', w_noHeatOut: 'Without heating, outdoors', w_downTo: 'to {t} °C',
+    w_noPauses: 'No night pauses of the heating yet to see how fast the house cools. They come after a few cold nights.',
+    w_coolAria: 'How the house would cool without heating from {t} °C over 12 hours at 0, −10 and −20 °C outdoors',
+    ed_source: 'Source', ed_auto_source: 'the gas boiler', ed_pumps: 'Show the pumps',
   },
 };
 
@@ -4179,6 +4232,600 @@ class KlimoSystemCard extends KlimoBase {
   }
 }
 
+/* ─────────────────────────────── 10a Widgets: rooms, heat loss, cycles, inertia ─────────────── */
+
+const isStatsAttrs = (a) => !!a && a.kv === 'klimo_stats' && Array.isArray(a.src);
+
+/** sensor.klimo_stats: the widgets' charts, refreshed by the add-on every 5 minutes. */
+function readStats(hass) {
+  const states = hass.states;
+  const id = states['sensor.klimo_stats'] ? 'sensor.klimo_stats' : scanStates(states, 'stats', isStatsAttrs);
+  return id ? readEntity(states, id, isStatsAttrs) : null;
+}
+
+/** «Гріє» → «гріє» for the middle of a line. */
+const lowerFirst = (s) => (s ? s.charAt(0).toLocaleLowerCase() + s.slice(1) : s);
+/** «надворі» → «Надворі» for a label. */
+const upperFirst = (s) => (s ? s.charAt(0).toLocaleUpperCase() + s.slice(1) : s);
+
+/** Ticks of a nice step covering [lo, hi]. */
+function niceTicks(lo, hi, count = 4) {
+  const span = Math.max(hi - lo, 1e-6);
+  const raw = span / count;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) || 10 * mag;
+  const a = Math.floor(lo / step) * step;
+  const b = Math.ceil(hi / step) * step;
+  const out = [];
+  for (let v = a; v <= b + step / 2; v += step) out.push(Math.round(v * 1000) / 1000);
+  return out;
+}
+
+const pctOf = (v, lo, hi) => Math.min(100, Math.max(0, ((v - lo) / (hi - lo)) * 100));
+
+const WIDGET_CSS = `
+.wg { display: flex; flex-direction: column; gap: 14px; padding: 20px; }
+.wg .hd { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.wg .ov { min-width: 0; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--k-t3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wg .aside { flex: none; font-size: 11px; color: var(--k-t3); white-space: nowrap; }
+.wg .pill { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; white-space: nowrap; }
+.wg .pill .dotc { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.wg .lead { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.wg .lv { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.wg .lbl { font-size: 11px; color: var(--k-t3); white-space: nowrap; }
+.wg .big { font-size: 30px; font-weight: 500; letter-spacing: -.02em; line-height: 1.1; white-space: nowrap; }
+.wg .unit { font-size: 13px; font-weight: 400; color: var(--k-t2); letter-spacing: 0; }
+.wg .side { display: flex; flex-direction: column; gap: 6px; flex: none; }
+.wg .kv { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; font-size: 11px; color: var(--k-t3); white-space: nowrap; }
+.wg .kv b { font-size: 13px; font-weight: 500; color: var(--k-t1); }
+.wg .foot { display: grid; grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr)); gap: 12px; padding-top: 14px; border-top: 1px solid var(--k-div); }
+.wg .stat { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.wg .stat .sv { font-size: 15px; font-weight: 500; white-space: nowrap; }
+.wg .stat .sv small { font-size: 11px; font-weight: 400; color: var(--k-t3); }
+.wg .note { font-size: 12px; color: var(--k-t3); }
+.wg .plot { display: grid; grid-template-columns: 44px minmax(0, 1fr); row-gap: 6px; }
+.wg .yax { position: relative; height: 140px; font-size: 9px; color: var(--k-t3); }
+.wg .yax span { position: absolute; right: 6px; transform: translateY(-50%); white-space: nowrap; }
+.wg .area { position: relative; height: 140px; border-radius: 6px; background: var(--k-s2); overflow: visible; }
+.wg .area svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+.wg .xax { position: relative; height: 12px; font-size: 10px; color: var(--k-t3); white-space: nowrap; }
+.wg .xax span { position: absolute; top: 0; transform: translateX(-50%); }
+.wg .xax span:first-child { transform: none; }
+.wg .xax span:last-child { transform: translateX(-100%); }
+.wg .yu { font-size: 9px; color: var(--k-t3); text-align: right; padding-right: 6px; }
+.wg .grid-h { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--k-div); }
+.wg .pt { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: var(--k-ok-line); box-shadow: 0 0 0 2px var(--k-s2); }
+.wg .mk { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; box-shadow: 0 0 0 2px var(--k-s2); }
+
+/* rooms */
+.rt { display: flex; flex-direction: column; }
+.rt .rr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(64px, 112px) 60px 44px; column-gap: 12px; align-items: center; }
+.rt .rh { padding-bottom: 6px; font-size: 10px; color: var(--k-t3); white-space: nowrap; }
+.rt .rh .scale { position: relative; height: 12px; }
+.rt .rh .scale span { position: absolute; top: 0; }
+.rt .rh .r { text-align: right; }
+.rt .row { padding: 9px 0; border-top: 1px solid var(--k-div); }
+.rt .row.tap { cursor: pointer; }
+@media (hover: hover) { .rt .row.tap:hover { background: var(--k-band); } }
+.rt .nm { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rt .nm .n { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rt .nm .s { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11px; color: var(--k-t3); white-space: nowrap; overflow: hidden; }
+.rt .nm .s i { width: 6px; height: 6px; flex: none; border-radius: 50%; }
+.rt .bar { position: relative; height: 16px; }
+.rt .bar .tr { position: absolute; left: 0; right: 0; top: 7px; height: 2px; border-radius: 1px; background: var(--k-track); }
+.rt .bar .sg { position: absolute; top: 5px; height: 6px; border-radius: 3px; }
+.rt .bar .tg { position: absolute; top: 2px; width: 2px; height: 12px; margin-left: -1px; border-radius: 1px; background: var(--k-t1); }
+.rt .bar .cu { position: absolute; top: 3px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; box-shadow: 0 0 0 2px var(--k-s1); }
+.rt .now { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.rt .now b { font-size: 15px; font-weight: 500; white-space: nowrap; }
+.rt .now span { font-size: 10px; color: var(--k-t3); white-space: nowrap; }
+.rt .vl { font-size: 11px; color: var(--k-t2); text-align: right; white-space: nowrap; }
+@container (max-width: 440px) { .rt .rr { grid-template-columns: minmax(0, 1fr) 72px 54px 40px; column-gap: 8px; } }
+@container (max-width: 340px) { .rt .rr { grid-template-columns: minmax(0, 1fr) 54px 40px; } .rt .bar, .rt .rh .scale { display: none; } }
+
+/* cycles */
+.cy { display: grid; grid-template-columns: 74px minmax(0, 1fr); column-gap: 10px; row-gap: 10px; align-items: center; }
+.cy .cl { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.cy .cl .cn { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cy .cl .cs { font-size: 10px; color: var(--k-t3); white-space: nowrap; }
+.cy .lane { position: relative; height: 22px; border-radius: 4px; background: var(--k-s2); overflow: hidden; }
+.cy .lane span { position: absolute; top: 0; bottom: 0; }
+.cy .temps { position: relative; height: 30px; display: flex; gap: 2px; }
+.cy .temps::before { content: ''; position: absolute; left: 0; right: 0; top: 15px; border-top: 1px solid var(--k-ring); }
+.cy .temps div { position: relative; flex: 1 1 0; min-width: 0; height: 100%; }
+.cy .temps div span { position: absolute; left: 0; right: 0; border-radius: 1px; }
+.cy .starts { display: flex; align-items: flex-end; gap: 2px; height: 30px; border-bottom: 1px solid var(--k-ring); }
+.cy .starts span { flex: 1 1 0; min-width: 0; border-radius: 1px 1px 0 0; }
+@container (max-width: 440px) { .cy .xax .near { display: none; } }
+
+/* inertia */
+.it { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, minmax(52px, 76px)); column-gap: 10px; }
+.it > span { padding: 7px 0; border-top: 1px solid var(--k-div); text-align: right; white-space: nowrap; font-size: 13px; }
+.it > span small { font-size: 11px; color: var(--k-t3); }
+.it > span.l { text-align: left; font-size: 12px; }
+.it > span.h { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 0 0 6px; border-top: 0; font-size: 11px; color: var(--k-t2); }
+.it > span.h.l { justify-content: flex-start; align-items: flex-end; color: var(--k-t3); white-space: normal; }
+.it > span.h i { width: 10px; height: 2px; border-radius: 1px; }
+.it .warm { color: var(--k-err-fg); }
+`;
+
+/** The widgets share the hub (language, offline state) and read sensor.klimo_stats. */
+class KlimoWidget extends KlimoBase {
+  static get css() {
+    return WIDGET_CSS;
+  }
+
+  _normalize(config) {
+    const c = commonOptions(config);
+    c.tap_action = config.tap_action || { action: 'klimo-open', route: this._route() };
+    return c;
+  }
+
+  _route() {
+    return '#/system/energy';
+  }
+
+  _deps(ctx) {
+    this._stats = readStats(ctx.hass);
+    return [ctx.hub && ctx.hub.st, this._stats && this._stats.st];
+  }
+
+  _shell() {
+    this._card.addEventListener('click', (e) => {
+      const path = e.composedPath ? e.composedPath() : [];
+      if (path.some((n) => n && n.dataset && n.dataset.room !== undefined)) return;
+      const ctx = this._ctx();
+      runAction(this, this._config.tap_action, { hass: ctx.hass, hub: ctx.hubAttrs, route: this._route(), entity: this._stats ? this._stats.id : null });
+    });
+  }
+
+  /** The card without its data: waiting for the add-on, or a widget whose sensor has not come yet. */
+  _waiting(ctx, title) {
+    if (!ctx.hub) return this._missingHub(ctx);
+    return `<div class="wg"><div class="hd"><span class="ov">${esc(title)}</span></div><div class="note">${esc(tr(ctx.lang, 'statsWaiting'))}</div></div>`;
+  }
+
+  _frame(ctx, html) {
+    const stale = this._isOffline(ctx, this._stats);
+    this._card.classList.toggle('stale', !!stale);
+    const banner = stale ? `<div style="padding:12px 12px 0">${this._offlineBanner(ctx, this._staleSince(ctx, this._stats))}</div>` : '';
+    setHtml(this._card, `${banner}<div class="body">${html}</div>`);
+  }
+
+  getCardSize() {
+    return 6;
+  }
+
+  getGridOptions() {
+    return { columns: 12, min_columns: 6, rows: 'auto' };
+  }
+}
+
+/* rooms · heating ---------------------------------------------------------------------------- */
+
+const SCALE_LO = 16;
+const SCALE_HI = 26;
+
+class KlimoHeatingCard extends KlimoWidget {
+  static getConfigElement() {
+    return document.createElement('klimo-heating-card-editor');
+  }
+
+  static getStubConfig() {
+    return { rooms: 'all' };
+  }
+
+  _normalize(config) {
+    const c = super._normalize(config);
+    if (config.rooms !== undefined && config.rooms !== 'all' && !Array.isArray(config.rooms)) throw new Error('rooms must be «all» or a list of rooms');
+    c.rooms = config.rooms === undefined ? 'all' : config.rooms;
+    c.exclude = Array.isArray(config.exclude) ? config.exclude.map(String) : [];
+    c.row_tap_action = config.row_tap_action || { action: 'klimo-room-sheet' };
+    return c;
+  }
+
+  _route() {
+    return '#/rooms';
+  }
+
+  _deps(ctx) {
+    return [ctx.hub && ctx.hub.st];
+  }
+
+  _shell() {
+    this._card.addEventListener('click', (e) => {
+      const path = e.composedPath ? e.composedPath() : [];
+      const item = path.find((n) => n && n.dataset && n.dataset.room !== undefined);
+      if (!item) return;
+      const ctx = this._ctx();
+      const key = item.dataset.room;
+      const ref = resolveRoom(ctx.hass, key, ctx.hubAttrs);
+      runAction(this, this._config.row_tap_action, {
+        hass: ctx.hass,
+        hub: ctx.hubAttrs,
+        entity: (ref && ref.climateId) || null,
+        route: ref && ref.id ? `#/rooms/${ref.id}` : '#/rooms',
+        sheet: () => openRoomSheet(this, ctx, key),
+      });
+    });
+  }
+
+  _rows(ctx) {
+    const c = this._config;
+    const all = hubRooms(ctx.hubAttrs);
+    const excluded = new Set(c.exclude);
+    const keys = c.rooms === 'all' ? all.map((r) => r.s) : c.rooms.map(String);
+    return keys
+      .map((k) => all.find((r) => r.s === k || r.id === k))
+      .filter((r) => r && !excluded.has(r.s) && !excluded.has(r.id));
+  }
+
+  _render(ctx) {
+    const h = ctx.hubAttrs;
+    const lang = ctx.lang;
+    const cooling = !!h && h.season && h.season.cur === 'cooling';
+    const title = this._config.title === undefined ? tr(lang, cooling ? 'w_roomsCool' : 'w_roomsHeat') : this._config.title;
+    if (!h) {
+      this._message(this._missingHub(ctx));
+      return;
+    }
+    const rows = this._rows(ctx);
+    const temps = rows.flatMap((r) => [r.t, r.tg]).filter(isNum);
+    const lo = Math.min(SCALE_LO, ...temps.map((v) => Math.floor(v)));
+    const hi = Math.max(SCALE_HI, ...temps.map((v) => Math.ceil(v)));
+    const mid = Math.round((lo + hi) / 2);
+    const head =
+      `<div class="rr rh"><span>${esc(tr(lang, 'w_room'))}</span>` +
+      `<div class="scale"><span style="left:0">${lo}°</span><span style="left:50%;transform:translateX(-50%)">${mid}°</span><span style="right:0">${hi}°</span></div>` +
+      `<span class="r">${esc(tr(lang, 'w_now'))}</span><span class="r">${esc(tr(lang, 'w_valve'))}</span></div>`;
+    const body = rows.map((r) => this._row(ctx, r, lo, hi)).join('');
+    const known = rows.map((r) => r.t).filter(isNum);
+    const avg = known.length ? known.reduce((a, b) => a + b, 0) / known.length : null;
+    const house = h.house || {};
+    const demand = isNum(house.act) ? house.act : rows.filter((r) => r.st === (cooling ? 'cool' : 'heat')).length;
+    const foot =
+      `<div class="foot" style="--n:3">` +
+      `<div class="stat"><span class="lbl">${esc(tr(lang, cooling ? 'w_demandCool' : 'w_demandHeat'))}</span><span class="sv">${demand}<small> ${esc(tr(lang, 'w_ofRooms', { n: isNum(house.tot) ? house.tot : rows.length }))}</small></span></div>` +
+      `<div class="stat"><span class="lbl">${esc(tr(lang, 'w_average'))}</span><span class="sv">${fmt1(avg)}<small> °C</small></span></div>` +
+      `<div class="stat"><span class="lbl">${esc(upperFirst(tr(lang, 'k_outdoor')))}</span><span class="sv">${fmt1(h.season && h.season.out)}<small> °C</small></span></div></div>`;
+    this._frame(
+      ctx,
+      `<div class="wg"><div class="hd"><span class="ov">${esc(title)}</span>${this._sourcePill(ctx, h)}</div>` +
+        `<div class="rt">${head}${body || `<div class="note">${esc(tr(lang, 'noRooms'))}</div>`}</div>${foot}</div>`,
+    );
+  }
+
+  _sourcePill(ctx, h) {
+    const list = Array.isArray(h.sources) ? h.sources : [];
+    const on = list.find((s) => s.on);
+    if (on) return `<span class="pill" style="${toneVars('ok')}"><span class="dotc"></span><span class="ell">${esc(tr(ctx.lang, 'w_srcOn', { name: on.n }))}</span></span>`;
+    return `<span class="pill" style="${toneVars('off')}"><span class="dotc"></span>${esc(tr(ctx.lang, 'w_srcOff'))}</span>`;
+  }
+
+  _row(ctx, r, lo, hi) {
+    const lang = ctx.lang;
+    const state = roomState(r.st, null, lang);
+    const window = r.st === 'window';
+    const color = `var(--k-${state.tone}-line)`;
+    let extra;
+    if (window) extra = fill(r.sub, r.at, lang, ctx.tz);
+    else if (r.dk === 'floor') extra = tr(lang, 'w_floor');
+    else if (isNum(r.h)) extra = tr(lang, 'w_humidity', { v: Math.round(r.h) });
+    const line = window ? extra : [lowerFirst(state.label), extra].filter(Boolean).join(' · ');
+    let bar = '<div class="bar"><span class="tr"></span></div>';
+    if (isNum(r.t)) {
+      const cur = pctOf(r.t, lo, hi);
+      const tg = isNum(r.tg) ? pctOf(r.tg, lo, hi) : null;
+      const below = tg !== null && cur < tg;
+      const dot = window ? 'var(--k-warn-line)' : below ? 'var(--k-heat-line)' : 'var(--k-cool-line)';
+      const seg = window
+        ? 'repeating-linear-gradient(90deg, var(--k-warn-line) 0 3px, transparent 3px 6px)'
+        : below
+          ? 'color-mix(in srgb, var(--k-heat-line) 50%, transparent)'
+          : 'color-mix(in srgb, var(--k-cool-line) 35%, transparent)';
+      const segment = tg === null ? '' : `<span class="sg" style="left:${Math.min(cur, tg).toFixed(1)}%;width:${Math.max(1.5, Math.abs(cur - tg)).toFixed(1)}%;background:${seg}"></span>`;
+      bar =
+        `<div class="bar" aria-hidden="true"><span class="tr"></span>${segment}` +
+        `${tg === null ? '' : `<span class="tg" style="left:${tg.toFixed(1)}%"></span>`}` +
+        `<span class="cu" style="left:${cur.toFixed(1)}%;background:${dot}"></span></div>`;
+    }
+    let valve = '—';
+    if ((r.dk === 'trv' || r.dk === 'trvfloor') && isNum(r.vp)) valve = `${Math.round(r.vp)} %`;
+    else if (r.dk === 'floor') valve = tr(lang, 'w_pump');
+    else if (r.dk === 'ac') valve = tr(lang, 'w_ac');
+    const aria = `${r.n}: ${line}, ${fmtTemp(r.t)} → ${fmtTemp(r.tg)}`;
+    return (
+      `<div class="rr row tap" data-room="${esc(r.s)}" role="button" tabindex="0" aria-label="${esc(aria)}">` +
+      `<div class="nm"><span class="n">${esc(r.n)}</span><span class="s"><i style="background:${color}"></i><span class="ell">${esc(line)}</span></span></div>` +
+      `${bar}<div class="now"><b>${fmtTemp(r.t)}</b><span>→ ${fmtTemp(r.tg)}</span></div><span class="vl">${esc(valve)}</span></div>`
+    );
+  }
+
+  getCardSize() {
+    return 3 + this._rows(this._ctx()).length;
+  }
+}
+
+/* the heat characteristic -------------------------------------------------------------------- */
+
+class KlimoHeatLossCard extends KlimoWidget {
+  static getConfigElement() {
+    return document.createElement('klimo-heat-loss-card-editor');
+  }
+
+  static getStubConfig() {
+    return {};
+  }
+
+  _render(ctx) {
+    const lang = ctx.lang;
+    const title = this._config.title === undefined ? tr(lang, 'w_heatLoss') : this._config.title;
+    const s = this._stats && this._stats.attrs;
+    if (!ctx.hub || !s) {
+      this._message(this._waiting(ctx, title));
+      return;
+    }
+    const heat = s.heat;
+    if (!heat || !heat.ok) {
+      this._frame(ctx, `<div class="wg"><div class="hd"><span class="ov">${esc(title)}</span></div><div class="note">${esc(tr(lang, 'w_noGas'))}</div></div>`);
+      return;
+    }
+    const fit = heat.fit;
+    const pts = Array.isArray(heat.pts) ? heat.pts : [];
+    const range = `${fmtDay(heat.from, lang)} – ${fmtDay(heat.to, lang)}`;
+    const aside = `<span class="aside">${esc(tr(lang, 'w_days', { n: pts.length, w: pl(lang, pts.length, forms(lang, 'f_days')) }))} · ${esc(range)}</span>`;
+    const lead = fit
+      ? `<div class="lead"><div class="lv"><span class="lbl">${esc(tr(lang, 'w_loss'))}</span><span class="big">${Math.round(fit.wpk)}<span class="unit"> ${esc(tr(lang, 'w_wpk'))}</span></span></div>` +
+        `<div class="side"><div class="kv"><span>${esc(tr(lang, 'w_needAt', { t: '−10' }))}</span><span><b>${fmt1(fit.l10)}</b> ${esc(tr(lang, 'w_kwUnit'))}</span></div>` +
+        `<div class="kv"><span>${esc(tr(lang, 'w_needAt', { t: '−20' }))}</span><span><b>${fmt1(fit.l20)}</b> ${esc(tr(lang, 'w_kwUnit'))}</span></div></div></div>`
+      : `<div class="note">${esc(tr(lang, 'w_fewDays', { n: pts.length }))}</div>`;
+    const chart = pts.length ? this._chart(lang, pts, fit) : '';
+    const foot =
+      `<div class="foot" style="--n:2">` +
+      `<div class="stat"><span class="lbl">${esc(tr(lang, 'w_noHeatAbove'))}</span><span class="sv">${fit ? `≈ ${fmt1(fit.bal)}` : '—'}<small> ${esc(tr(lang, 'w_cOutdoors'))}</small></span></div>` +
+      `<div class="stat"><span class="lbl">${esc(tr(lang, 'w_heatFromGas'))}</span><span class="note">${esc(tr(lang, 'w_gasBasis', { k: fmt1(heat.kpm), e: Math.round(heat.eff) }))}</span></div></div>`;
+    this._frame(ctx, `<div class="wg"><div class="hd"><span class="ov">${esc(title)}</span>${aside}</div>${lead}${chart}${foot}</div>`);
+  }
+
+  _chart(lang, pts, fit) {
+    const xs = pts.map((p) => p[0]);
+    const ys = pts.map((p) => p[1]);
+    const xt = niceTicks(Math.min(...xs), Math.max(...xs), 5);
+    // the line's ends stay inside the plot
+    const ends = fit ? [fit.a + fit.b * xt[0], fit.a + fit.b * xt[xt.length - 1]] : [];
+    const yt = niceTicks(Math.min(...ys, ...ends), Math.max(...ys, ...ends), 3);
+    const [x0, x1] = [xt[0], xt[xt.length - 1]];
+    const [y0, y1] = [yt[0], yt[yt.length - 1]];
+    const X = (x) => pctOf(x, x0, x1);
+    const Y = (y) => 100 - pctOf(y, y0, y1);
+    const grid = yt.map((v) => `<span class="grid-h" style="top:${Y(v).toFixed(2)}%"></span>`).join('');
+    const dots = pts.map(([x, y]) => `<span class="pt" style="left:${X(x).toFixed(2)}%;top:${Y(y).toFixed(2)}%"></span>`).join('');
+    let line = '';
+    if (fit) {
+      const ya = fit.a + fit.b * x0;
+      const yb = fit.a + fit.b * x1;
+      line =
+        `<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M0,${(100 - ((ya - y0) / (y1 - y0)) * 100).toFixed(2)} L100,${(100 - ((yb - y0) / (y1 - y0)) * 100).toFixed(2)}" ` +
+        `stroke="var(--k-t3)" stroke-width="1.5" stroke-dasharray="5 4" fill="none" vector-effect="non-scaling-stroke"/></svg>`;
+    }
+    const ylab = yt.map((v) => `<span style="top:${Y(v).toFixed(2)}%">${Math.round(v)}</span>`).join('');
+    const xlab = xt.map((v, i) => `<span style="left:${X(v).toFixed(2)}%">${Math.round(v)}${i === xt.length - 1 ? ' K' : ''}</span>`).join('');
+    const aria = tr(lang, 'w_heatAria');
+    return (
+      `<div class="plot" role="img" aria-label="${esc(aria)}"><div class="yax">${ylab}</div><div class="area">${grid}${line}${dots}</div>` +
+      `<span class="yu">${esc(tr(lang, 'w_kwhUnit'))}</span><div class="xax">${xlab}</div></div>`
+    );
+  }
+}
+
+/** «21.10» / «21 Oct» for a local date. */
+function fmtDay(date, lang) {
+  if (typeof date !== 'string') return '';
+  const [y, m, d] = date.split('-').map(Number);
+  return formatter(lang, 'UTC', { day: 'numeric', month: 'short' }).format(new Date(Date.UTC(y, m - 1, d)));
+}
+
+/* source cycles ------------------------------------------------------------------------------ */
+
+const SHORT_RUN_MIN = 5;
+const DAY_MIN = 24 * 60;
+
+class KlimoCyclesCard extends KlimoWidget {
+  static getConfigElement() {
+    return document.createElement('klimo-cycles-card-editor');
+  }
+
+  static getStubConfig() {
+    return {};
+  }
+
+  _normalize(config) {
+    const c = super._normalize(config);
+    c.source = config.source ? String(config.source) : null;
+    c.show_pumps = bool(config, 'show_pumps', true);
+    return c;
+  }
+
+  _route() {
+    return '#/system/sources';
+  }
+
+  /** The configured source, else the gas boiler, else the source that ran the most. */
+  _pick(ctx, s) {
+    const list = Array.isArray(s.src) ? s.src : [];
+    if (this._config.source) return list.find((x) => x.id === this._config.source) || null;
+    const hubSources = (ctx.hubAttrs && ctx.hubAttrs.sources) || [];
+    const boiler = hubSources.find((x) => x.i === 'boiler') || hubSources.find((x) => x.i === 'electricBoiler');
+    if (boiler) {
+      const found = list.find((x) => x.id === boiler.id);
+      if (found) return found;
+    }
+    return [...list].sort((a, b) => b.runs.length - a.runs.length)[0] || null;
+  }
+
+  _render(ctx) {
+    const lang = ctx.lang;
+    const s = this._stats && this._stats.attrs;
+    if (!ctx.hub || !s) {
+      this._message(this._waiting(ctx, this._config.title || tr(lang, 'w_cycles')));
+      return;
+    }
+    const src = this._pick(ctx, s);
+    if (!src) {
+      this._frame(ctx, `<div class="wg"><div class="hd"><span class="ov">${esc(this._config.title || tr(lang, 'w_cycles'))}</span></div><div class="note">${esc(tr(lang, 'w_noSource'))}</div></div>`);
+      return;
+    }
+    const span = Math.max(1, Math.round((s.now - s.from) / 60000));
+    const runs = src.runs.map(([a, b]) => [a, b === null ? span : b, b === null]);
+    const title = this._config.title === undefined ? tr(lang, 'w_cyclesOf', { name: src.n }) : this._config.title;
+    const open = runs.find((r) => r[2]);
+    const last = runs[runs.length - 1];
+    const pill = open
+      ? `<span class="pill" style="${toneVars('ok')}"><span class="dotc"></span>${esc(tr(lang, 'w_onFor', { d: fmtDuration(span - open[0], lang) }))}</span>`
+      : `<span class="pill" style="${toneVars('off')}"><span class="dotc"></span>${esc(last ? tr(lang, 'w_offFor', { d: fmtDuration(span - last[1], lang) }) : tr(lang, 'w_offDay'))}</span>`;
+    const pct = (v) => `${((v / span) * 100).toFixed(2)}%`;
+    const duty = (list) => Math.round((list.reduce((sum, [a, b]) => sum + (b - a), 0) / span) * 100);
+    const lane = (list, color) =>
+      list.map(([a, b, live]) => `<span style="left:${pct(a)};width:${pct(Math.max(2, b - a))};background:${color(a, b, live)}"></span>`).join('');
+    const done = runs.filter((r) => !r[2]);
+    const short = done.filter(([a, b]) => b - a < SHORT_RUN_MIN && a > 0);
+    const srcColor = (a, b, live) => (live ? 'var(--k-ok-line)' : b - a < SHORT_RUN_MIN && a > 0 ? 'var(--k-warn-line)' : 'color-mix(in srgb, var(--k-ok-line) 75%, transparent)');
+    const label = (name, sub) => `<div class="cl"><span class="cn">${esc(name)}</span><span class="cs">${esc(sub)}</span></div>`;
+    let rows = `${label(tr(lang, 'w_source'), tr(lang, 'w_duty', { v: duty(runs) }))}<div class="lane">${lane(runs, srcColor)}</div>`;
+    if (this._config.show_pumps) {
+      for (const p of src.p || []) {
+        const pr = p.runs.map(([a, b]) => [a, b === null ? span : b, b === null]);
+        rows += `${label(p.n, tr(lang, 'w_duty', { v: duty(pr) }))}<div class="lane">${lane(pr, () => 'color-mix(in srgb, var(--k-cool-line) 55%, transparent)')}</div>`;
+      }
+    }
+    const out = Array.isArray(s.out) ? s.out : [];
+    const known = out.filter(isNum);
+    if (known.length) {
+      const top = Math.max(6, ...known.map((v) => Math.abs(v)));
+      const bars = out
+        .map((v) => {
+          if (!isNum(v)) return '<div></div>';
+          const h = Math.max(1, (Math.abs(v) / top) * 14);
+          return `<div><span style="top:${v >= 0 ? (15 - h).toFixed(1) : 16}px;height:${h.toFixed(1)}px;background:${v >= 0 ? 'var(--k-cool-fg)' : 'var(--k-cool-line)'}"></span></div>`;
+        })
+        .join('');
+      rows += `${label(upperFirst(tr(lang, 'k_outdoor')), `${fmtN(Math.min(...known), 0)}…${fmtN(Math.max(...known), 0)} °C`)}<div class="temps">${bars}</div>`;
+    }
+    const hours = Array.from({ length: 24 }, (_, k) => runs.filter(([a]) => a > 0 && Math.floor(a / 60) === k).length);
+    const starts = hours.map((n) => `<span style="height:${Math.min(30, Math.max(2, n * 8))}px;background:${n >= 3 ? 'var(--k-warn-line)' : 'var(--k-ok-line)'}"></span>`).join('');
+    rows += `${label(tr(lang, 'w_starts'), tr(lang, 'w_perHour'))}<div class="starts">${starts}</div>`;
+    rows += `<span></span><div class="xax">${this._axis(ctx, s.from, span)}</div>`;
+    const durations = done.filter(([a]) => a > 0).map(([a, b]) => b - a);
+    const pauses = runs.slice(1).map(([a], i) => a - runs[i][1]);
+    const mean = (l) => (l.length ? Math.round(l.reduce((x, y) => x + y, 0) / l.length) : null);
+    const stat = (k, v, unit, warn) =>
+      `<div class="stat"><span class="lbl">${esc(tr(lang, k))}</span><span class="sv"${warn ? ' style="color:var(--k-warn-fg)"' : ''}>${v === null ? '—' : v}${unit && v !== null ? `<small> ${esc(unit)}</small>` : ''}</span></div>`;
+    const minU = tr(lang, 'w_minUnit');
+    const foot =
+      `<div class="foot" style="--n:4">${stat('w_startsN', runs.filter(([a]) => a > 0).length, '', false)}${stat('w_avgRun', mean(durations), minU, false)}` +
+      `${stat('w_avgPause', mean(pauses), minU, false)}${stat('w_short', short.length, '', short.length > 0)}</div>`;
+    const aria = tr(lang, 'w_cyclesAria', { name: src.n });
+    this._frame(ctx, `<div class="wg"><div class="hd"><span class="ov">${esc(title)}</span>${pill}</div><div class="cy" role="img" aria-label="${esc(aria)}">${rows}</div>${foot}</div>`);
+  }
+
+  /** The start, every local 00:00, 06:00, 12:00 and 18:00 in between, and «now». */
+  _axis(ctx, from, span) {
+    const start = localParts(from, ctx.lang, ctx.tz);
+    const marks = [`<span style="left:0">${esc(start.time)}</span>`];
+    // a mark keeps clear of the start and of «now»; on a narrow card the ones close to them step aside
+    for (let m = (360 - (start.minute % 360)) % 360 || 360; m < span * 0.9; m += 360) {
+      if (m < span * 0.15) continue;
+      const near = m < span * 0.2 || m > span * 0.8 ? ' class="near"' : '';
+      marks.push(`<span${near} style="left:${((m / span) * 100).toFixed(2)}%">${esc(localParts(from + m * 60000, ctx.lang, ctx.tz).time)}</span>`);
+    }
+    marks.push(`<span style="left:100%">${esc(tr(ctx.lang, 'profileNow'))}</span>`);
+    return marks.join('');
+  }
+}
+
+/* inertia ------------------------------------------------------------------------------------ */
+
+const COOL_OUTDOORS = [0, -10, -20];
+const COOL_LEVELS = [18, 16];
+const COOL_HOURS = 12;
+const COOL_ALARM_H = 6;
+
+class KlimoInertiaCard extends KlimoWidget {
+  static getConfigElement() {
+    return document.createElement('klimo-inertia-card-editor');
+  }
+
+  static getStubConfig() {
+    return {};
+  }
+
+  _render(ctx) {
+    const lang = ctx.lang;
+    const title = this._config.title === undefined ? tr(lang, 'w_inertia') : this._config.title;
+    const s = this._stats && this._stats.attrs;
+    if (!ctx.hub || !s) {
+      this._message(this._waiting(ctx, title));
+      return;
+    }
+    const inertia = s.inertia;
+    if (!inertia || !isNum(inertia.tau)) {
+      this._frame(ctx, `<div class="wg"><div class="hd"><span class="ov">${esc(title)}</span></div><div class="note">${esc(tr(lang, 'w_noPauses'))}</div></div>`);
+      return;
+    }
+    const tau = inertia.tau;
+    const temps = hubRooms(ctx.hubAttrs).map((r) => r.t).filter(isNum);
+    const t0 = temps.length ? temps.reduce((a, b) => a + b, 0) / temps.length : (s.heat && s.heat.tin) || 21;
+    const wpk = s.heat && s.heat.fit ? s.heat.fit.wpk : null;
+    const aside = `<span class="aside">${esc(tr(lang, 'w_fromPauses', { n: inertia.n, w: pl(lang, inertia.n, forms(lang, 'f_pauses')) }))}</span>`;
+    const lead =
+      `<div class="lead"><div class="lv"><span class="lbl">${esc(tr(lang, 'w_tau'))}</span><span class="big">${Math.round(tau)}<span class="unit"> ${esc(tr(lang, 'w_hUnit'))}</span></span></div>` +
+      `<div class="side"><div class="kv"><span>${esc(tr(lang, 'w_capacity'))}</span><span><b>${fmt1(inertia.c)}</b> ${esc(tr(lang, 'w_kwhk'))}</span></div>` +
+      `<div class="kv"><span>${esc(tr(lang, 'w_lossShort'))}</span><span><b>${isNum(wpk) ? Math.round(wpk) : '—'}</b> ${esc(tr(lang, 'w_wpk'))}</span></div></div></div>`;
+    const temp = (out, h) => out + (t0 - out) * Math.exp(-h / tau);
+    const hoursTo = (out, level) => (t0 <= level ? 0 : level <= out ? null : tau * Math.log((t0 - out) / (level - out)));
+    const lowest = Math.min(...COOL_OUTDOORS.map((o) => temp(o, COOL_HOURS)), ...COOL_LEVELS);
+    const y0 = Math.floor(Math.min(lowest, 12) / 2) * 2;
+    const y1 = Math.ceil(Math.max(t0, 22) / 2) * 2;
+    const Y = (v) => 100 - pctOf(v, y0, y1);
+    const X = (h) => (h / COOL_HOURS) * 100;
+    const shades = ['color-mix(in srgb, var(--k-cool-line) 40%, var(--k-t1))', 'var(--k-cool-fg)', 'var(--k-cool-line)'];
+    const paths = COOL_OUTDOORS.map((o, i) => {
+      const d = Array.from({ length: COOL_HOURS + 1 }, (_, h) => `${h ? 'L' : 'M'}${X(h).toFixed(2)},${Y(temp(o, h)).toFixed(2)}`).join(' ');
+      return `<path d="${d}" stroke="${shades[i]}" stroke-width="2" fill="none" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+    }).join('');
+    const levels = COOL_LEVELS.map(
+      (l, i) => `<span class="grid-h" style="top:${Y(l).toFixed(2)}%;border-color:${i ? 'color-mix(in srgb, var(--k-err-line) 60%, transparent)' : 'var(--k-t3)'}"></span>`,
+    ).join('');
+    const marks = COOL_OUTDOORS.map((o, i) => {
+      const h = hoursTo(o, COOL_LEVELS[COOL_LEVELS.length - 1]);
+      return h !== null && h <= COOL_HOURS ? `<span class="mk" style="left:${X(h).toFixed(2)}%;top:${Y(COOL_LEVELS[COOL_LEVELS.length - 1]).toFixed(2)}%;background:${shades[i]}"></span>` : '';
+    }).join('');
+    const ticks = [y1, ...COOL_LEVELS, y0];
+    const ylab = ticks.map((v, i) => `<span style="top:${Y(v).toFixed(2)}%${i === 2 ? ';color:var(--k-err-fg)' : ''}">${v}°</span>`).join('');
+    const xlab = [0, 3, 6, 9, 12].map((h, i, all) => `<span style="left:${X(h)}%">${h}${i === all.length - 1 ? ` ${esc(tr(lang, 'w_hUnit'))}` : ''}</span>`).join('');
+    const chart =
+      `<div class="plot" role="img" aria-label="${esc(tr(lang, 'w_coolAria', { t: fmt1(t0) }))}"><div class="yax">${ylab}</div>` +
+      `<div class="area">${levels}<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${paths}</svg>${marks}</div><span></span><div class="xax">${xlab}</div></div>`;
+    const head =
+      `<span class="h l">${esc(tr(lang, 'w_noHeatOut'))}</span>` +
+      COOL_OUTDOORS.map((o, i) => `<span class="h"><i style="background:${shades[i]}"></i>${o === 0 ? '0' : `−${Math.abs(o)}`} °C</span>`).join('');
+    const cells = COOL_LEVELS.map(
+      (l) =>
+        `<span class="l">${esc(tr(lang, 'w_downTo', { t: l }))}</span>` +
+        COOL_OUTDOORS.map((o) => {
+          const h = hoursTo(o, l);
+          if (h === null) return '<span>—</span>';
+          // the lowest level is the one to worry about: there it shows in red under six hours
+          const alarm = l === COOL_LEVELS[COOL_LEVELS.length - 1] && h < COOL_ALARM_H;
+          return `<span${alarm ? ' class="warm"' : ''}>${fmt1(h)}<small> ${esc(tr(lang, 'w_hUnit'))}</small></span>`;
+        }).join(''),
+    ).join('');
+    this._frame(ctx, `<div class="wg"><div class="hd"><span class="ov">${esc(title)}</span>${aside}</div>${lead}${chart}<div class="it">${head}${cells}</div></div>`);
+  }
+}
+
 /* ─────────────────────────────── 11 Sheets: room sheet ─────────────────────────────────────── */
 
 const SHEET_CSS = `
@@ -5220,6 +5867,39 @@ class KlimoSystemCardEditor extends KlimoEditor {
   }
 }
 
+class KlimoHeatingCardEditor extends KlimoEditor {
+  _fields(lang, rooms) {
+    return [
+      { key: 'rooms', type: 'multi', label: tr(lang, 'rooms'), all: true, def: rooms.map((r) => r.s), options: roomOptions(rooms) },
+      ...this._common(lang),
+    ];
+  }
+}
+
+class KlimoHeatLossCardEditor extends KlimoEditor {
+  _fields(lang) {
+    return this._common(lang);
+  }
+}
+
+class KlimoCyclesCardEditor extends KlimoEditor {
+  _fields(lang) {
+    const stats = this._hass ? readStats(this._hass) : null;
+    const list = stats && stats.attrs && Array.isArray(stats.attrs.src) ? stats.attrs.src : [];
+    return [
+      { key: 'source', type: 'select', label: tr(lang, 'ed_source'), def: '', options: [['', tr(lang, 'ed_auto_source')], ...list.map((x) => [x.id, x.n])] },
+      { key: 'show_pumps', type: 'bool', label: tr(lang, 'ed_pumps'), def: true },
+      ...this._common(lang),
+    ];
+  }
+}
+
+class KlimoInertiaCardEditor extends KlimoEditor {
+  _fields(lang) {
+    return this._common(lang);
+  }
+}
+
 /* ─────────────────────────────── registration ──────────────────────────────────────────────── */
 
 if (!customElements.get('klimo-room-card')) customElements.define('klimo-room-card', KlimoRoomCard);
@@ -5227,6 +5907,10 @@ if (!customElements.get('klimo-rooms-card')) customElements.define('klimo-rooms-
 if (!customElements.get('klimo-thermostat-card')) customElements.define('klimo-thermostat-card', KlimoThermostatCard);
 if (!customElements.get('klimo-house-card')) customElements.define('klimo-house-card', KlimoHouseCard);
 if (!customElements.get('klimo-system-card')) customElements.define('klimo-system-card', KlimoSystemCard);
+if (!customElements.get('klimo-heating-card')) customElements.define('klimo-heating-card', KlimoHeatingCard);
+if (!customElements.get('klimo-heat-loss-card')) customElements.define('klimo-heat-loss-card', KlimoHeatLossCard);
+if (!customElements.get('klimo-cycles-card')) customElements.define('klimo-cycles-card', KlimoCyclesCard);
+if (!customElements.get('klimo-inertia-card')) customElements.define('klimo-inertia-card', KlimoInertiaCard);
 if (!customElements.get('klimo-room-sheet')) customElements.define('klimo-room-sheet', KlimoRoomSheet);
 if (!customElements.get('klimo-profile-sheet')) customElements.define('klimo-profile-sheet', KlimoProfileSheet);
 if (!customElements.get('klimo-day-sheet')) customElements.define('klimo-day-sheet', KlimoDaySheet);
@@ -5235,6 +5919,10 @@ if (!customElements.get('klimo-rooms-card-editor')) customElements.define('klimo
 if (!customElements.get('klimo-thermostat-card-editor')) customElements.define('klimo-thermostat-card-editor', KlimoThermostatCardEditor);
 if (!customElements.get('klimo-house-card-editor')) customElements.define('klimo-house-card-editor', KlimoHouseCardEditor);
 if (!customElements.get('klimo-system-card-editor')) customElements.define('klimo-system-card-editor', KlimoSystemCardEditor);
+if (!customElements.get('klimo-heating-card-editor')) customElements.define('klimo-heating-card-editor', KlimoHeatingCardEditor);
+if (!customElements.get('klimo-heat-loss-card-editor')) customElements.define('klimo-heat-loss-card-editor', KlimoHeatLossCardEditor);
+if (!customElements.get('klimo-cycles-card-editor')) customElements.define('klimo-cycles-card-editor', KlimoCyclesCardEditor);
+if (!customElements.get('klimo-inertia-card-editor')) customElements.define('klimo-inertia-card-editor', KlimoInertiaCardEditor);
 
 window.customCards = window.customCards || [];
 for (const card of [
@@ -5243,6 +5931,10 @@ for (const card of [
   { type: 'klimo-room-card', name: 'Klimo · Room', description: 'One room at a glance: state, temperature and trend, where the target comes from, a 6-hour chart.' },
   { type: 'klimo-rooms-card', name: 'Klimo · Rooms', description: 'All rooms as compact rows, the ones that need attention first.' },
   { type: 'klimo-system-card', name: 'Klimo · System', description: 'Climate sources with their roles, circuits and pumps, energy and active triggers.' },
+  { type: 'klimo-heating-card', name: 'Klimo · Rooms and heating', description: 'Every room on one temperature scale: now against the target, the valve, and how many rooms ask for heat.' },
+  { type: 'klimo-heat-loss-card', name: 'Klimo · Heat characteristic', description: 'The house’s heat loss in W/K from the heat a day against the outdoor temperature, and the heat it needs in a frost.' },
+  { type: 'klimo-cycles-card', name: 'Klimo · Boiler cycles', description: 'A source’s runs over the last 24 hours with its pumps, the outdoor temperature and the starts by hour.' },
+  { type: 'klimo-inertia-card', name: 'Klimo · Thermal inertia', description: 'How fast the house cools without heating: the time constant from the boiler’s night pauses and a 12-hour forecast.' },
 ]) {
   if (!window.customCards.some((c) => c.type === card.type)) {
     window.customCards.push({ ...card, preview: true, documentationURL: 'https://github.com/RobinCK/klimo/blob/main/klimo/DOCS.md' });

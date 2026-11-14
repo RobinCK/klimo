@@ -254,7 +254,9 @@ set in **Settings → Energy prices**, and the overview's energy tile adds up to
 **System → Consumption** puts the whole house together: the gas, the electricity and the cost of a day,
 a week, a month or a year, and a row for every source and pump with what it used and how long it ran.
 A pump on a smart plug gets the plug's energy sensor as its meter, so the floor pump's electricity is
-counted apart from the boiler's.
+counted apart from the boiler's. **Heat characteristic** puts the heat of the last 30 days against the
+difference between the rooms and the outdoors and draws the line through them: the house's heat loss in
+W/K, the heat it needs at −10 °C and −20 °C and the outdoor temperature above which it needs none.
 
 ### Strategy & triggers
 
@@ -333,7 +335,9 @@ Ukrainian:
 
 ## Lovelace cards
 
-Five custom cards control the climate straight from a Home Assistant dashboard. With the Mosquitto
+Five custom cards control the climate straight from a Home Assistant dashboard, and four widgets chart
+the house: rooms on one temperature scale, the heat characteristic, a boiler's cycles over 24 hours and
+the house's thermal inertia. With the Mosquitto
 add-on present they work with **zero setup**: the add-on copies `klimo-cards.js` into the `www`
 folder of your Home Assistant configuration and registers it as a dashboard resource automatically
 (on YAML-mode dashboards add the resource `/local/klimo-cards.js` as a *module* yourself).
@@ -369,6 +373,13 @@ type: custom:klimo-system-card         # sources, circuits, energy and triggers
 show: [sources, circuits, energy, triggers]
 ```
 
+```yaml
+type: custom:klimo-heating-card        # every room: now against the target, the valve; asking, average, outdoor
+type: custom:klimo-heat-loss-card      # heat loss W/K, the load at −10 / −20 °C, no heating above
+type: custom:klimo-cycles-card         # a source's runs in 24 h with its pumps (source: s_boiler)
+type: custom:klimo-inertia-card        # cooling time constant τ, heat capacity, 12 h without heating
+```
+
 | Card | Main options |
 |---|---|
 | `klimo-room-card` | `room`, `variant` (`card` / `compact`), `show_sparkline`, `show_meta` (`humidity`, `window`, `device`), `show_issue`. Tap opens the room sheet with the target, quick actions and issues; hold opens the room in the Klimo panel. |
@@ -376,6 +387,9 @@ show: [sources, circuits, energy, triggers]
 | `klimo-thermostat-card` | `room` or `rooms`, `controls` (`direct`, `locked`, `admin_only`), `step` (0.1 / 0.5 / 1), `drag` (`knob_only` / `off`), `send_delay` (0–10 s), `undo_seconds` (0–30 s), `default_duration` (`slot`, `1h`, `3h`, `forever`), `durations`, `quick_actions` (`boost`, `airing`), `show_schedule`, `show_meta`. |
 | `klimo-house-card` | `show_profile`, `profile_change` (`confirm`, `navigate`, `none`), `profile_durations`, `show_attention`, `show_system` (`source`, `pumps`, `outdoor`). |
 | `klimo-system-card` | `show` (`sources`, `circuits`, `energy`, `triggers`), `sources` (`all`, `active` or a list of source ids). |
+| `klimo-heating-card` | `rooms` (`all` or a list), `exclude`, `title`. A row opens the room sheet. |
+| `klimo-cycles-card` | `source` (a source id; the gas boiler by default), `show_pumps`. |
+| `klimo-heat-loss-card`, `klimo-inertia-card` | `title`. |
 | every card | `theme` (`auto`, `dark`, `light`), `language` (`auto`, `uk`, `en`), `title`, `hub_entity`, `tap_action` / `hold_action` / `double_tap_action` (Home Assistant actions plus `klimo-room-sheet` and `klimo-open`). |
 
 | Rooms | Thermostat | House |
@@ -386,8 +400,10 @@ show: [sources, circuits, energy, triggers]
 |---|---|
 | <img src="docs/screenshots/card-room.png" width="364" alt="Room card" /> | <img src="docs/screenshots/card-system.png" width="364" alt="System card" /> |
 
-The cards read three sensors published over MQTT — the hub (`sensor.klimo_hub`), one card sensor per
-room and a reply sensor — and send commands back through the `mqtt.publish` service. They find those
+![The widgets: rooms and heating, heat characteristic, boiler cycles, thermal inertia](docs/screenshots/card-widgets.png)
+
+The cards read sensors published over MQTT — the hub (`sensor.klimo_hub`), one card sensor per
+room, a reply sensor and the widgets' statistics (`sensor.klimo_stats`, every 5 minutes) — and send commands back through the `mqtt.publish` service. They find those
 sensors by their attributes, so renamed entity ids keep working. Every card has a visual editor.
 
 > **Requires MQTT.** The cards and the native entities below need a broker. Install the **Mosquitto
@@ -477,7 +493,7 @@ own sensors the recorder does not keep. Both are in Home Assistant's history and
 Klimo keeps only what the recorder cannot: the decision journal (30 days) and the run periods of
 sources, pumps and profiles (up to 400 days).
 
-Exclude the three transport sensors of the cards from the recorder — they change often and carry
+Exclude the transport sensors of the cards from the recorder — they change often and carry
 large attributes:
 
 ```yaml
@@ -486,6 +502,7 @@ recorder:
     entity_globs:
       - sensor.klimo_hub
       - sensor.klimo_reply
+      - sensor.klimo_stats
       - sensor.klimo_*_card
 ```
 

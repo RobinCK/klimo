@@ -73,7 +73,7 @@ test('the hub reads like the house card: headline, profile, tiles, rooms with su
   assert.equal(hub.energy.t, 'Мережа є');
   assert.equal(hub.triggers.find((t) => t.id === 'night_tariff').at, AT_2300);
   const living = hub.rooms[0];
-  assert.deepEqual(living, { id: 'r_9f2a1c', s: 'vitalnia', n: 'Вітальня', st: 'heat', t: 19.8, tg: 20, it: null, iss: null, sub: 'Гріє · Ціль 20.0° · Дома до {t}', at: AT_2300, attn: false, ord: 0 });
+  assert.deepEqual(living, { id: 'r_9f2a1c', s: 'vitalnia', n: 'Вітальня', st: 'heat', t: 19.8, tg: 20, it: null, iss: null, sub: 'Гріє · Ціль 20.0° · Дома до {t}', at: AT_2300, attn: false, ord: 0, h: 46, dk: 'trv', vp: null });
   const bedroom = hub.rooms[1];
   assert.equal(bedroom.sub, 'Вікно · Пауза · вікно відкрите {d}');
   assert.equal(bedroom.at, WED_1910 - 12 * MIN);

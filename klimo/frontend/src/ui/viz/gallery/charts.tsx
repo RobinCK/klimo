@@ -10,6 +10,7 @@ import { ScheduleDayChart } from '../charts/ScheduleDayChart';
 import { BivalenceChart } from '../charts/BivalenceChart';
 import { WeatherCurveChart, type CurvePoint } from '../charts/WeatherCurveChart';
 import { ConsumptionChart } from '../charts/ConsumptionChart';
+import { HeatLossChart } from '../charts/HeatLossChart';
 import { hhmm } from '../internal/util';
 import { FRIDAY, GAS_MONTH, galleryDay, HOUR, HP_RUNNING_SINCE, HP_SPANS, LIVING_TEMPS, P, SPARK, WEEKDAY, WEEKEND } from './fixtures';
 import { Group, Item, Pair, Panel } from './parts';
@@ -229,6 +230,18 @@ export function GalleryCharts() {
             <WeatherCurveChart points={curve} editable onChange={setCurve} range={[25, 60]} ariaLabel={ut('Weather curve, editable')} />
           </Panel>
         </Pair>
+      </Item>
+
+      <Item name="HeatLossChart">
+        <Panel>
+          <HeatLossChart
+            points={[[4.1, 22], [6.3, 38], [8.0, 47], [9.4, 61], [10.2, 63], [11.8, 75], [13.5, 89], [15.1, 98], [16.9, 113]].map(([x, y]) => ({ x, y }))}
+            fit={{ a: -9.5, b: 7.3 }}
+            xUnit="K"
+            yUnit={ut('kWh')}
+            ariaLabel={ut('Heat a day against the temperature difference')}
+          />
+        </Panel>
       </Item>
 
       <Item name="ConsumptionChart">

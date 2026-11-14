@@ -510,9 +510,18 @@ against the period before is left out while that period is recorded only in part
 when rooms asked begin at its install and are kept 400 days.
 
 **Prices** are set in *Settings → Energy prices*: the currency, the price of a kWh of electricity, the
-price of gas per m³ or per kWh, and the calorific value of the gas (10.5 kWh per m³ unless the bill says
-otherwise). The **Energy** tile of the overview adds today's gas, electricity and cost of all sources
+price of gas per m³ or per kWh, the calorific value of the gas (10.5 kWh per m³ unless the bill says
+otherwise) and the boiler's efficiency (90 % unless set; a condensing boiler gives 95–98 %). The **Energy** tile of the overview adds today's gas, electricity and cost of all sources
 and pumps with meters.
+
+**The heat characteristic** under *By room* shows what the house itself is like. Day by day over the last
+30 complete days it puts the heat the sources gave — gas × calorific value × the boiler's efficiency, plus
+the heat meters of sources that burn no gas (a heat pump's) — against the difference between the rooms
+(the mean of Klimo's `sensor.klimo_<room>_temperature`) and the outdoors, and draws the line through the
+days that heated with at least 2 K of difference. Its slope is the house's heat loss in W/K; from it come
+the heat the house needs at −10 °C and −20 °C outdoors and the outdoor temperature above which it needs
+none. The line shows from 5 such days spread over at least 3 K. Electric heaters and air conditioners
+without a heat meter are not counted, so a house they help heat reads as losing less than it does.
 
 ## Strategy
 
@@ -738,8 +747,9 @@ sources, pumps and profiles (the **Today** strips and runtime statistics) and wh
 
 ## Lovelace cards
 
-Five cards — `custom:klimo-room-card`, `custom:klimo-rooms-card`, `custom:klimo-thermostat-card`,
-`custom:klimo-house-card` and `custom:klimo-system-card` — with visual editors. With MQTT available the
+Nine cards — `custom:klimo-room-card`, `custom:klimo-rooms-card`, `custom:klimo-thermostat-card`,
+`custom:klimo-house-card`, `custom:klimo-system-card` and the widgets `custom:klimo-heating-card`,
+`custom:klimo-heat-loss-card`, `custom:klimo-cycles-card` and `custom:klimo-inertia-card` — with visual editors. With MQTT available the
 add-on copies `klimo-cards.js` into the `www` folder of the Home Assistant configuration and registers
 `/local/klimo-cards.js` as a dashboard resource (module); Settings → Integrations → Dashboard cards shows
 the status and a YAML snippet for any room. YAML-mode dashboards need the resource added by hand:
@@ -751,7 +761,7 @@ lovelace:
       type: module
 ```
 
-The cards read `sensor.klimo_hub`, `sensor.klimo_<room>_card` and `sensor.klimo_reply`, find them by
+The cards read `sensor.klimo_hub`, `sensor.klimo_<room>_card`, `sensor.klimo_reply` and `sensor.klimo_stats`, find them by
 their attributes (renamed ids keep working) and send commands through `mqtt.publish` on `klimo/command`.
 Texts arrive in the notification language; the card chrome follows `language` (`auto` = Home Assistant).
 A target change waits 3 s for more taps, then offers an undo for 8 s. The thermostat card switches the
@@ -770,6 +780,28 @@ history of Klimo's own entities (`binary_sensor.klimo_source_*`, `binary_sensor.
 room's heat and cool demand): when each source and pump ran, when any room asked and each room that did,
 with how long. A finger (or the pointer) on the bars tells what ran at that moment; the arrows step
 through the days the recorder keeps, and **Open in Klimo** leads to the same day in the panel.
+
+The widgets chart the house rather than control it:
+
+- **Rooms and heating** (`klimo-heating-card`) — every room on one temperature scale: where it is against
+  its target, the valve opening its heads report (or *pump* for a floor), what it is doing; under them how
+  many rooms ask, their mean and the outdoor temperature. A row opens the room's details.
+- **Heat characteristic** (`klimo-heat-loss-card`) — the house's heat loss in W/K with the days it comes
+  from, the heat needed at −10 °C and −20 °C and the outdoor temperature above which no heating is needed
+  (see [Consumption and cost](#consumption-and-cost)).
+- **Boiler cycles** (`klimo-cycles-card`) — a source's runs over the last 24 hours (the gas boiler unless
+  `source:` names another) with the pumps of the floors that run with it, the hourly outdoor temperature,
+  the starts per hour and the run, pause and short-run (under 5 min) figures. Short runs and hours with
+  three or more starts show in yellow.
+- **Thermal inertia** (`klimo-inertia-card`) — how fast the house cools without heat. In the night pauses of
+  the last ten days (no source ran for two hours or more between 22:00 and 06:00, from half an hour after
+  the last run) the rooms' mean temperature falls towards the outdoors as T = Tout + (T0 − Tout)·e^(−t/τ);
+  the median τ of the last ten pauses is the house's time constant, τ × the heat loss its heat capacity.
+  From the rooms' temperature now it draws the next 12 hours at 0, −10 and −20 °C outdoors and tells how
+  long the house takes to fall to 18 °C and 16 °C (under six hours to 16 °C in red).
+
+Their data comes from `sensor.klimo_stats`, which the add-on refreshes every 5 minutes from Home
+Assistant's statistics and its own run records; a widget waits for it after the add-on starts.
 
 ## Native entities
 
@@ -801,7 +833,7 @@ ids are pinned when they are created; renaming a room does not change them.
 | `binary_sensor.klimo_pump_<circuit>` | A pump of the circuit runs; attributes: reason, run-on deadline. |
 | `binary_sensor.klimo_trigger_<id>` | A trigger holds. |
 | `switch.klimo_source_<id>_allowed`, `switch.klimo_rule_<id>`, `number.klimo_bivalent_point` | Opt-in (Settings → Behaviour → Settings as Home Assistant entities); accepted only from administrators. |
-| `sensor.klimo_hub`, `sensor.klimo_<room>_card`, `sensor.klimo_reply` | Transport for the Lovelace cards (diagnostic). |
+| `sensor.klimo_hub`, `sensor.klimo_<room>_card`, `sensor.klimo_reply`, `sensor.klimo_stats` | Transport for the Lovelace cards (diagnostic). |
 
 Availability uses a last-will message on `klimo/status`: when the add-on stops, every entity shows
 *unavailable*. Entities that no longer exist are removed from Home Assistant, also across restarts.
@@ -813,7 +845,8 @@ room's own temperature and humidity sensors, combined as the room combines them,
 recorded; Klimo's `sensor.klimo_<room>_target` draws the target band of the elapsed day, and
 `sensor.klimo_<room>_temperature` stands in only for a room whose own sensors are not recorded.
 With `log_level: debug`, every day read writes one line with the entities, their readings and the
-source used.
+source used. Keep `sensor.klimo_<room>_temperature` recorded too: the heat characteristic and the thermal
+inertia read the rooms from its statistics.
 Exclude the card transport sensors; they change often and carry large attributes:
 
 ```yaml
@@ -822,6 +855,7 @@ recorder:
     entity_globs:
       - sensor.klimo_hub
       - sensor.klimo_reply
+      - sensor.klimo_stats
       - sensor.klimo_*_card
 ```
 

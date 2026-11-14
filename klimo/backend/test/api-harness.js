@@ -340,6 +340,7 @@ function makeFakes(opts = {}) {
     roomDay: async (roomId, date) => ({ roomId, date }),
     sparks: async () => ({}),
     outdoor: async (days) => ({ series: [], avgC: null, days }),
+    indoorMeans: async () => ({}),
   });
   const consumption = recorder(calls, 'consumption', {
     source: async (sourceId, q) => {
@@ -351,6 +352,10 @@ function makeFakes(opts = {}) {
       if (roomId !== 'r_living' && roomId !== 'vitalnia') throw notFound('Room');
       return { roomId: 'r_living', range: q.range ?? 'day', date: q.date ?? '2026-10-21', buckets: [], meters: [], configured: false };
     },
+  });
+  const houseStats = recorder(calls, 'houseStats', {
+    heatLoss: async () => ({ from: '2026-09-21', to: '2026-10-20', days: [], used: 0, indoorC: null, fit: null, configured: false }),
+    widgets: async () => null,
   });
   const inputs = recorder(calls, 'inputs', {
     renderTemplate: async (template) => ({ result: template.length, error: null }),
@@ -425,6 +430,7 @@ function makeFakes(opts = {}) {
     [T.ENTITY_SEARCH]: search,
     [T.HISTORY]: history,
     [T.CONSUMPTION]: consumption,
+    [T.HOUSE_STATS]: houseStats,
     [T.HA_INPUTS]: inputs,
     [T.SUPERVISOR]: supervisor,
     [T.READ_MODELS]: readModels,
