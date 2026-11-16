@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.2.43
+
+- **The heat characteristic counts only the heat that went to the rooms.** It took everything the gas meter
+  counted in a day, so hot water, a stove on the same meter and the boiler's standby — a couple of m³ a
+  day in many homes — sat in the line as heat the house needs at any temperature. The line then never
+  reached zero: the heat needed at −10 °C and −20 °C came out too high, and «no heating needed above»
+  showed a temperature warmer than the rooms (33 °C). Now only the hours the boiler (or a heat pump with a
+  heat meter) heated by Klimo's records of its runs count; a day it did not heat has no heat, where before
+  the stove alone could make it a point of the line.
+- **Needed at −10 °C / −20 °C** is the heat loss × the difference from the rooms, as a heat load is
+  calculated: what the heating must give on a cold night, with no help from the sun or the people in it.
+- **No heating needed above** shows only when the line reaches zero below the rooms' temperature.
+- Days just above that point ran the heating only part of the time (the season starting, a mild day) and
+  bent the line; the line now leaves them out and is drawn again. The heat loss reads to 5 W/K.
+- **Thermal inertia** is measured more carefully: the rooms cool towards the outdoors plus what the
+  house's own gains hold them above it at night (half the daily gains the line shows), the outdoor
+  temperature is followed hour by hour through the night instead of its mean, a pause counts from an hour
+  after the last run and needs three hours with a fall of 0.3 K or more, and without 5-minute statistics
+  only the hours wholly inside the pause are read. The 12-hour forecast cools towards the same level.
+- On the simulator's house, whose physics are known (310 W/K, 11.8 kWh/K, τ 38 h), Klimo now reads
+  310 W/K, 12.1 kWh/K and τ 39 h, where it read 320 W/K, 15.4 kWh/K and 48 h before.
+
 ## 0.2.42
 
 - **The heat characteristic's chart reads cleanly.** The difference axis no longer steps by 2.5 K (which

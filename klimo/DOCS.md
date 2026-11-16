@@ -515,13 +515,24 @@ otherwise) and the boiler's efficiency (90 % unless set; a condensing boiler giv
 and pumps with meters.
 
 **The heat characteristic** under *By room* shows what the house itself is like. Day by day over the last
-30 complete days it puts the heat the sources gave — gas × calorific value × the boiler's efficiency, plus
-the heat meters of sources that burn no gas (a heat pump's) — against the difference between the rooms
-(the mean of Klimo's `sensor.klimo_<room>_temperature`) and the outdoors, and draws the line through the
-days that heated with at least 2 K of difference. Its slope is the house's heat loss in W/K; from it come
-the heat the house needs at −10 °C and −20 °C outdoors and the outdoor temperature above which it needs
-none. The line shows from 5 such days spread over at least 3 K. Electric heaters and air conditioners
-without a heat meter are not counted, so a house they help heat reads as losing less than it does.
+30 complete days it puts the heat the sources gave the rooms against the difference between the rooms
+(the mean of Klimo's `sensor.klimo_<room>_temperature`) and the outdoors, and draws a line through them.
+
+- **Heat** is gas × calorific value × the boiler's efficiency, plus the heat meters of sources that burn no
+  gas (a heat pump's), counted only in the hours those sources heated by Klimo's records of their runs.
+  Hot water, a stove on the same gas meter and the boiler's standby between the runs are not the rooms'
+  heat and stay out; a day the boiler did not heat (or before Klimo kept its runs) has none.
+- **The line** goes through the days with heat and at least 2 K of difference. Days less than 3 K above
+  the difference where the line reaches zero heat ran the heating only part of the time (the season
+  starting, a mild day); they are left out and the line drawn again. It shows from 5 days spread over 3 K.
+- **Heat loss** is its slope in W/K (to 5 W/K). **Needed at −10 °C / −20 °C** is that loss × the difference
+  from the rooms' mean: what the heating must give on a cold night, the gains not counted on, as a heat
+  load is calculated. **No heating needed above** is where the line reaches zero heat — the house's gains
+  (people, appliances, the sun) cover the rest; it is not shown when the line does not reach zero below
+  the rooms' temperature.
+
+Electric heaters and air conditioners without a heat meter are not counted, so a house they help heat
+reads as losing less than it does.
 
 ## Strategy
 
@@ -793,12 +804,15 @@ The widgets chart the house rather than control it:
   `source:` names another) with the pumps of the floors that run with it, the hourly outdoor temperature,
   the starts per hour and the run, pause and short-run (under 5 min) figures. Short runs and hours with
   three or more starts show in yellow.
-- **Thermal inertia** (`klimo-inertia-card`) — how fast the house cools without heat. In the night pauses of
-  the last ten days (no source ran for two hours or more between 22:00 and 06:00, from half an hour after
-  the last run) the rooms' mean temperature falls towards the outdoors as T = Tout + (T0 − Tout)·e^(−t/τ);
-  the median τ of the last ten pauses is the house's time constant, τ × the heat loss its heat capacity.
-  From the rooms' temperature now it draws the next 12 hours at 0, −10 and −20 °C outdoors and tells how
-  long the house takes to fall to 18 °C and 16 °C (under six hours to 16 °C in red).
+- **Thermal inertia** (`klimo-inertia-card`) — how fast the house cools without heat. It looks at the night
+  pauses of the last ten days: no source ran for three hours or more between 22:00 and 06:00, counted from
+  an hour after the last run (radiators and a floor still give their heat). In a pause the rooms' mean
+  temperature falls towards where it would settle without heat — the outdoors, hour by hour, plus what
+  the house's gains hold it above them (at night half of the daily gains the heat characteristic shows):
+  T → T∞ + (T − T∞)·e^(−t/τ). Each pause that falls at least 0.3 K gives a τ, the median of the last ten is
+  the house's time constant, and τ × the heat loss its heat capacity. From the rooms' temperature now it
+  draws the next 12 hours at 0, −10 and −20 °C outdoors and tells how long the house takes to fall to 18 °C
+  and 16 °C (under six hours to 16 °C in red).
 
 Their data comes from `sensor.klimo_stats`, which the add-on refreshes every 5 minutes from Home
 Assistant's statistics and its own run records; a widget waits for it after the add-on starts.

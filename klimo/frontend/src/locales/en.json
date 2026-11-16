@@ -1798,7 +1798,7 @@
   "Heat delivered": "Heat delivered",
   "heat emitter": "heat emitter",
   "Heat emitters": "Heat emitters",
-  "Heat from gas: {kwh} kWh per m³ × the boiler’s efficiency {pct} %; heat pumps by their heat meters. Electric heaters and air conditioners without a heat meter are not counted.": "Heat from gas: {kwh} kWh per m³ × the boiler’s efficiency {pct} %; heat pumps by their heat meters. Electric heaters and air conditioners without a heat meter are not counted.",
+  "Heat from gas: {kwh} kWh per m³ × the boiler’s efficiency {pct} %, in the hours the boiler heated (hot water and a stove outside them are left out); heat pumps by their heat meters. The load at a temperature is the heat loss × the difference. Electric heaters and air conditioners without a heat meter are not counted.": "Heat from gas: {kwh} kWh per m³ × the boiler’s efficiency {pct} %, in the hours the boiler heated (hot water and a stove outside them are left out); heat pumps by their heat meters. The load at a temperature is the heat loss × the difference. Electric heaters and air conditioners without a heat meter are not counted.",
   "Heat loss of the house": "Heat loss of the house",
   "Heat meter": "Heat meter",
   "Heat pump": "Heat pump",

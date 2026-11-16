@@ -1932,7 +1932,7 @@
   "Heat delivered": "Віддане тепло",
   "heat emitter": "нагрівач",
   "Heat emitters": "Нагрівальні прилади",
-  "Heat from gas: {kwh} kWh per m³ × the boiler’s efficiency {pct} %; heat pumps by their heat meters. Electric heaters and air conditioners without a heat meter are not counted.": "Тепло з газу: {kwh} кВт·год на м³ × ККД котла {pct} %; теплові насоси — за їхніми лічильниками тепла. Електрообігрівачі й кондиціонери без лічильника тепла не враховано.",
+  "Heat from gas: {kwh} kWh per m³ × the boiler’s efficiency {pct} %, in the hours the boiler heated (hot water and a stove outside them are left out); heat pumps by their heat meters. The load at a temperature is the heat loss × the difference. Electric heaters and air conditioners without a heat meter are not counted.": "Тепло з газу: {kwh} кВт·год на м³ × ККД котла {pct} %, лише в години, коли котел опалював (гаряча вода й плита поза ними не враховані); теплові насоси — за їхніми лічильниками тепла. Потреба при температурі — тепловтрати × різниця температур. Електрообігрівачі й кондиціонери без лічильника тепла не враховано.",
   "Heat loss of the house": "Тепловтрати будинку",
   "Heat meter": "Лічильник тепла",
   "Heat pump": "Тепловий насос",

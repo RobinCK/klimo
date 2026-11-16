@@ -5,6 +5,7 @@ import { addDays, fromLocal, toLocal } from '../engine/core/time';
 import { METER_QUANTITIES, meterUnit } from '../shared/model';
 import type {
   ClockPort,
+  EntityId,
   EpochMs,
   HaPort,
   HeatLossDay,
@@ -16,6 +17,7 @@ import type {
   IHouseStats,
   ISpanStore,
   LocalDate,
+  MeterKind,
   RunSpan,
   SourceCycles,
   SourceMeter,
@@ -39,17 +41,29 @@ const MIN_HOURS = 18;
 /** The line needs this many days spread over this many kelvin. */
 const MIN_POINTS = 5;
 const MIN_SPREAD_K = 3;
+/**
+ * Days closer than this above the difference where the line reaches zero heat ran the heating only part
+ * of the time (the season starting, a mild day): they bend the line and are left out of it.
+ */
+const BALANCE_MARGIN_K = 3;
+/** At night the house gets about half its average gains: no sun, less going on. */
+const NIGHT_GAINS_SHARE = 0.5;
+/** A run's last minutes reach the meter in the next hour: an hour this close after a run is still a heating hour. */
+const RUN_TAIL_MS = 15 * MIN;
 /** Night pauses are looked for in the last ten days (5-minute statistics are kept as long). */
 const INERTIA_DAYS = 10;
-/** A pause counts from this long after the last run (the radiators still give their heat)… */
-const SETTLE_MS = 30 * MIN;
+/** A pause counts from this long after the last run (radiators and a floor still give their heat)… */
+const SETTLE_MS = HOUR;
 /** …for at least this long, between 22:00 and 06:00 (no sun, nobody cooking). */
-const PAUSE_MIN_MS = 2 * HOUR;
+const PAUSE_MIN_MS = 3 * HOUR;
 const NIGHT_FROM = 22 * 60;
 const NIGHT_TO = 6 * 60;
-/** The rooms are this much warmer than the outdoors at its start, and fall at least this much. */
+/**
+ * The rooms are this much warmer than where they settle at its start, and fall at least this much: a
+ * smaller fall is within the sensors' 0.1° steps and would make τ anything.
+ */
 const MIN_GAP_K = 5;
-const MIN_DROP_K = 0.1;
+const MIN_DROP_K = 0.3;
 const PAUSES_KEEP = 10;
 
 type Interval = [EpochMs, EpochMs];
@@ -89,13 +103,16 @@ export class HouseStatsService implements IHouseStats {
 
     const now = this.clock.now();
     const from = Math.floor((now - DAY) / MIN) * MIN;
-    const [out, src, heat, inertia] = await Promise.all([
+    const [out, src, heat] = await Promise.all([
       this.outdoorHours(from).catch((e) => this.failed('outdoor', e, [] as (number | null)[])),
       this.cycles(from, now),
       this.heatLoss().catch((e) => this.failed('heat', e, null)),
-      this.inertia(now).catch((e) => this.failed('inertia', e, null)),
     ]);
     const fit = heat?.fit ?? null;
+    // the gains the line shows keep the rooms above the outdoors without heat, at night about half of them:
+    // the cooling goes towards that
+    const up = fit && fit.interceptKwh < 0 ? (NIGHT_GAINS_SHARE * -fit.interceptKwh) / fit.slopeKwhPerK : 0;
+    const inertia = await this.inertia(now, up).catch((e) => this.failed('inertia', e, null));
 
     return {
       kv: 'klimo_stats',
@@ -118,7 +135,7 @@ export class HouseStatsService implements IHouseStats {
             ok: heat.configured,
           }
         : null,
-      inertia: inertia ? { ...inertia, c: fit ? roundTo((inertia.tau * fit.wPerK) / 1000, 1) : null } : null,
+      inertia: inertia ? { ...inertia, up: roundTo(up, 1) as number, c: fit ? roundTo((inertia.tau * fit.wPerK) / 1000, 1) : null } : null,
     };
   }
 
@@ -165,16 +182,38 @@ export class HouseStatsService implements IHouseStats {
     let outdoor: Map<LocalDate, number>;
     try {
       const ids = [...gas, ...heat].map((m) => m.entityId);
-      const stats = ids.length ? await this.ha.statistics(ids, fromMs, toMs, 'day', ['change']) : {};
+      const [stats, spans] = await Promise.all([
+        ids.length ? this.ha.statistics(ids, fromMs, toMs, 'hour', ['change']) : Promise.resolve({} as Awaited<ReturnType<HaPort['statistics']>>),
+        this.spans.range(fromMs - HOUR, toMs, 'source'),
+      ]);
+      // the hours a meter's sources heated (Klimo's runs): hot water, a stove on the gas meter and standby
+      // between the runs are not the rooms' heat, and a day before Klimo kept its runs has none
+      const heating = spans.filter((x) => x.kind === 'run' && x.mode !== 'cool');
+      const runsOf = (entityId: EntityId, kind: MeterKind) => {
+        const owners = new Set(sources.filter((x) => x.meters.some((m) => m.kind === kind && m.entityId === entityId)).map((x) => x.id));
+
+        return merge(heating.filter((x) => owners.has(x.subjectId)).map((x): Interval => [x.startTs, (x.endTs ?? now) + RUN_TAIL_MS]));
+      };
+      const dateOf = new Map<EpochMs, LocalDate>();
+      for (let h = Math.floor(fromMs / HOUR) * HOUR; h < toMs; h += HOUR) {
+        dateOf.set(h, toLocal(h, tz).date);
+      }
+
       const perDay = (meters: SourceMeter[], kwh: (m: SourceMeter, v: number) => number | null) => {
-        const out = new Map<LocalDate, number | null>();
+        const out = new Map<LocalDate, number | null>(dates.map((d) => [d, 0]));
         for (const m of meters) {
-          const rows = new Map((stats[m.entityId] ?? []).map((r) => [toLocal(r.start, tz).date, r.change]));
-          for (const date of dates) {
-            const v = rows.get(date);
+          const runs = runsOf(m.entityId, m.kind);
+          const rows = new Map((stats[m.entityId] ?? []).map((r) => [r.start, r.change]));
+          for (const [h, date] of dateOf) {
+            const sum = out.get(date);
+            if (sum === undefined || sum === null || !overlaps(runs, h, h + HOUR)) {
+              continue;
+            }
+
+            const v = rows.get(h);
             const e = typeof v === 'number' && Number.isFinite(v) ? kwh(m, v) : null;
-            // a meter with no row that day leaves the day unknown
-            out.set(date, out.has(date) && out.get(date) === null ? null : e === null ? null : (out.get(date) ?? 0) + e);
+            // a heating hour without the meter's row leaves the day unknown
+            out.set(date, e === null ? null : sum + e);
           }
         }
 
@@ -224,13 +263,16 @@ export class HouseStatsService implements IHouseStats {
     });
     const points = days.filter((d) => d.used);
     const indoorC = points.length ? points.reduce((sum, d) => sum + (d.indoorC as number), 0) / points.length : null;
+    const fit = indoorC === null ? null : fitLine(points.map((d) => [d.deltaK as number, d.heatKwh as number]), indoorC);
+    // the days near the balance the line left out are not its points
+    const kept = fit ? days.map((d) => ({ ...d, used: d.used && (d.deltaK as number) >= fit.minDeltaK })) : days;
 
     return {
       ...empty(true),
-      days,
-      used: points.length,
+      days: kept,
+      used: kept.filter((d) => d.used).length,
       indoorC: roundTo(indoorC, 1),
-      fit: indoorC === null ? null : fitLine(points.map((d) => [d.deltaK as number, d.heatKwh as number]), indoorC),
+      fit,
     };
   }
 
@@ -282,12 +324,15 @@ export class HouseStatsService implements IHouseStats {
 
   /**
    * The time constant of the rooms' mean temperature in the night pauses of the last ten days: no
-   * source ran, from half an hour after the last run, at least two hours between 22:00 and 06:00. In a
-   * pause the rooms fall towards the outdoors as T = Tout + (T0 − Tout)·e^(−t/τ); each pause gives a τ,
-   * the median of the last ten is the house's.
+   * source ran, from an hour after the last run, at least three hours between 22:00 and 06:00. In a
+   * pause the rooms fall towards where they would settle without heat — the outdoors plus `up`, what
+   * the house's own gains at night (people, appliances) hold them above it — as T = T∞ + (T0 − T∞)·e^(−t/τ);
+   * each pause gives a τ, the median of the last ten is the house's.
    */
-  private inertia(now: EpochMs): Promise<{ tau: number; n: number } | null> {
-    return this.cached(`inertia|${Math.floor(now / INERTIA_CACHE_MS)}|${this.config.revision()}`, INERTIA_CACHE_MS, async () => {
+  private inertia(now: EpochMs, up: number): Promise<{ tau: number; n: number } | null> {
+    const key = `inertia|${Math.floor(now / INERTIA_CACHE_MS)}|${this.config.revision()}|${up.toFixed(2)}`;
+
+    return this.cached(key, INERTIA_CACHE_MS, async () => {
       const tz = this.clock.tz();
       const from = now - INERTIA_DAYS * DAY;
       const runs = merge((await this.spans.range(from, now, 'source')).filter((s) => s.kind === 'run').map((s): Interval => [s.startTs, s.endTs ?? now]));
@@ -314,24 +359,53 @@ export class HouseStatsService implements IHouseStats {
       const house = houseMeans(fine);
       const hours = houseMeans(hourly);
       const outdoor = out.series.flatMap((p) => (p.mean === null ? [] : [{ start: p.start, mean: p.mean }]));
-      // the 5-minute mean around the moment; without one, the hourly means between their middles
-      const at = (t: EpochMs) => house.find((p) => p.start <= t && t < p.start + 5 * MIN)?.mean ?? between(hours, t);
+      const at = (t: EpochMs) => house.find((p) => p.start <= t && t < p.start + 5 * MIN)?.mean ?? null;
+      /**
+       * The rooms at the start and the end of the pause: the 5-minute means there, or without them the
+       * first and the last hour wholly inside it, each at its middle (an hour that holds a run would lift its end).
+       */
+      const ends = (a: EpochMs, b: EpochMs): { from: EpochMs; to: EpochMs; t0: number; t1: number } | null => {
+        const end = b - 5 * MIN;
+        const t0 = at(a);
+        const t1 = at(end);
+        if (t0 !== null && t1 !== null) {
+          return { from: a, to: end, t0, t1 };
+        }
+
+        const inside = hours.filter((h) => h.start >= a && h.start + HOUR <= b);
+        if (inside.length < 2) {
+          return null;
+        }
+
+        const first = inside[0];
+        const last = inside[inside.length - 1];
+
+        return { from: first.start + HOUR / 2, to: last.start + HOUR / 2, t0: first.mean, t1: last.mean };
+      };
+      // the outdoors through the night (it gets colder towards morning), from the hourly means
+      const outdoorAt = (t: EpochMs) => between(outdoor, t) ?? outdoor.find((p) => p.start <= t && t < p.start + HOUR)?.mean ?? null;
       const taus: number[] = [];
       for (const [a, b] of usable) {
-        const t0 = at(a);
-        const t1 = at(b - 5 * MIN);
+        const seen = ends(a, b);
         const outs = outdoor.filter((p) => p.start + HOUR > a && p.start < b).map((p) => p.mean);
-        if (t0 === null || t1 === null || !outs.length) {
+        if (!seen || !outs.length) {
           continue;
         }
 
-        const tout = outs.reduce((sum, v) => sum + v, 0) / outs.length;
-        if (t0 - tout < MIN_GAP_K || t0 - t1 < MIN_DROP_K || t1 <= tout) {
+        const { t0, t1 } = seen;
+        const settle = outs.reduce((sum, v) => sum + v, 0) / outs.length + up;
+        if (t0 - settle < MIN_GAP_K || t0 - t1 < MIN_DROP_K || t1 <= settle) {
           continue;
         }
 
-        const hours = (b - 5 * MIN - a) / HOUR;
-        taus.push(hours / Math.log((t0 - tout) / (t1 - tout)));
+        const tau = solveTau(seen.from, seen.to, t0, t1, (t) => {
+          const o = outdoorAt(t);
+
+          return o === null ? null : o + up;
+        });
+        if (tau !== null) {
+          taus.push(tau);
+        }
       }
 
       const recent = taus.slice(-PAUSES_KEEP).sort((x, y) => x - y);
@@ -404,8 +478,8 @@ function dailyMeans(hours: readonly { start: EpochMs; mean: number }[], tz: stri
   return new Map([...days.entries()].filter(([, v]) => v.n >= MIN_HOURS).map(([date, v]) => [date, v.sum / v.n]));
 }
 
-/** Least squares through [ΔT, kWh]; null with too few days, too little spread, or a line that does not rise. */
-export function fitLine(points: readonly [number, number][], indoorC: number): HeatLossFit | null {
+/** Least squares through [x, y]; null with too few points, too little spread, or a line that does not rise. */
+function leastSquares(points: readonly [number, number][]): { a: number; b: number; r2: number } | null {
   const n = points.length;
   if (n < MIN_POINTS) {
     return null;
@@ -426,17 +500,101 @@ export function fitLine(points: readonly [number, number][], indoorC: number): H
     return null;
   }
 
-  const a = my - b * mx;
-  const load = (outdoorC: number) => Math.max(0, (b * (indoorC - outdoorC) + a) / 24);
+  return { a: my - b * mx, b, r2: syy > 0 ? (sxy * sxy) / (sxx * syy) : 1 };
+}
+
+/**
+ * The line through the days [ΔT, kWh]. Days within 3 K above where it reaches zero heat ran the
+ * heating only part of the time, so they are left out and the line drawn again, until it holds. The
+ * slope is the heat loss; the load at a temperature is that loss times the difference, as a heat-load
+ * calculation gives it (gains are not counted on: a cold, dark night has few). A line that reaches zero
+ * shows the gains, and where it does is the balance temperature; one that stays above zero has none to show.
+ */
+export function fitLine(points: readonly [number, number][], indoorC: number): HeatLossFit | null {
+  let line = leastSquares(points);
+  let kept = points.length;
+  let cut = MIN_DELTA_K;
+  for (let i = 0; line && line.a < 0 && i < 4; i++) {
+    const next = Math.max(MIN_DELTA_K, -line.a / line.b + BALANCE_MARGIN_K);
+    // the days above a threshold: the same count is the same days, and the line holds
+    const trimmed = points.filter(([x]) => x >= next);
+    if (trimmed.length === kept) {
+      cut = next;
+      break;
+    }
+
+    const again = leastSquares(trimmed);
+    if (!again) {
+      break;
+    }
+
+    line = again;
+    kept = trimmed.length;
+    cut = next;
+  }
+
+  if (!line) {
+    return null;
+  }
+
+  const { a, b } = line;
+  const load = (outdoorC: number) => Math.max(0, (b * (indoorC - outdoorC)) / 24);
 
   return {
     slopeKwhPerK: roundTo(b, 3) as number,
     interceptKwh: roundTo(a, 2) as number,
-    r2: roundTo(syy > 0 ? (sxy * sxy) / (sxx * syy) : 1, 2) as number,
-    wPerK: Math.round(((b / 24) * 1000) / 10) * 10,
-    balanceC: roundTo(indoorC + a / b, 1) as number,
+    r2: roundTo(line.r2, 2) as number,
+    wPerK: Math.round(((b / 24) * 1000) / 5) * 5,
+    balanceC: a < 0 ? (roundTo(indoorC + a / b, 1) as number) : null,
     loadKw: { minus10: roundTo(load(-10), 1) as number, minus20: roundTo(load(-20), 1) as number },
+    minDeltaK: roundTo(cut, 1) as number,
   };
+}
+
+/**
+ * The τ (h) for which the rooms, at `t0` at `a`, would be at `t1` at `b` cooling towards `towards(t)`:
+ * every 5 minutes T moves to towards + (T − towards)·e^(−5 min/τ). A slower fall means a longer τ, so
+ * it is found by halving between 1 h and 2000 h; null when no τ there gives `t1` or the outdoors is unknown.
+ */
+function solveTau(a: EpochMs, b: EpochMs, t0: number, t1: number, towards: (t: EpochMs) => number | null): number | null {
+  const step = 5 * MIN;
+  const endAt = (tau: number): number | null => {
+    let temp = t0;
+    for (let t = a; t < b; t += step) {
+      const dt = Math.min(step, b - t);
+      const target = towards(t + dt / 2);
+      if (target === null) {
+        return null;
+      }
+
+      temp = target + (temp - target) * Math.exp(-dt / (tau * HOUR));
+    }
+
+    return temp;
+  };
+  let lo = 1;
+  let hi = 2000;
+  const fast = endAt(lo);
+  const slow = endAt(hi);
+  if (fast === null || slow === null || t1 < fast || t1 > slow) {
+    return null;
+  }
+
+  for (let i = 0; i < 40; i++) {
+    const mid = Math.sqrt(lo * hi);
+    if ((endAt(mid) as number) < t1) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+
+  return Math.sqrt(lo * hi);
+}
+
+/** Whether [a, b) meets one of the sorted, merged intervals. */
+function overlaps(list: readonly Interval[], a: EpochMs, b: EpochMs): boolean {
+  return list.some(([x, y]) => x < b && y > a);
 }
 
 /** The value at `t` on the line through the hourly means, each taken at the middle of its hour; null outside them or across a gap. */

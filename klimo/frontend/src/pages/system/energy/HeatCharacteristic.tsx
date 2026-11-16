@@ -30,7 +30,7 @@ export function HeatCharacteristic() {
             <StatTile variant="well" title={t('Heat loss of the house')} value={t('{value} W/K', { value: fmtNum(fit.wPerK, 0) })} sub={t('fits {pct} of the days', { pct: `${fmtNum(fit.r2 * 100, 0)} %` })} />
             <StatTile variant="well" title={t('Needed at {t}', { t: fmtTemp(-10, { decimals: 0 }) })} value={t('{value} kW', { value: fmtNum(fit.loadKw.minus10, 1) })} sub={t('at {t} inside', { t: fmtTemp(d.indoorC) })} />
             <StatTile variant="well" title={t('Needed at {t}', { t: fmtTemp(-20, { decimals: 0 }) })} value={t('{value} kW', { value: fmtNum(fit.loadKw.minus20, 1) })} sub={t('at {t} inside', { t: fmtTemp(d.indoorC) })} />
-            <StatTile variant="well" title={t('No heating needed above')} value={`≈ ${fmtTemp(fit.balanceC)}`} sub={t('outdoors')} />
+            {fit.balanceC != null ? <StatTile variant="well" title={t('No heating needed above')} value={`≈ ${fmtTemp(fit.balanceC)}`} sub={t('outdoors')} /> : null}
           </AutoGrid>
         ) : (
           <Text>{t('Not enough heating days yet: {n} of 5. The line shows once there are more, in different weather.', { n: d.used })}</Text>
@@ -47,7 +47,7 @@ export function HeatCharacteristic() {
           />
         ) : null}
         <Text variant="caption">
-          {t('Heat from gas: {kwh} kWh per m³ × the boiler’s efficiency {pct} %; heat pumps by their heat meters. Electric heaters and air conditioners without a heat meter are not counted.', {
+          {t('Heat from gas: {kwh} kWh per m³ × the boiler’s efficiency {pct} %, in the hours the boiler heated (hot water and a stove outside them are left out); heat pumps by their heat meters. The load at a temperature is the heat loss × the difference. Electric heaters and air conditioners without a heat meter are not counted.', {
             kwh: fmtNum(d.gasKwhPerM3, 1),
             pct: fmtNum(d.boilerEfficiencyPct, 0),
           })}{' '}

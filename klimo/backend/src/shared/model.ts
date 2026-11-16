@@ -3558,11 +3558,14 @@ export interface HeatLossDay {
   outdoorC: Celsius | null;
   /** indoorC − outdoorC. */
   deltaK: number | null;
-  /** The gas meters' energy (the calorific value applied to a volume). */
+  /**
+   * The gas meters' energy (the calorific value applied to a volume) in the hours their boilers heated by
+   * Klimo's runs: hot water, a stove on the gas meter and standby between the runs are left out.
+   */
   gasKwh: number | null;
-  /** Heat the sources gave: gas × the boilers' efficiency, plus the heat meters of the sources without gas. */
+  /** Heat the sources gave the rooms: that gas × the boilers' efficiency, plus the heat meters of the sources without gas in their heating hours. */
   heatKwh: number | null;
-  /** The day is a point of the fit: heat, both temperatures and a difference of at least 2 K. */
+  /** The day is a point of the fit: heat, both temperatures and a difference of at least HeatLossFit.minDeltaK (2 K without a fit). */
   used: boolean;
 }
 
@@ -3570,22 +3573,32 @@ export interface HeatLossDay {
 export interface HeatLossFit {
   /** kWh a day per kelvin of difference. */
   slopeKwhPerK: number;
+  /** Below zero: the heat the house gets for free a day (people, appliances, the sun) — `−intercept ÷ 24` kW. */
   interceptKwh: number;
   /** How well the line fits (0…1). */
   r2: number;
-  /** Heat loss of the house: watts per kelvin (slope ÷ 24 h). */
+  /** Heat loss of the house: watts per kelvin (slope ÷ 24 h), to 5 W/K. */
   wPerK: number;
-  /** Outdoor temperature above which no heating is needed, at the mean indoor temperature. */
-  balanceC: Celsius;
-  /** Heat the house needs at −10 °C and at −20 °C outdoors, kW. */
+  /**
+   * Outdoor temperature above which no heating is needed, at the mean indoor temperature: where the line
+   * reaches zero. null when it does not below that temperature (no gains to show).
+   */
+  balanceC: Celsius | null;
+  /** Heat the house loses at −10 °C and at −20 °C outdoors, kW: the heat loss × the difference, gains not counted on (a heat-load figure). */
   loadKw: { minus10: number; minus20: number };
+  /**
+   * The smallest difference among the line's days: 2 K, or 3 K above where the line reaches zero heat,
+   * whichever is more — days closer to it ran the heating only part of the time.
+   */
+  minDeltaK: number;
 }
 
 /**
  * GET /api/energy/heat-loss — the house's heat characteristic: day by day over the last 30 complete
  * days, the heat the sources gave against the difference between the rooms and the outdoors, and the
  * line through them. Heat counts gas (by the calorific value and the boilers' efficiency) and the heat
- * meters of sources without gas; electric heaters and air conditioners without a heat meter are not counted.
+ * meters of sources without gas, in the hours those sources heated by Klimo's runs; electric heaters and
+ * air conditioners without a heat meter are not counted.
  */
 export interface HeatLossDto {
   /** First and last day (the last is yesterday). */
@@ -3768,17 +3781,19 @@ export interface StatsAttrs {
     /** The days of the fit: [ΔT K, heat kWh]. */
     pts: [number, number][];
     tin: Celsius | null;
-    fit: { wpk: number; a: number; b: number; bal: Celsius; l10: number; l20: number } | null;
+    fit: { wpk: number; a: number; b: number; bal: Celsius | null; l10: number; l20: number } | null;
     kpm: number;
     eff: number;
     ok: boolean;
   } | null;
   /**
-   * How fast the house cools without heat, from the boiler's night pauses of the last ten days: the
-   * time constant τ (h) of the rooms' mean temperature falling towards the outdoors, the pauses it
-   * comes from, and the heat capacity τ × the heat loss (kWh/K) when the heat characteristic has a fit.
+   * How fast the house cools without heat, from the sources' night pauses of the last ten days: the
+   * time constant τ (h) of the rooms' mean temperature falling towards where it would settle — the
+   * outdoors plus `up` (K), what the house's gains at night (half their daily average by the heat
+   * characteristic) hold it above them — the pauses it comes from, and the heat capacity τ × the heat
+   * loss (kWh/K) when there is a fit.
    */
-  inertia: { tau: number; n: number; c: number | null } | null;
+  inertia: { tau: number; n: number; up: number; c: number | null } | null;
 }
 
 /** sensor.klimo_<slug>_card attributes (topic klimo/room/<roomId>/card). Budget ≤ 4 KB. */

@@ -76,7 +76,7 @@
  * `klimo-room-sheet` and `klimo-open`).
  */
 
-const VERSION = '0.2.42';
+const VERSION = '0.2.43';
 
 /* ─────────────────────────────── 1 Tokens ──────────────────────────────────────────────────────
  * The same values as the panel's design tokens. `npm run tokens:card` in klimo/frontend copies
@@ -4585,7 +4585,7 @@ class KlimoHeatLossCard extends KlimoWidget {
     const chart = pts.length ? this._chart(lang, pts, fit) : '';
     const foot =
       `<div class="foot" style="--n:2">` +
-      `<div class="stat"><span class="lbl">${esc(tr(lang, 'w_noHeatAbove'))}</span><span class="sv">${fit ? `≈ ${fmt1(fit.bal)}` : '—'}<small> ${esc(tr(lang, 'w_cOutdoors'))}</small></span></div>` +
+      `<div class="stat"><span class="lbl">${esc(tr(lang, 'w_noHeatAbove'))}</span><span class="sv">${fit && isNum(fit.bal) ? `≈ ${fmt1(fit.bal)}` : '—'}<small> ${esc(tr(lang, 'w_cOutdoors'))}</small></span></div>` +
       `<div class="stat"><span class="lbl">${esc(tr(lang, 'w_heatFromGas'))}</span><span class="note">${esc(tr(lang, 'w_gasBasis', { k: fmt1(heat.kpm), e: Math.round(heat.eff) }))}</span></div></div>`;
     this._frame(ctx, `<div class="wg"><div class="hd"><span class="ov">${esc(title)}</span>${aside}</div>${lead}${chart}${foot}</div>`);
   }
@@ -4785,8 +4785,10 @@ class KlimoInertiaCard extends KlimoWidget {
       `<div class="lead"><div class="lv"><span class="lbl">${esc(tr(lang, 'w_tau'))}</span><span class="big">${Math.round(tau)}<span class="unit"> ${esc(tr(lang, 'w_hUnit'))}</span></span></div>` +
       `<div class="side"><div class="kv"><span>${esc(tr(lang, 'w_capacity'))}</span><span><b>${fmt1(inertia.c)}</b> ${esc(tr(lang, 'w_kwhk'))}</span></div>` +
       `<div class="kv"><span>${esc(tr(lang, 'w_lossShort'))}</span><span><b>${isNum(wpk) ? Math.round(wpk) : '—'}</b> ${esc(tr(lang, 'w_wpk'))}</span></div></div></div>`;
-    const temp = (out, h) => out + (t0 - out) * Math.exp(-h / tau);
-    const hoursTo = (out, level) => (t0 <= level ? 0 : level <= out ? null : tau * Math.log((t0 - out) / (level - out)));
+    // without heat the rooms settle above the outdoors by what the house's gains give (from the heat characteristic)
+    const up = isNum(inertia.up) ? inertia.up : 0;
+    const temp = (out, h) => out + up + (t0 - out - up) * Math.exp(-h / tau);
+    const hoursTo = (out, level) => (t0 <= level ? 0 : level <= out + up ? null : tau * Math.log((t0 - out - up) / (level - out - up)));
     const lowest = Math.min(...COOL_OUTDOORS.map((o) => temp(o, COOL_HOURS)), ...COOL_LEVELS);
     const y0 = Math.floor(Math.min(lowest, 12) / 2) * 2;
     const y1 = Math.ceil(Math.max(t0, 22) / 2) * 2;
