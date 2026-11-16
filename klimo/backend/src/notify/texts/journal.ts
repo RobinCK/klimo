@@ -186,6 +186,10 @@ export const JOURNAL: Record<JournalCode, Row> = {
     '{device}: the manual {from:temp} was reverted to {to:temp}[ · {by}]',
     '{device}: ручні {from:temp} повернуто на {to:temp}[ · {by}]',
   ],
+  'trv.self_set': [
+    '{device} showed {valueC} by itself while locked: nobody turned it, {to:temp} sent again',
+    '{device} сама показала {valueC}, хоча заблокована: її ніхто не крутив, повернуто {to:temp}',
+  ],
   'trv.handback': ['{device}: switched to its own sensor', '{device}: перемкнуто на власний датчик'],
   'sensor.stale': ['{device}: no data for {minutes}', '{device}: немає даних {minutes}'],
   'sensor.back': ['{device}: data is back', '{device}: дані знову є'],

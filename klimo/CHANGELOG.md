@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.45
+
+- **A locked head no longer sets the room's target by itself.** Klimo took any setpoint a head reported
+  outside its own commands as a hand on the knob and made it the room's target, also on a head whose
+  child lock was on — where no hand can turn it. A head that shows another setpoint after a restart, a
+  rejoin or its own reset could so leave a room heating towards 30° (one room ran its boiler for hours
+  and was stopped only by the 26° overheat guard). Now, as the documentation says, a locked head counts
+  only changes made through Home Assistant: a setpoint it shows by itself, with no person or automation
+  behind it, is put back at once and the journal says so.
+
 ## 0.2.44
 
 - **The heat loss of a heavy house.** In a brick house with a warm floor the heat of one day follows what

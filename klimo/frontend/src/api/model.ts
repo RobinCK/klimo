@@ -315,7 +315,7 @@ export type JournalCode =
   | 'room.device_added' | 'room.device_removed' | 'room.device_replaced' | 'room.heating_changed'
   | 'room.circuit_joined' | 'room.circuit_left' | 'room.renamed' | 'room.area_changed' | 'circuit.merged'
   // dev
-  | 'trv.retry' | 'trv.failed' | 'trv.confirmed' | 'trv.manual' | 'trv.manual_reverted' | 'trv.handback'
+  | 'trv.retry' | 'trv.failed' | 'trv.confirmed' | 'trv.manual' | 'trv.manual_reverted' | 'trv.self_set' | 'trv.handback'
   | 'sensor.stale' | 'sensor.back' | 'sensor.excluded' | 'sensor.included' | 'sensor.suggest_weight'
   | 'battery.low' | 'relay.mismatch' | 'actuator.conflict' | 'entity.unavailable' | 'entity.missing'
   | 'z2m.restart' | 'z2m.offline'

@@ -722,6 +722,8 @@ const JOURNAL: Record<JournalCode, JRender> = {
     return policy && ['slot', 'revert', 'save'].includes(policy) ? `${text} · ${trvManualPolicyLabel(policy as TrvManualPolicy).toLocaleLowerCase()}` : text;
   },
   'trv.manual_reverted': (p, c, e) => t('{device}: the manual {from} was reverted to {to}', { device: subjectDevice(e, c), from: temp(p, 'from'), to: temp(p, 'to') }),
+  'trv.self_set': (p, c, e) =>
+    t('{device} showed {value} by itself while locked: nobody turned it, {to} sent again', { device: subjectDevice(e, c), value: temp(p, 'valueC'), to: temp(p, 'to') }),
   'trv.handback': (_p, c, e) => t('{device}: switched to its own sensor', { device: subjectDevice(e, c) }),
   'sensor.stale': (p, c, e) => t('{device}: no data for {dur}', { device: subjectDevice(e, c), dur: fmtDur(num(p, 'minutes')) }),
   'sensor.back': (_p, c, e) => t('{device}: data is back', { device: subjectDevice(e, c) }),

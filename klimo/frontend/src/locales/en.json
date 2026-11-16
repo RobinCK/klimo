@@ -167,6 +167,7 @@
   "{device} differs from the others by {dev} — consider a lower weight": "{device} differs from the others by {dev} — consider a lower weight",
   "{device} is being changed by something else": "{device} is being changed by something else",
   "{device} is missing": "{device} is missing",
+  "{device} showed {value} by itself while locked: nobody turned it, {to} sent again": "{device} showed {value} by itself while locked: nobody turned it, {to} sent again",
   "{device} unavailable": "{device} unavailable",
   "{device}: battery {pct}": "{device}: battery {pct}",
   "{device}: changed by something else": "{device}: changed by something else",

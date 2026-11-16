@@ -1344,6 +1344,15 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
     if (!m.roomId) return;
     const room = this.config.engineConfig().rooms.find((r) => r.id === m.roomId);
     if (!room) return;
+    // a locked head cannot be turned by hand: a setpoint it reports by itself, with no person or automation
+    // behind it (a restart, a rejoin, its own reset), is nobody's wish — Klimo sends its own again
+    if (m.ownerType === 'trv' && !m.userId && !m.parentId && this.headLocked(m.entityId)) {
+      const deviceKey = this.reconciler.infoOf(m.key)?.deviceKey ?? null;
+      this.pendingDecisions.push({ code: 'trv.self_set', category: 'dev', tone: 'warn', params: { valueC: round1(m.valueC), to: round1(m.commandedC) }, roomId: room.id, deviceKey, entityIds: [m.entityId] });
+      this.log.warn(`${room.name}: ${m.entityId} showed ${m.valueC}° by itself while locked; sending ${m.commandedC}° again`);
+      this.requestRun('trv.self_set');
+      return;
+    }
     const before = this.turning.get(m.key);
     before?.timer.cancel();
     // what Klimo had sent before the first step is what the turn is measured against
@@ -1355,6 +1364,15 @@ export class EngineService implements IEngine, OnApplicationBootstrap, OnModuleD
       this.onManualSettled(turn);
     }, MANUAL_SETTLE_MS);
     this.turning.set(m.key, { m: turn, timer });
+  }
+
+  /** A head whose child lock is on (its lock switch reads on in Home Assistant): its knob cannot be turned. */
+  private headLocked(entityId: EntityId): boolean {
+    for (const list of Object.values(this.config.engineConfig().devicesByEmitter)) {
+      const lock = list.find((x) => x.kind === 'trv' && x.entityId === entityId)?.siblings?.childLock;
+      if (lock) return this.ha.getState(lock)?.state === 'on';
+    }
+    return false;
   }
 
   /** The knob has rested: the room takes the value as its target (or Klimo puts its own back). */

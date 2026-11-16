@@ -109,6 +109,33 @@ test('a head turned by hand becomes the room target until the next slot', async 
   e.engine.onModuleDestroy();
 });
 
+test('a locked head that shows another setpoint by itself is put back, not taken as the room target', async () => {
+  const cfg = h.makeCfg({});
+  cfg.rooms[0] = { ...cfg.rooms[0], trv: { ...cfg.rooms[0].trv, childLock: true } };
+  const dev = cfg.devicesByEmitter.e_rad[0];
+  cfg.devicesByEmitter.e_rad[0] = { ...dev, capabilities: { ...dev.capabilities, childLock: true }, siblings: { ...dev.siblings, childLock: 'switch.living_trv_lock' } };
+  const e = h.makeEngine({ safety: NO_DRY_RUN, cfg });
+  e.ha.set('switch.living_trv_lock', 'on', {}, { silent: true });
+  await e.boot();
+  await e.advance(3 * MIN);
+  const sent = e.engine.ledger()['climate.living_trv'].commanded.temperature;
+  // the head reports another setpoint on its own (a rejoin, a reset): no person, no automation behind it
+  const shown = sent - 8;
+  e.ha.foreign('climate.living_trv', 'heat', { temperature: shown }, null);
+  await e.advance(10 * SEC);
+  assert.equal(e.roomActionsCalls.length, 0, 'nobody turned a locked knob: no new room target');
+  assert.ok(e.journal.entries.some((x) => x.code === 'trv.self_set' && x.params.valueC === shown && x.params.to === sent));
+  assert.ok(!e.journal.entries.some((x) => x.code === 'trv.manual'));
+  await e.advance(MIN);
+  assert.equal(e.ha.getState('climate.living_trv').attributes.temperature, sent, 'Klimo’s own setpoint is sent again');
+
+  // a person changing it through Home Assistant still sets the room target
+  e.ha.foreign('climate.living_trv', 'heat', { temperature: sent - 3 }, 'user');
+  await e.advance(10 * SEC);
+  assert.equal(e.roomActionsCalls.length, 1);
+  e.engine.onModuleDestroy();
+});
+
 test('"what if": a dry run evaluates clones, several steps apart, and touches nothing live', async () => {
   const e = h.makeEngine({ safety: NO_DRY_RUN });
   await e.boot();

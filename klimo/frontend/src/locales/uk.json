@@ -253,6 +253,7 @@
   "{device} differs from the others by {dev} — consider a lower weight": "{device} відрізняється від інших на {dev} — варто зменшити вагу",
   "{device} is being changed by something else": "{device}: змінюється ззовні",
   "{device} is missing": "{device}: сутність зникла",
+  "{device} showed {value} by itself while locked: nobody turned it, {to} sent again": "{device} сама показала {value}, хоча заблокована: її ніхто не крутив, повернуто {to}",
   "{device} unavailable": "{device}: недоступно",
   "{device}: battery {pct}": "{device}: батарея {pct}",
   "{device}: changed by something else": "{device}: змінюють ззовні",

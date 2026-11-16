@@ -106,6 +106,8 @@ export interface ManualChange {
   /** The head showed no target of Klimo's (it was off): the number turned is the target itself. */
   absolute: boolean;
   userId: string | null;
+  /** The automation behind the change, if one made it. */
+  parentId: string | null;
   contextId: string | null;
   at: EpochMs;
 }
@@ -695,6 +697,7 @@ export class ReconcilerService {
       commandedC: commanded ?? value,
       absolute,
       userId: obs.context.userId,
+      parentId: obs.context.parentId,
       contextId: obs.context.id,
       at: now,
     };
