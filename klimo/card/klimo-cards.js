@@ -76,7 +76,7 @@
  * `klimo-room-sheet` and `klimo-open`).
  */
 
-const VERSION = '0.2.43';
+const VERSION = '0.2.44';
 
 /* ─────────────────────────────── 1 Tokens ──────────────────────────────────────────────────────
  * The same values as the panel's design tokens. `npm run tokens:card` in klimo/frontend copies
@@ -548,6 +548,7 @@ const STRINGS = {
     w_noGas: 'Потрібен лічильник газу котла або лічильник тепла джерела — прив’яжіть його на сторінці джерела в Klimo.',
     w_fewDays: 'Поки замало днів з опаленням: {n} з 5. Лінія з’явиться, коли їх стане більше, з різною погодою.',
     w_heatAria: 'Тепло джерел за добу проти різниці температур у кімнатах і надворі, з лінією через ці дні',
+    w_byTotals: 'Дні розкидані — будинок накопичує тепло, тож це тепло за період ÷ градусо-дні.',
     w_cycles: 'Такти за 24 год', w_cyclesOf: '{name} · такти за 24 год', w_onFor: 'Увімкнено · {d}', w_offFor: 'Вимкнено · {d}', w_offDay: 'Не вмикався',
     w_noSource: 'Немає такого джерела — оберіть його в налаштуваннях картки.', w_source: 'Джерело', w_duty: '{v} % часу', w_starts: 'Пуски',
     w_perHour: 'за годину', w_startsN: 'Пусків', w_avgRun: 'Сер. такт', w_avgPause: 'Сер. пауза', w_short: 'Короткі < 5 хв', w_minUnit: 'хв',
@@ -827,6 +828,7 @@ const STRINGS = {
     w_noGas: 'It needs the boiler’s gas meter or a source’s heat meter — bind one on the source’s page in Klimo.',
     w_fewDays: 'Not enough heating days yet: {n} of 5. The line shows once there are more, in different weather.',
     w_heatAria: 'The sources’ heat a day against the difference between the rooms and the outdoors, with a line through the days',
+    w_byTotals: 'The days scatter (the house stores heat), so this is the period’s heat ÷ its degree-days.',
     w_cycles: 'Cycles in 24 h', w_cyclesOf: '{name} · cycles in 24 h', w_onFor: 'On · {d}', w_offFor: 'Off · {d}', w_offDay: 'Did not run',
     w_noSource: 'No such source — pick it in the card settings.', w_source: 'Source', w_duty: '{v} % of the time', w_starts: 'Starts',
     w_perHour: 'per hour', w_startsN: 'Starts', w_avgRun: 'Avg run', w_avgPause: 'Avg pause', w_short: 'Short < 5 min', w_minUnit: 'min',
@@ -4582,12 +4584,14 @@ class KlimoHeatLossCard extends KlimoWidget {
         `<div class="side"><div class="kv"><span>${esc(tr(lang, 'w_needAt', { t: '−10' }))}</span><span><b>${fmt1(fit.l10)}</b> ${esc(tr(lang, 'w_kwUnit'))}</span></div>` +
         `<div class="kv"><span>${esc(tr(lang, 'w_needAt', { t: '−20' }))}</span><span><b>${fmt1(fit.l20)}</b> ${esc(tr(lang, 'w_kwUnit'))}</span></div></div></div>`
       : `<div class="note">${esc(tr(lang, 'w_fewDays', { n: pts.length }))}</div>`;
+    // the days scatter too much for a line: the figure is the stretch's heat ÷ its degree-days
+    const how = fit && fit.m === 'totals' ? `<div class="note">${esc(tr(lang, 'w_byTotals'))}</div>` : '';
     const chart = pts.length ? this._chart(lang, pts, fit) : '';
     const foot =
       `<div class="foot" style="--n:2">` +
       `<div class="stat"><span class="lbl">${esc(tr(lang, 'w_noHeatAbove'))}</span><span class="sv">${fit && isNum(fit.bal) ? `≈ ${fmt1(fit.bal)}` : '—'}<small> ${esc(tr(lang, 'w_cOutdoors'))}</small></span></div>` +
       `<div class="stat"><span class="lbl">${esc(tr(lang, 'w_heatFromGas'))}</span><span class="note">${esc(tr(lang, 'w_gasBasis', { k: fmt1(heat.kpm), e: Math.round(heat.eff) }))}</span></div></div>`;
-    this._frame(ctx, `<div class="wg"><div class="hd"><span class="ov">${esc(title)}</span>${aside}</div>${lead}${chart}${foot}</div>`);
+    this._frame(ctx, `<div class="wg"><div class="hd"><span class="ov">${esc(title)}</span>${aside}</div>${lead}${how}${chart}${foot}</div>`);
   }
 
   _chart(lang, pts, fit) {

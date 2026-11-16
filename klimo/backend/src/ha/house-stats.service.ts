@@ -4,6 +4,7 @@ import { sourceLabels } from '../config/source-labels';
 import { addDays, fromLocal, toLocal } from '../engine/core/time';
 import { METER_QUANTITIES, meterUnit } from '../shared/model';
 import type {
+  Celsius,
   ClockPort,
   EntityId,
   EpochMs,
@@ -48,6 +49,14 @@ const MIN_SPREAD_K = 3;
 const BALANCE_MARGIN_K = 3;
 /** At night the house gets about half its average gains: no sun, less going on. */
 const NIGHT_GAINS_SHARE = 0.5;
+/**
+ * A line that explains less of the days than this is not the house's: the days carry heat the walls stored
+ * the day before or give back the day after (a heavy house, a room heated up by hand).
+ */
+const LINE_MIN_R2 = 0.6;
+/** The totals come from a stretch of at least this many days that starts and ends this close in indoor temperature. */
+const TOTALS_MIN_DAYS = 7;
+const TOTALS_MATCH_K = 0.3;
 /** A run's last minutes reach the meter in the next hour: an hour this close after a run is still a heating hour. */
 const RUN_TAIL_MS = 15 * MIN;
 /** Night pauses are looked for in the last ten days (5-minute statistics are kept as long). */
@@ -128,7 +137,7 @@ export class HouseStatsService implements IHouseStats {
             pts: heat.days.filter((d) => d.used).map((d) => [roundTo(d.deltaK, 1) as number, roundTo(d.heatKwh, 1) as number]),
             tin: heat.indoorC,
             fit: fit
-              ? { wpk: fit.wPerK, a: roundTo(fit.interceptKwh, 2) as number, b: roundTo(fit.slopeKwhPerK, 3) as number, bal: fit.balanceC, l10: fit.loadKw.minus10, l20: fit.loadKw.minus20 }
+              ? { m: fit.method, wpk: fit.wPerK, a: roundTo(fit.interceptKwh, 2) as number, b: roundTo(fit.slopeKwhPerK, 3) as number, bal: fit.balanceC, l10: fit.loadKw.minus10, l20: fit.loadKw.minus20 }
               : null,
             kpm: heat.gasKwhPerM3,
             eff: heat.boilerEfficiencyPct,
@@ -261,18 +270,17 @@ export class HouseStatsService implements IHouseStats {
         used: heatKwh !== null && heatKwh >= MIN_HEAT_KWH && deltaK !== null && deltaK >= MIN_DELTA_K,
       };
     });
-    const points = days.filter((d) => d.used);
-    const indoorC = points.length ? points.reduce((sum, d) => sum + (d.indoorC as number), 0) / points.length : null;
-    const fit = indoorC === null ? null : fitLine(points.map((d) => [d.deltaK as number, d.heatKwh as number]), indoorC);
-    // the days near the balance the line left out are not its points
-    const kept = fit ? days.map((d) => ({ ...d, used: d.used && (d.deltaK as number) >= fit.minDeltaK })) : days;
+    const found = characteristic(days.filter((d) => d.used) as HouseDay[]);
+    // the days the figure comes from: the line's (without those near the balance) or the stretch of the totals
+    const figured = new Set(found?.dates ?? []);
+    const kept = found ? days.map((d) => ({ ...d, used: figured.has(d.date) })) : days;
 
     return {
       ...empty(true),
       days: kept,
       used: kept.filter((d) => d.used).length,
-      indoorC: roundTo(indoorC, 1),
-      fit,
+      indoorC: found ? found.indoorC : null,
+      fit: found?.fit ?? null,
     };
   }
 
@@ -311,8 +319,12 @@ export class HouseStatsService implements IHouseStats {
 
     return Promise.all(
       sources.map(async (s): Promise<SourceCycles> => {
+        // the pumps that run with it: of the circuits that follow it, and the primary pumps of the manifolds it feeds
         const loops = new Set(cfg.circuits.filter((c) => c.mode === 'follow_source' && c.sourceIds.includes(s.id)).map((c) => c.id));
-        const pumps = cfg.pumps.filter((p) => p.enabled && p.circuitId !== null && loops.has(p.circuitId)).sort((a, b) => a.order - b.order);
+        const headers = new Set(cfg.manifolds.filter((m) => m.sourceIds.includes(s.id)).map((m) => m.id));
+        const pumps = cfg.pumps
+          .filter((p) => p.enabled && ((p.circuitId !== null && loops.has(p.circuitId)) || (p.manifoldId !== null && headers.has(p.manifoldId))))
+          .sort((a, b) => a.order - b.order);
         const [runs, ...pumpRuns] = await Promise.all([this.spans.range(from, now, 'source', s.id), ...pumps.map((p) => this.spans.range(from, now, 'pump', p.id))]);
 
         return { id: s.id, n: names.get(s.id) ?? s.name, runs: minutes(runs), p: pumps.map((p, i) => ({ id: p.id, n: p.name, runs: minutes(pumpRuns[i]) })) };
@@ -503,6 +515,56 @@ function leastSquares(points: readonly [number, number][]): { a: number; b: numb
   return { a: my - b * mx, b, r2: syy > 0 ? (sxy * sxy) / (sxx * syy) : 1 };
 }
 
+type HouseDay = HeatLossDay & { indoorC: number; deltaK: number; heatKwh: number };
+
+/**
+ * The house's heat characteristic from its heating days (in date order): the line through them when it
+ * fits them (R² ≥ 0.6), else the totals of the longest stretch up to the last day that starts and ends
+ * within 0.3 K of the same indoor temperature (at least 7 days; all of them when none does). Over such a
+ * stretch what the walls stored and gave back cancels out, and the heat ÷ the degree-days is the heat loss
+ * with the house's own gains counted in; it has no balance temperature to show. With the dates the figure
+ * comes from and their mean indoor temperature.
+ */
+export function characteristic(days: readonly HouseDay[]): { fit: HeatLossFit; dates: LocalDate[]; indoorC: Celsius } | null {
+  const meanIn = (list: readonly HouseDay[]) => list.reduce((sum, d) => sum + d.indoorC, 0) / list.length;
+  if (!days.length) {
+    return null;
+  }
+
+  const allIn = meanIn(days);
+  const line = fitLine(days.map((d) => [d.deltaK, d.heatKwh]), allIn);
+  if (line && line.r2 !== null && line.r2 >= LINE_MIN_R2) {
+    return { fit: line, dates: days.filter((d) => d.deltaK >= line.minDeltaK).map((d) => d.date), indoorC: roundTo(allIn, 1) as number };
+  }
+
+  const last = days[days.length - 1];
+  const start = days.findIndex((d, i) => days.length - i >= TOTALS_MIN_DAYS && Math.abs(d.indoorC - last.indoorC) <= TOTALS_MATCH_K);
+  const stretch = start >= 0 ? days.slice(start) : days;
+  const degreeDays = stretch.reduce((sum, d) => sum + d.deltaK, 0);
+  if (stretch.length < MIN_POINTS || !(degreeDays > 0)) {
+    return null;
+  }
+
+  const b = stretch.reduce((sum, d) => sum + d.heatKwh, 0) / degreeDays;
+  const indoorC = meanIn(stretch);
+  const load = (outdoorC: number) => Math.max(0, (b * (indoorC - outdoorC)) / 24);
+
+  return {
+    fit: {
+      method: 'totals',
+      slopeKwhPerK: roundTo(b, 3) as number,
+      interceptKwh: 0,
+      r2: line ? line.r2 : null,
+      wPerK: Math.round(((b / 24) * 1000) / 5) * 5,
+      balanceC: null,
+      loadKw: { minus10: roundTo(load(-10), 1) as number, minus20: roundTo(load(-20), 1) as number },
+      minDeltaK: MIN_DELTA_K,
+    },
+    dates: stretch.map((d) => d.date),
+    indoorC: roundTo(indoorC, 1) as number,
+  };
+}
+
 /**
  * The line through the days [ΔT, kWh]. Days within 3 K above where it reaches zero heat ran the
  * heating only part of the time, so they are left out and the line drawn again, until it holds. The
@@ -541,6 +603,7 @@ export function fitLine(points: readonly [number, number][], indoorC: number): H
   const load = (outdoorC: number) => Math.max(0, (b * (indoorC - outdoorC)) / 24);
 
   return {
+    method: 'line',
     slopeKwhPerK: roundTo(b, 3) as number,
     interceptKwh: roundTo(a, 2) as number,
     r2: roundTo(line.r2, 2) as number,

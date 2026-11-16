@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.44
+
+- **The heat loss of a heavy house.** In a brick house with a warm floor the heat of one day follows what
+  the walls stored the days before — the season starting, a room heated up by hand — more than that day's
+  weather, so the line through the days fitted almost none of them and its slope read about half the real
+  loss (one house: 85 W/K where its heat and degree-days over three weeks say 146 W/K). When the line
+  explains less than 60 % of the days, the heat loss now comes from the totals of the longest stretch that
+  starts and ends at the same indoor temperature (what the walls stored and gave back cancels out): heat ÷
+  degree-days. The loads, the heat capacity and the widget follow it; the panel and the widget say which
+  way it was found. A line that fits keeps the line, with its gains and balance temperature.
+- **Boiler cycles** shows a manifold's primary pump with the source that feeds it, not only a floor's own pump.
+
 ## 0.2.43
 
 - **The heat characteristic counts only the heat that went to the rooms.** It took everything the gas meter

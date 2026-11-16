@@ -3565,18 +3565,26 @@ export interface HeatLossDay {
   gasKwh: number | null;
   /** Heat the sources gave the rooms: that gas × the boilers' efficiency, plus the heat meters of the sources without gas in their heating hours. */
   heatKwh: number | null;
-  /** The day is a point of the fit: heat, both temperatures and a difference of at least HeatLossFit.minDeltaK (2 K without a fit). */
+  /** The heat loss comes from this day: heat, both temperatures, a difference of at least 2 K, and among the line's days (not near the balance) or the totals' stretch. */
   used: boolean;
 }
 
-/** The line through the days: heat a day = slope × ΔT + intercept. */
+/** The heat characteristic: heat a day = slope × ΔT + intercept. */
 export interface HeatLossFit {
+  /**
+   * How it was found. 'line': the line through the days, which fits them (R² ≥ 0.6). 'totals': the heat of
+   * a stretch of days that starts and ends at the same indoor temperature ÷ its degree-days, when the days
+   * scatter too much for a line (a heavy house stores heat one day and gives it back the next, a room
+   * heated up by hand); the house's own gains are counted in, so in a frost it needs a little more, and
+   * there is no intercept or balance temperature.
+   */
+  method: 'line' | 'totals';
   /** kWh a day per kelvin of difference. */
   slopeKwhPerK: number;
   /** Below zero: the heat the house gets for free a day (people, appliances, the sun) — `−intercept ÷ 24` kW. */
   interceptKwh: number;
-  /** How well the line fits (0…1). */
-  r2: number;
+  /** How well the line through the days fits them (0…1); null when there is none (too few days or too little spread). */
+  r2: number | null;
   /** Heat loss of the house: watts per kelvin (slope ÷ 24 h), to 5 W/K. */
   wPerK: number;
   /**
@@ -3607,7 +3615,7 @@ export interface HeatLossDto {
   days: HeatLossDay[];
   /** Days that make the fit. */
   used: number;
-  /** Mean indoor temperature of those days (the loads assume it). */
+  /** Mean indoor temperature of the days the figure comes from (the loads assume it). */
   indoorC: Celsius | null;
   /** null below 5 days or under 3 K of spread between them, or when the line does not rise. */
   fit: HeatLossFit | null;
@@ -3624,7 +3632,7 @@ export interface SourceCycles {
   id: Id;
   n: string;
   runs: [number, number | null][];
-  /** The pumps of the circuits that run with the source (a floor that follows it). */
+  /** The pumps that run with the source: of the circuits that follow it (a floor) and the primary pumps of the manifolds it feeds. */
   p: { id: Id; n: string; runs: [number, number | null][] }[];
 }
 
@@ -3781,7 +3789,7 @@ export interface StatsAttrs {
     /** The days of the fit: [ΔT K, heat kWh]. */
     pts: [number, number][];
     tin: Celsius | null;
-    fit: { wpk: number; a: number; b: number; bal: Celsius | null; l10: number; l20: number } | null;
+    fit: { m: HeatLossFit['method']; wpk: number; a: number; b: number; bal: Celsius | null; l10: number; l20: number } | null;
     kpm: number;
     eff: number;
     ok: boolean;

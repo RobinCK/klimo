@@ -27,7 +27,12 @@ export function HeatCharacteristic() {
         {d.recorder === 'unavailable' ? <Text variant="caption">{t('Home Assistant’s recorder did not answer — try again later.')}</Text> : null}
         {fit ? (
           <AutoGrid min={150} gap="sm">
-            <StatTile variant="well" title={t('Heat loss of the house')} value={t('{value} W/K', { value: fmtNum(fit.wPerK, 0) })} sub={t('fits {pct} of the days', { pct: `${fmtNum(fit.r2 * 100, 0)} %` })} />
+            <StatTile
+              variant="well"
+              title={t('Heat loss of the house')}
+              value={t('{value} W/K', { value: fmtNum(fit.wPerK, 0) })}
+              sub={fit.method === 'line' && fit.r2 != null ? t('fits {pct} of the days', { pct: `${fmtNum(fit.r2 * 100, 0)} %` }) : t('from the totals of {n} days', { n: d.used })}
+            />
             <StatTile variant="well" title={t('Needed at {t}', { t: fmtTemp(-10, { decimals: 0 }) })} value={t('{value} kW', { value: fmtNum(fit.loadKw.minus10, 1) })} sub={t('at {t} inside', { t: fmtTemp(d.indoorC) })} />
             <StatTile variant="well" title={t('Needed at {t}', { t: fmtTemp(-20, { decimals: 0 }) })} value={t('{value} kW', { value: fmtNum(fit.loadKw.minus20, 1) })} sub={t('at {t} inside', { t: fmtTemp(d.indoorC) })} />
             {fit.balanceC != null ? <StatTile variant="well" title={t('No heating needed above')} value={`≈ ${fmtTemp(fit.balanceC)}`} sub={t('outdoors')} /> : null}
@@ -35,6 +40,11 @@ export function HeatCharacteristic() {
         ) : (
           <Text>{t('Not enough heating days yet: {n} of 5. The line shows once there are more, in different weather.', { n: d.used })}</Text>
         )}
+        {fit?.method === 'totals' ? (
+          <Text variant="caption">
+            {t('The days scatter too much for a line: the house stores heat one day and gives it back the next. So the heat loss is the heat of {n} days that start and end at the same indoor temperature ÷ their degree-days; the house’s own gains are counted in, so in a frost it needs a little more.', { n: d.used })}
+          </Text>
+        ) : null}
         {points.length ? (
           <HeatLossChart
             points={points}

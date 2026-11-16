@@ -525,7 +525,13 @@ and pumps with meters.
 - **The line** goes through the days with heat and at least 2 K of difference. Days less than 3 K above
   the difference where the line reaches zero heat ran the heating only part of the time (the season
   starting, a mild day); they are left out and the line drawn again. It shows from 5 days spread over 3 K.
-- **Heat loss** is its slope in W/K (to 5 W/K). **Needed at −10 °C / −20 °C** is that loss × the difference
+- **When the days scatter too much for a line** (it explains less than 60 % of them), the house stores heat
+  one day and gives it back the next — a heavy house, the season starting, a room heated up by hand. Then the
+  heat loss is the heat of the longest stretch up to yesterday that starts and ends within 0.3 K of the same
+  indoor temperature (at least 7 days), ÷ its degree-days: what the walls stored and gave back cancels out.
+  The house's own gains are counted in there, so in a frost it needs a little more, and there is no balance
+  temperature to show. The chart draws that figure as a line through zero.
+- **Heat loss** is the slope in W/K (to 5 W/K). **Needed at −10 °C / −20 °C** is that loss × the difference
   from the rooms' mean: what the heating must give on a cold night, the gains not counted on, as a heat
   load is calculated. **No heating needed above** is where the line reaches zero heat — the house's gains
   (people, appliances, the sun) cover the rest; it is not shown when the line does not reach zero below
@@ -801,7 +807,7 @@ The widgets chart the house rather than control it:
   from, the heat needed at −10 °C and −20 °C and the outdoor temperature above which no heating is needed
   (see [Consumption and cost](#consumption-and-cost)).
 - **Boiler cycles** (`klimo-cycles-card`) — a source's runs over the last 24 hours (the gas boiler unless
-  `source:` names another) with the pumps of the floors that run with it, the hourly outdoor temperature,
+  `source:` names another) with the pumps that run with it (a floor's that follows it, a manifold's it feeds), the hourly outdoor temperature,
   the starts per hour and the run, pause and short-run (under 5 min) figures. Short runs and hours with
   three or more starts show in yellow.
 - **Thermal inertia** (`klimo-inertia-card`) — how fast the house cools without heat. It looks at the night

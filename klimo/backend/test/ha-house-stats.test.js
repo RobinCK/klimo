@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { FakeClock, FakeHa, state } = require('./ha-harness');
-const { HouseStatsService, fitLine } = require('../dist/ha/house-stats.service');
+const { HouseStatsService, characteristic, fitLine } = require('../dist/ha/house-stats.service');
 const { defaultSettings, newSourceConfig } = require('../dist/shared/defaults');
 const { addDays, fromLocal, toLocal } = require('../dist/engine/core/time');
 
@@ -31,11 +31,15 @@ function setup({ spans = [], indoor5 = null, outdoorAt = null } = {}) {
     sources: [boiler],
     rooms: [{ id: 'r_a', slug: 'a', name: 'A' }],
     circuits: [{ id: 'c_floor', mode: 'follow_source', sourceIds: ['s_boiler'], order: 0 }],
-    pumps: [{ id: 'p_floor', name: 'Насос ТП', circuitId: 'c_floor', manifoldId: null, enabled: true, order: 0 }],
+    manifolds: [{ id: 'm_1', sourceIds: ['s_boiler'] }],
+    pumps: [
+      { id: 'p_floor', name: 'Насос ТП', circuitId: 'c_floor', manifoldId: null, enabled: true, order: 0 },
+      { id: 'p_main', name: 'Насос колектора', circuitId: null, manifoldId: 'm_1', enabled: true, order: 1 },
+    ],
     settings,
     list: (c) => config[c] ?? [],
     singleton: (k) => config[k],
-    engineConfig: () => ({ sources: config.sources, rooms: config.rooms, circuits: config.circuits, pumps: config.pumps, settings }),
+    engineConfig: () => ({ sources: config.sources, rooms: config.rooms, circuits: config.circuits, manifolds: config.manifolds, pumps: config.pumps, settings }),
     revision: () => 1,
   };
   const days = [];
@@ -127,6 +131,32 @@ test('days just above the balance ran the heating only part of the time: the lin
   near(fit.balanceC, 18.5, 0.01);
 });
 
+test('a heavy house whose days scatter: the heat loss comes from the totals of a stretch that starts and ends at one indoor temperature', () => {
+  // an autumn of a real brick house with a floor, heated by a boiler on a relay: the heat of a day follows what
+  // the walls stored the days before (the season starting, a room heated up by hand) more than the weather
+  const autumn = [
+    ['2026-10-23', 21.3, 8.1, 104.57], ['2026-10-24', 22.2, 9.8, 80.97], ['2026-10-25', 23.4, 11, 55.75], ['2026-10-26', 23.2, 11.8, 31.21],
+    ['2026-10-27', 21.8, 10.8, 17.78], ['2026-10-28', 20.7, 10.8, 13.59], ['2026-10-29', 20.3, 9.5, 47.11], ['2026-10-30', 20.6, 11.4, 26.25],
+    ['2026-10-31', 20, 11.4, 52.92], ['2026-11-01', 20.7, 12.2, 37.88], ['2026-11-02', 20.3, 11.7, 51.39], ['2026-11-03', 20.2, 10.7, 34.63],
+    ['2026-11-04', 20.3, 14.3, 67.03], ['2026-11-05', 20.2, 15, 33.77], ['2026-11-06', 19.5, 13.8, 13.25], ['2026-11-07', 19.3, 17, 58.91],
+    ['2026-11-08', 20.4, 18.9, 108.67], ['2026-11-09', 21.4, 17.3, 124.06], ['2026-11-10', 20.4, 15.8, 33], ['2026-11-11', 19.8, 14.9, 46.94],
+    ['2026-11-12', 19.7, 15.2, 41.21], ['2026-11-13', 19.9, 10.6, 51.3], ['2026-11-14', 20, 14.3, 46.08], ['2026-11-15', 20.5, 16.6, 27.96],
+  ].map(([date, indoorC, deltaK, heatKwh]) => ({ date, indoorC, deltaK, heatKwh, outdoorC: indoorC - deltaK, gasKwh: heatKwh / 0.9, used: true }));
+  const found = characteristic(autumn);
+  assert.equal(found.fit.method, 'totals');
+  near(found.fit.r2, 0.04, 0.01);
+  // 28 October (20.7°) to 15 November (20.5°): 916 kWh over 261 K·days
+  assert.equal(found.dates[0], '2026-10-28');
+  assert.equal(found.dates.length, 19);
+  near(found.fit.slopeKwhPerK, 916.1 / 260.9, 0.01);
+  assert.equal(found.fit.wPerK, 145);
+  assert.equal(found.fit.interceptKwh, 0);
+  assert.equal(found.fit.balanceC, null, 'the totals show no balance temperature');
+  near(found.fit.loadKw.minus10, (found.fit.slopeKwhPerK * (found.indoorC + 10)) / 24, 0.06);
+  // the line through the same days would have said 85 W/K
+  near((fitLine(autumn.map((d) => [d.deltaK, d.heatKwh]), 20.7).slopeKwhPerK / 24) * 1000, 85, 1);
+});
+
 test('a line that stays above zero shows no balance temperature; the loads stay the loss × the difference', () => {
   // the whole meter, hot water and cooking included: 20 kWh a day more than heating at any difference
   const fit = fitLine([[10, 100], [12, 116], [14, 132], [16, 148], [18, 164]], 21);
@@ -169,7 +199,8 @@ test('the widgets’ sensor: the last 24 h of runs with the pumps that follow, t
     [(stop - 2 * HOUR - (NOW - DAY)) / MIN, (stop - (NOW - DAY)) / MIN],
     [(restart - (NOW - DAY)) / MIN, null],
   ]);
-  assert.deepEqual(s.p.map((p) => [p.id, p.n, p.runs.length]), [['p_floor', 'Насос ТП', 1]]);
+  // the floor's own pump and the manifold's primary pump both run with the boiler
+  assert.deepEqual(s.p.map((p) => [p.id, p.n, p.runs.length]), [['p_floor', 'Насос ТП', 1], ['p_main', 'Насос колектора', 0]]);
   assert.equal(w.heat.fit.wpk, 335);
   near(w.heat.fit.bal, 18.5, 0.1);
   assert.equal(w.heat.pts.length, w.heat.pts.filter((p) => p[0] >= 2).length);
